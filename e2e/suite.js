@@ -261,6 +261,36 @@ async function run() {
 		return theme.id + ': ' + Object.keys(theme.definitions).length + ' icons, .ts → ' + theme.fileExtensions['ts'] + ', font ' + theme.fonts[0].id;
 	});
 
+	// File icon themes of SVG images (like vscode-icons). The ways it could go wrong, which this check asserts don't happen: the theme's
+	// images aren't converted into URIs the Webview can load (their paths are relative to its definition), the definition can't be read when
+	// the view asks for it (e.g. the extension generating it is writing it) and isn't loaded once it can be (so the built-in icons stay until
+	// the view is reopened), and a change to the definition isn't loaded.
+	await check('file-icon-theme-svg', '[Redesign] A file icon theme of SVG images is loaded, also if its definition can only be read later (e.g. while it\'s being written), and again when it changes', async () => {
+		const view = await getView();
+		const themeFile = path.join(fixtures.iconThemeExtension, 'dist', 'theme.json');
+		const themes = () => record.responses.filter((msg) => msg.command === 'loadFileIconTheme');
+		const config = vscode.workspace.getConfiguration('workbench');
+		const since = themes().length;
+		await config.update('iconTheme', 'e2e-svg-icons', vscode.ConfigurationTarget.Global);
+		try {
+			// The definition is invalid (being written), so no theme is sent, and then it's written
+			await waitFor('the unreadable theme to be sent', () => themes().slice(since).some((msg) => msg.theme === null));
+			fs.writeFileSync(themeFile, JSON.stringify({ iconDefinitions: { _file: { iconPath: '../icons/file.svg' }, _python: { iconPath: '../icons/python.svg' } }, file: '_file', fileExtensions: { py: '_python' } }));
+			const loaded = await waitFor('the theme to be loaded once it can be read', () => themes().slice(since).find((msg) => msg.theme !== null && msg.theme.id === 'e2e-svg-icons'));
+			const python = loaded.theme.definitions[loaded.theme.fileExtensions.py];
+			assert(/^https:\/\/.*vscode-resource.*\/icon-theme-extension\/icons\/python\.svg$/.test(python.iconPath) && loaded.theme.file === '_file', 'Unexpected theme: ' + JSON.stringify(loaded.theme.definitions));
+			// A change to the definition is loaded
+			const before = themes().length;
+			fs.writeFileSync(themeFile, JSON.stringify({ iconDefinitions: { _file: { iconPath: '../icons/file.svg' }, _python: { iconPath: '../icons/python.svg' }, _excel: { iconPath: '../icons/excel.svg' } }, file: '_file', fileExtensions: { py: '_python', xlsx: '_excel' } }));
+			const changed = await waitFor('the changed theme to be loaded', () => themes().slice(before).find((msg) => msg.theme !== null && msg.theme.fileExtensions.xlsx === '_excel'));
+			return 'Loaded once readable (py: ' + python.iconPath.substring(python.iconPath.indexOf('/icons/')) + '), and again after it changed (xlsx: ' + changed.theme.definitions._excel.iconPath.substring(changed.theme.definitions._excel.iconPath.indexOf('/icons/')) + ')';
+		} finally {
+			await config.update('iconTheme', undefined, vscode.ConfigurationTarget.Global);
+			await waitFor('the default theme to be sent again', () => { const last = themes().slice(-1)[0]; return last && last.theme !== null && last.theme.id === 'vs-seti'; }).catch(() => null);
+			assert(view !== null, 'The view was closed');
+		}
+	});
+
 	await check('#668', 'Repositories, submodules and worktrees in the workspace are all discovered', async () => {
 		const view = await getView();
 		const repos = await waitFor('the repositories to be discovered', () => {

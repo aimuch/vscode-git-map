@@ -129,9 +129,29 @@ function createFixtures(httpPort) {
 		askpass: askpass,
 		askpassLog: path.join(ARTIFACTS, 'external-askpass.log'),
 		report: path.join(ARTIFACTS, 'report.json'),
-		gitVersion: git(ARTIFACTS, '--version')
+		gitVersion: git(ARTIFACTS, '--version'),
+		iconThemeExtension: createIconThemeExtension()
 	});
 	return fixtures;
+}
+
+/**
+ * Create an extension contributing a file icon theme of SVG images (like vscode-icons), whose definition is in a subfolder with paths
+ * relative to it. Its definition is invalid until the file-icon-theme-svg check writes it (as when an extension like vscode-icons is
+ * writing it while Git Map reads it).
+ * @returns The folder of the extension.
+ */
+function createIconThemeExtension() {
+	const folder = path.join(ARTIFACTS, 'icon-theme-extension');
+	fs.mkdirSync(path.join(folder, 'dist'), { recursive: true });
+	fs.mkdirSync(path.join(folder, 'icons'), { recursive: true });
+	fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify({
+		name: 'e2e-icon-theme', publisher: 'e2e', version: '1.0.0', engines: { vscode: '*' },
+		contributes: { iconThemes: [{ id: 'e2e-svg-icons', label: 'E2E SVG Icons', path: './dist/theme.json' }] }
+	}, null, '\t'));
+	['file', 'python', 'excel'].forEach((name) => fs.writeFileSync(path.join(folder, 'icons', name + '.svg'), '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><rect width="16" height="16" rx="3" fill="#' + (name === 'file' ? '888888' : name === 'python' ? '3572a5' : '1d6f42') + '"/></svg>'));
+	fs.writeFileSync(path.join(folder, 'dist', 'theme.json'), '{ "iconDefinitions": { "_file": ');
+	return folder;
 }
 
 /**
@@ -182,7 +202,7 @@ async function main() {
 
 		await runTests({
 			vscodeExecutablePath: vscodeExecutablePath,
-			extensionDevelopmentPath: process.env.E2E_EXTENSION_PATH ? path.resolve(process.env.E2E_EXTENSION_PATH) : ROOT,
+			extensionDevelopmentPath: [process.env.E2E_EXTENSION_PATH ? path.resolve(process.env.E2E_EXTENSION_PATH) : ROOT, fixtures.iconThemeExtension],
 			extensionTestsPath: path.join(__dirname, 'suite.js'),
 			launchArgs: [
 				WORKSPACE,

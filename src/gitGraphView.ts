@@ -15,6 +15,17 @@ import { Disposable, toDisposable } from './utils/disposable';
 import { getL10nBundle, getLanguage, t } from './l10n';
 
 /**
+ * The number of times the definition of the file icon theme is read again if it can't be read, and the time (in milliseconds) between them.
+ */
+const MAX_FILE_ICON_THEME_RETRIES = 5;
+const FILE_ICON_THEME_RETRY_DELAY = 2000;
+
+/**
+ * The time (in milliseconds) after the definition of the file icon theme changes, before it's read again.
+ */
+const FILE_ICON_THEME_CHANGE_DELAY = 500;
+
+/**
  * Manages the Git Map View.
  */
 export class GitGraphView extends Disposable {
@@ -30,6 +41,10 @@ export class GitGraphView extends Disposable {
 	private readonly logger: Logger;
 	private readonly undoManager: UndoManager;
 	private isGraphViewLoaded: boolean = false;
+	private fileIconThemeWatcher: vscode.Disposable | null = null;
+	private fileIconThemeWatched: string | null = null; // The path of the definition of the file icon theme that's watched
+	private fileIconThemeRetry: NodeJS.Timeout | null = null;
+	private fileIconThemeRetries: number = 0;
 	private isPanelVisible: boolean = true;
 	private currentRepo: string | null = null;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
@@ -109,6 +124,8 @@ export class GitGraphView extends Disposable {
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
 				this.repoFileWatcher.stop();
+				this.watchFileIconTheme(null);
+				if (this.fileIconThemeRetry !== null) clearTimeout(this.fileIconThemeRetry);
 			}),
 
 			// Dispose this Git Map View when the Webview Panel is disposed
@@ -132,7 +149,8 @@ export class GitGraphView extends Disposable {
 				if (this.panel.visible && (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language'))) {
 					this.update();
 				} else if (this.panel.visible && this.isGraphViewLoaded && event.affectsConfiguration('workbench.iconTheme')) {
-					this.sendMessage({ command: 'loadFileIconTheme', theme: this.getFileIconTheme() });
+					this.fileIconThemeRetries = 0;
+					this.sendFileIconTheme();
 				}
 			}),
 
@@ -492,7 +510,7 @@ export class GitGraphView extends Disposable {
 				});
 				break;
 			case 'loadFileIconTheme':
-				this.sendMessage({ command: 'loadFileIconTheme', theme: this.getFileIconTheme() });
+				this.sendFileIconTheme();
 				break;
 			case 'loadRepos':
 				if (!msg.check || !await this.repoManager.checkReposExist()) {
@@ -919,12 +937,71 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
-	 * Get the file icon theme used by Visual Studio Code, with the URIs of its fonts & images converted into Webview URIs.
-	 * @returns The file icon theme, or NULL if no file icon theme is used (or it couldn't be read).
+	 * Send the file icon theme used by Visual Studio Code to the Webview. If its definition can't be read (e.g. while the extension that
+	 * generates it is writing it, as vscode-icons does), it's sent again once it can be. It's also sent again when its definition changes.
 	 */
-	private getFileIconTheme() {
-		const theme = findFileIconTheme();
-		if (theme === null) return null;
+	private sendFileIconTheme() {
+		if (this.fileIconThemeRetry !== null) {
+			clearTimeout(this.fileIconThemeRetry);
+			this.fileIconThemeRetry = null;
+		}
+		const found = findFileIconTheme(), theme = found !== null ? this.getFileIconTheme(found) : null;
+		this.watchFileIconTheme(found !== null ? found.path : null);
+		if (found !== null && theme === null) {
+			const retry = this.fileIconThemeRetries < MAX_FILE_ICON_THEME_RETRIES;
+			this.logger.logError('Unable to read the file icon theme "' + found.id + '" (' + found.path + ')' + (retry ? ', it will be read again' : ''));
+			if (retry) {
+				this.fileIconThemeRetries++;
+				this.fileIconThemeRetry = setTimeout(() => {
+					this.fileIconThemeRetry = null;
+					this.sendFileIconTheme();
+				}, FILE_ICON_THEME_RETRY_DELAY);
+			}
+		} else {
+			this.fileIconThemeRetries = 0;
+		}
+		this.sendMessage({ command: 'loadFileIconTheme', theme: theme });
+	}
+
+	/**
+	 * Watch the definition of the file icon theme, sending the theme to the Webview again when it changes.
+	 * @param themePath The path of the definition, or NULL to stop watching.
+	 */
+	private watchFileIconTheme(themePath: string | null) {
+		if (themePath === this.fileIconThemeWatched) return;
+		if (this.fileIconThemeWatcher !== null) {
+			this.fileIconThemeWatcher.dispose();
+			this.fileIconThemeWatcher = null;
+		}
+		this.fileIconThemeWatched = themePath;
+		if (themePath === null) return;
+		let timeout: NodeJS.Timeout | null = null;
+		const onChange = () => {
+			// The definition may be written several times in quick succession
+			if (timeout !== null) clearTimeout(timeout);
+			timeout = setTimeout(() => {
+				timeout = null;
+				this.fileIconThemeRetries = 0;
+				if (this.isGraphViewLoaded) this.sendFileIconTheme();
+			}, FILE_ICON_THEME_CHANGE_DELAY);
+		};
+		const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(path.dirname(themePath)), path.basename(themePath)));
+		watcher.onDidChange(onChange);
+		watcher.onDidCreate(onChange);
+		this.fileIconThemeWatcher = {
+			dispose: () => {
+				if (timeout !== null) clearTimeout(timeout);
+				watcher.dispose();
+			}
+		};
+	}
+
+	/**
+	 * Get the file icon theme used by Visual Studio Code, with the URIs of its fonts & images converted into Webview URIs.
+	 * @param theme The id of the file icon theme, and the path of its definition.
+	 * @returns The file icon theme, or NULL if its definition couldn't be read.
+	 */
+	private getFileIconTheme(theme: { id: string, path: string }) {
 		const roots = this.panel.webview.options.localResourceRoots || [];
 		if (!roots.some((root) => theme.path.startsWith(root.fsPath + path.sep))) {
 			// The extension contributing the file icon theme was installed after the view was opened
