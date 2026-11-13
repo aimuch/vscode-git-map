@@ -177,7 +177,7 @@
 			case 'deleteBranches':
 				return { command: 'deleteBranches', deleted: msg.branches.length, errors: [] };
 			case 'loadCommitMessage':
-				return { command: 'loadCommitMessage', commitHash: msg.commitHash, message: 'Commit ' + HEAD_INDEX + '\n\nThe body', error: null };
+				return { command: 'loadCommitMessage', commitHash: msg.commitHash, message: 'Commit ' + HEAD_INDEX + '\n\nThe body', pushedTo: 'origin/main', error: null };
 			case 'editCommitMessage':
 				return { command: 'editCommitMessage', error: null };
 			case 'loadBisectState':
@@ -287,6 +287,7 @@
 	const ctrl = isMac ? { metaKey: true } : { ctrlKey: true };
 	const results = [];
 	const check = async (id, title, fn) => {
+		realApi.postMessage({ command: 'e2eProgress', id: id }); // So that a check that hangs can be named
 		try {
 			results.push({ id: id, title: title, pass: true, details: (await fn()) || '' });
 		} catch (err) {
@@ -1600,8 +1601,12 @@
 
 		await check('ui-branch-cleanup', '[GitLens] "Clean Up Branches…" (at the bottom of the Branches dropdown) lists the branches that can be deleted (those that aren\'t merged unselected, with a warning), and deletes the selected ones (also on the remote, if chosen)', async () => {
 			const footer = document.querySelector('#branchControl .dropdownFooterAction');
-			assert(footer !== null && footer.textContent === 'Clean Up Branches…', 'The action isn\'t at the bottom of the Branches dropdown');
+			assert(footer !== null && footer.textContent.startsWith('Clean Up Branches…'), 'The action isn\'t at the bottom of the Branches dropdown'); // (with the number of branches, if the dropdown was opened before)
+			const counts = requestsOf('loadBranchCleanup').length;
 			mouse(document.querySelector('#branchControl .dropdownCurrentValue'), 'click');
+			// The number of branches is only loaded when the dropdown is opened
+			await waitFor('the number of branches to be shown', () => requestsOf('loadBranchCleanup').length > counts && footer.querySelector('.dropdownFooterBadge') !== null && footer.querySelector('.dropdownFooterBadge').textContent === '2');
+			await shot('branch-cleanup-badge');
 			mouse(footer, 'click');
 			const list = await waitFor('the branches that can be deleted', () => document.querySelectorAll('#branchCleanup .branchCleanupItem').length === 2 ? document.getElementById('branchCleanup') : null);
 			const items = Array.from(list.querySelectorAll('.branchCleanupItem')), checked = items.map((item) => item.querySelector('input').checked);
@@ -1630,6 +1635,8 @@
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Edit Commit Message…'), 'click');
 			const input = await waitFor('the dialog to open', () => document.querySelector('.dialog textarea.dialogTextArea'));
 			assert(input.value === 'Commit ' + HEAD_INDEX + '\n\nThe body' && document.activeElement === input, 'Unexpected input: ' + JSON.stringify(input.value));
+			const callout = document.querySelector('.dialog .dialogCallout.warning');
+			assert(callout !== null && callout.textContent.includes('This commit is already on origin/main. Changing it gives it a new hash, so the branch must be force-pushed.'), 'The commit isn\'t said to have been pushed: ' + (callout !== null ? callout.textContent : 'no callout'));
 			await shot('edit-message');
 			const before = requestsOf('editCommitMessage').length;
 			key(input, 'Enter');
@@ -1712,9 +1719,11 @@
 				const consent = await waitFor('the consent card', () => document.querySelector('#cdvExplainView .explainConsent #explainModel') ? document.querySelector('#cdvExplainView .explainConsent') : null);
 				const options = Array.from(consent.querySelectorAll('#explainModel option')).map((option) => option.textContent);
 				assert(requestsOf('loadLanguageModels').length > models && requestsOf('explainCommit').length === explained, 'The commit was sent before it was confirmed');
-				assert(JSON.stringify(options) === JSON.stringify(['Model One (copilot)', 'Model Two (copilot)']) && consent.textContent.includes('up to 3,000 lines') && consent.querySelector('#explainDontAsk') !== null, 'Unexpected consent card: ' + consent.textContent);
+				assert(JSON.stringify(options) === JSON.stringify(['Model One (GitHub Copilot)', 'Model Two (GitHub Copilot)']) && consent.textContent.includes('up to 3,000 lines) are sent to Model One, provided by GitHub Copilot') && consent.querySelector('#explainDontAsk + .customCheckbox') !== null, 'Unexpected consent card: ' + consent.textContent);
 				await shot('explain-consent');
 				document.getElementById('explainModel').value = 'm2';
+				document.getElementById('explainModel').dispatchEvent(new Event('change', { bubbles: true }));
+				assert(document.getElementById('explainConsentText').textContent.includes('sent to Model Two, provided by GitHub Copilot'), 'The consent doesn\'t name the model chosen: ' + document.getElementById('explainConsentText').textContent);
 				mouse(consent.querySelector('[data-explain="explain"]'), 'click');
 				const request = await waitFor('the commit to be explained', () => requestsOf('explainCommit').length > explained ? requestsOf('explainCommit').slice(-1)[0] : null);
 				assert(request.commitHash === hash(3) && request.modelId === 'm2', 'Unexpected request: ' + JSON.stringify(request));
@@ -1761,8 +1770,16 @@
 			const dialogElem = await waitFor('the dialog to open', () => document.querySelector('.dialog #dialogInput5') ? document.querySelector('.dialog') : null);
 			const labels = Array.from(dialogElem.querySelectorAll('.dialogFormCheckbox label')).map((label) => label.textContent.trim());
 			assert(JSON.stringify(labels.slice(0, 4)) === JSON.stringify(['src/new-name.ts staged', 'README.md modified', 'notes.txt untracked', 'Only the staged changes']) && [1, 2, 3].every((i) => document.getElementById('dialogInput' + i).checked), 'Unexpected dialog: ' + JSON.stringify(labels));
-			await shot('stash-partial');
+			const button = () => document.getElementById('dialogAction').textContent;
+			assert(dialogElem.querySelector('.dialogFilesHeader') !== null && button() === 'Stash 3 Files', 'Unexpected file selection: ' + button());
+			mouse(dialogElem.querySelector('[data-select="none"]'), 'click');
+			assert(button() === 'Stash 0 Files' && [1, 2, 3].every((i) => !document.getElementById('dialogInput' + i).checked), 'None didn\'t unselect the files: ' + button());
+			mouse(dialogElem.querySelector('[data-select="all"]'), 'click');
+			assert(button() === 'Stash 3 Files', 'All didn\'t select the files: ' + button());
 			document.getElementById('dialogInput2').checked = false;
+			document.getElementById('dialogInput2').dispatchEvent(new Event('change', { bubbles: true }));
+			assert(button() === 'Stash 2 Files', 'Unexpected button: ' + button());
+			await shot('stash-partial');
 			document.getElementById('dialogInput5').checked = true;
 			const before = requestsOf('pushStash').length;
 			mouse(document.getElementById('dialogAction'), 'click');
@@ -1787,7 +1804,7 @@
 				await clickMenuItem(fileRecord('new-name.ts'), 'Stash this File…');
 				await waitFor('the dialog to open', () => document.querySelector('.dialog #dialogInput3'));
 				const checked = [1, 2, 3].map((i) => document.getElementById('dialogInput' + i).checked);
-				assert(JSON.stringify(checked) === JSON.stringify([true, false, false]), 'Only the file should be selected: ' + JSON.stringify(checked));
+				assert(JSON.stringify(checked) === JSON.stringify([true, false, false]) && document.getElementById('dialogAction').textContent === 'Stash 1 File', 'Only the file should be selected: ' + JSON.stringify(checked));
 				const before = requestsOf('pushStash').length;
 				mouse(document.getElementById('dialogAction'), 'click');
 				const request = await waitFor('the file to be stashed', () => requestsOf('pushStash').length > before ? requestsOf('pushStash').slice(-1)[0] : null);
@@ -1825,6 +1842,8 @@
 				const dialogElem = await waitFor('the dialog to open', () => document.querySelector('.dialog .dialogNote') ? document.querySelector('.dialog') : null);
 				const radios = document.querySelectorAll('input[name="dialogInput0"]');
 				assert(dialogElem.textContent.includes('Apply the patch fix.patch?') && dialogElem.textContent.includes('2 commits · 3 files +10 −2') && dialogElem.querySelector('.dialogNote.ok') !== null && radios.length === 2 && radios[0].checked, 'Unexpected dialog: ' + dialogElem.textContent);
+				const descriptions = Array.from(dialogElem.querySelectorAll('.dialogRadioDescription')).map((elem) => elem.textContent);
+				assert(JSON.stringify(descriptions) === JSON.stringify(['Keeps their authors & messages (git am)', 'Merges with your changes where it can (git apply --3way)']), 'Unexpected options: ' + JSON.stringify(descriptions));
 				await shot('apply-patch');
 				radios[1].checked = true;
 				const before = requestsOf('applyPatch').length;

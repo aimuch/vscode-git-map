@@ -1855,6 +1855,7 @@ export interface ResponseLoadCommitMessage extends ResponseWithErrorInfo {
 	readonly command: 'loadCommitMessage';
 	readonly commitHash: string;
 	readonly message: string;
+	readonly pushedTo: string | null; // A remote branch that contains the commit (NULL if it hasn't been pushed)
 }
 
 export interface RequestUndoCommit extends RepoRequest {

@@ -18,6 +18,12 @@ class CommitExplainer {
 	 */
 	constructor(view: GitGraphView) {
 		this.view = view;
+		document.addEventListener('change', (e) => {
+			// The consent names the model chosen
+			if (!(e.target instanceof HTMLSelectElement) || e.target.id !== 'explainModel' || this.models === null) return;
+			const model = this.models.find((model) => model.id === (<HTMLSelectElement>e.target).value), textElem = document.getElementById('explainConsentText');
+			if (typeof model !== 'undefined' && textElem !== null) textElem.innerHTML = CommitExplainer.getConsentText(model);
+		});
 		document.addEventListener('click', (e) => {
 			const elem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('#cdvExplainView [data-explain]') : null;
 			if (elem === null || this.shownHash === null) return;
@@ -104,6 +110,22 @@ class CommitExplainer {
 			'</div>';
 	}
 
+	/**
+	 * Get the name of the provider of a language model (e.g. "GitHub Copilot" for the vendor "copilot").
+	 */
+	private static getProviderName(model: GG.LanguageModelInfo) {
+		return model.vendor === 'copilot' ? 'GitHub Copilot' : model.vendor;
+	}
+
+	/**
+	 * Get the text saying what's sent to a language model, and which model it is.
+	 */
+	private static getConsentText(model: GG.LanguageModelInfo | null) {
+		return model !== null
+			? t('The message of the commit and its changes (up to 3,000 lines) are sent to {0}, provided by {1} in Visual Studio Code. Git Map doesn\'t send them anywhere else.', '<b>' + escapeHtml(model.name) + '</b>', '<b>' + escapeHtml(CommitExplainer.getProviderName(model)) + '</b>')
+			: t('The message of the commit and its changes (up to 3,000 lines) are sent to the language model you choose, provided in Visual Studio Code (e.g. by GitHub Copilot). Git Map doesn\'t send them anywhere else.');
+	}
+
 	private getConsentHtml() {
 		if (this.modelsError !== null) {
 			return '<div class="explainConsent"><div class="explainError">' + SVG_ICONS.alert + escapeHtml(this.modelsError) + '</div></div>';
@@ -111,10 +133,10 @@ class CommitExplainer {
 		const models = this.models, chosen = typeof globalState.explainCommitModel === 'string' ? globalState.explainCommitModel : null;
 		const first = models !== null && models.length > 0 ? (models.find((model) => model.id === chosen) || models[0]) : null;
 		return '<div class="explainConsent"><div class="explainConsentTitle">' + t('Explain this commit with a language model?') + '</div>' +
-			'<p>' + t('The message of the commit and its changes (up to 3,000 lines) are sent to the language model you choose, provided in Visual Studio Code (e.g. by GitHub Copilot). Git Map doesn\'t send them anywhere else.') + '</p>' +
+			'<p id="explainConsentText">' + CommitExplainer.getConsentText(first) + '</p>' +
 			(models === null
 				? '<div class="explainLoading">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</div>'
-				: '<label for="explainModel" class="explainLabel">' + t('Model') + '</label><select id="explainModel">' + models.map((model) => '<option value="' + escapeHtml(model.id) + '"' + (first !== null && model.id === first.id ? ' selected' : '') + '>' + escapeHtml(model.name + ' (' + model.vendor + ')') + '</option>').join('') + '</select>' +
+				: '<label for="explainModel" class="explainLabel">' + t('Model') + '</label><select id="explainModel">' + models.map((model) => '<option value="' + escapeHtml(model.id) + '"' + (first !== null && model.id === first.id ? ' selected' : '') + '>' + escapeHtml(model.name + ' (' + CommitExplainer.getProviderName(model) + ')') + '</option>').join('') + '</select>' +
 				'<label class="explainDontAsk"><input type="checkbox" id="explainDontAsk"><span class="customCheckbox"></span>' + t('Don\'t ask again') + '</label>' +
 				'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="explain">' + t('Explain') + '</button><button type="button" class="cdvActionBtn" data-explain="cancel">' + t('Cancel') + '</button></div>') +
 			'</div>';

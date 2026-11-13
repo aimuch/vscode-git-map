@@ -862,7 +862,8 @@ export class GitGraphView extends Disposable {
 			}
 			case 'loadCommitMessage': {
 				const message = await this.gitFeatures.getCommitMessage(msg.repo, msg.commitHash);
-				this.sendMessage({ command: 'loadCommitMessage', commitHash: msg.commitHash, message: message !== null ? message : '', error: message !== null ? null : t('Unable to read the message of the commit.') });
+				const pushedTo = message !== null ? await this.gitFeatures.getRemoteBranchContaining(msg.repo, msg.commitHash) : null;
+				this.sendMessage({ command: 'loadCommitMessage', commitHash: msg.commitHash, message: message !== null ? message : '', pushedTo: pushedTo, error: message !== null ? null : t('Unable to read the message of the commit.') });
 				break;
 			}
 			case 'editCommitMessage':

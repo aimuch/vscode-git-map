@@ -62,7 +62,9 @@ class BranchCleanup {
 	 * @param msg The message containing the branches.
 	 */
 	public processLoadBranchCleanupResponse(msg: GG.ResponseLoadBranchCleanup) {
-		if (msg.repo !== this.view.currentRepo || !this.isOpen()) return;
+		if (msg.repo !== this.view.currentRepo) return;
+		this.view.setBranchCleanupCount(msg.error === null ? msg.candidates.length : null);
+		if (!this.isOpen()) return; // Only the number of branches was loaded (when the Branches dropdown was opened)
 		this.candidates = msg.candidates;
 		this.defaultBranch = msg.defaultBranch;
 		this.error = msg.error;

@@ -453,6 +453,19 @@ export class GitFeatures {
 	}
 
 	/**
+	 * Get a remote branch that contains a commit (i.e. the commit has been pushed).
+	 * @param repo The path of the repository.
+	 * @param hash The commit.
+	 * @returns The name of the remote branch (e.g. "origin/main"), or NULL if no remote branch contains it.
+	 */
+	public async getRemoteBranchContaining(repo: string, hash: string): Promise<string | null> {
+		if (!HASH_REGEXP.test(hash)) return null;
+		const result = await this.run(repo, ['for-each-ref', '--contains', hash, '--format=%(refname:short)', 'refs/remotes']);
+		const branch = result.code === 0 ? splitLines(result.stdout).find((name) => !name.endsWith('/HEAD')) : undefined;
+		return typeof branch !== 'undefined' ? branch : null;
+	}
+
+	/**
 	 * Resolve a revision to the hash of the commit it refers to.
 	 * @returns The hash, or NULL if it isn't a commit.
 	 */

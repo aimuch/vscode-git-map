@@ -178,7 +178,9 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		sizeLegend: t('Circle size: lines changed'),
 		barsLegend: t('Lines added & deleted by each commit'),
 		noCommits: t('No commits in this range.'),
-		hint: t('Click a circle to select its commit, double-click it to open its changes.')
+		hint: t('Click a circle to select its commit, double-click it to open its changes.'),
+		zoomHint: t('Drag across the bars to zoom into a range of dates.'),
+		resetZoom: t('Reset Zoom')
 	};
 	const data = commits.map((commit) => ({ h: commit.hash, a: commit.author, e: commit.email, d: commit.date, s: commit.subject, p: commit.additions, m: commit.deletions, f: commit.filePath }));
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
@@ -190,7 +192,7 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		'<button type="button" class="vfhButton" data-action="viewFileHistory">' + escapeHtml(strings.viewFileHistory) + '</button></header>' +
 		'<div id="summary" class="vfhSummary"></div>' +
 		'<div class="vfhBody"><figure class="vfhChart" aria-label="' + escapeHtml(t('Commits that changed the file, by author')) + '"><div class="vfhPlot"><div id="lanes" class="vfhLanes"></div><div id="plot" class="vfhArea"></div></div><div id="axis" class="vfhAxis"></div><div id="bars" class="vfhBars"></div>' +
-		'<figcaption class="vfhLegend"><span>' + escapeHtml(strings.sizeLegend) + '</span><span><i class="add"></i><i class="del"></i>' + escapeHtml(strings.barsLegend) + '</span><span>' + escapeHtml(strings.hint) + '</span></figcaption></figure>' +
+		'<figcaption class="vfhLegend"><span>' + escapeHtml(strings.sizeLegend) + '</span><span><i class="add"></i><i class="del"></i>' + escapeHtml(strings.barsLegend) + '</span><span>' + escapeHtml(strings.hint) + '</span><span>' + escapeHtml(strings.zoomHint) + '</span></figcaption></figure>' +
 		'<aside id="details" class="vfhDetails" aria-live="polite"></aside></div>' +
 		'<script nonce="' + nonce + '">var COMMITS = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ', STRINGS = ' + JSON.stringify(strings).replace(/</g, '\\u003c') + ', LOCALE = ' + JSON.stringify(locale) + ', FILE = ' + JSON.stringify(filePath).replace(/</g, '\\u003c') + ';' + SCRIPT + '</script></body></html>';
 }
@@ -230,7 +232,10 @@ button{font:inherit;color:inherit}
 .vfhAxis{display:flex;justify-content:space-between;margin:4px 0 0 130px;color:var(--vscode-descriptionForeground);font-size:11.5px}
 .vfhBars{position:relative;height:70px;margin:10px 0 0 130px;border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.25))}
 .vfhBars .mid{position:absolute;left:0;right:0;top:35px;height:1px;background:var(--vscode-panel-border,rgba(128,128,128,.3))}
-.vfhBar{position:absolute;width:3px;border-radius:1px;transform:translateX(-50%)}
+.vfhBar{position:absolute;width:3px;border-radius:1px;transform:translateX(-50%);pointer-events:none}
+.vfhBars{cursor:crosshair;user-select:none}
+.vfhBrush{position:absolute;top:0;bottom:0;border:1px solid var(--vscode-focusBorder);background:color-mix(in srgb,var(--vscode-focusBorder) 18%,transparent);pointer-events:none}
+.vfhSummary > button.vfhZoomReset{padding:3px 10px;border:1px solid var(--vscode-focusBorder);border-radius:10px;background:transparent;color:inherit;font:inherit;cursor:pointer}
 .vfhBar.add{bottom:35px;background:var(--vscode-gitDecoration-addedResourceForeground,#3fb950)}
 .vfhBar.del{top:36px;background:var(--vscode-gitDecoration-deletedResourceForeground,#f85149)}
 .vfhLegend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;color:var(--vscode-descriptionForeground);font-size:11.5px}
@@ -251,18 +256,19 @@ button{font:inherit;color:inherit}
 const SCRIPT = `
 (function () {
 	var vscode = acquireVsCodeApi(), COLOURS = ['#4daafc', '#f0b45c', '#7ee787', '#d2a8ff', '#ff9bce', '#79e2d0', '#ffa198', '#e3b341'], MAX_LANES = 8, LANE = 48;
-	var range = 365, selected = 0;
+	var range = 365, selected = 0, zoom = null, view = null; // zoom: the range of dates zoomed into by dragging across the bars
 	function esc(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 	function format(text, value) { return text.replace('{0}', value); }
 	function date(seconds) { return new Date(seconds * 1000).toLocaleDateString(LOCALE, { year: 'numeric', month: 'short', day: 'numeric' }); }
 	function visible() {
+		if (zoom !== null) return COMMITS.map(function (c, i) { return i; }).filter(function (i) { return COMMITS[i].d >= zoom.from && COMMITS[i].d <= zoom.to; });
 		if (range === 0) return COMMITS.map(function (c, i) { return i; });
 		var since = COMMITS[0].d - range * 86400, indexes = [];
 		COMMITS.forEach(function (c, i) { if (c.d >= since) indexes.push(i); });
 		return indexes;
 	}
 	function render() {
-		document.querySelectorAll('.vfhRange button').forEach(function (b) { b.setAttribute('aria-pressed', String(parseInt(b.dataset.range) === range)); });
+		document.querySelectorAll('.vfhRange button').forEach(function (b) { b.setAttribute('aria-pressed', String(zoom === null && parseInt(b.dataset.range) === range)); });
 		var indexes = visible(), plot = document.getElementById('plot'), lanesElem = document.getElementById('lanes'), bars = document.getElementById('bars'), axis = document.getElementById('axis');
 		var counts = {}, add = 0, del = 0;
 		indexes.forEach(function (i) { var c = COMMITS[i]; counts[c.a] = (counts[c.a] || 0) + 1; add += c.p; del += c.m; });
@@ -270,7 +276,8 @@ const SCRIPT = `
 		if (authors.length > lanes.length) lanes.push(null);
 		var renamed = indexes.length > 0 ? COMMITS[indexes[indexes.length - 1]].f : FILE;
 		document.getElementById('summary').innerHTML = '<span>' + esc(indexes.length === 1 ? STRINGS.commit1 : format(STRINGS.commits, indexes.length)) + '</span><span>' + esc(authors.length === 1 ? STRINGS.author1 : format(STRINGS.authors, authors.length)) + '</span><span><span class="add">+' + add + '</span> <span class="del">\\u2212' + del + '</span> ' + esc(STRINGS.lines) + '</span>' +
-			(renamed !== FILE ? '<span>' + esc(format(STRINGS.renamedFrom, renamed)) + '</span>' : '');
+			(renamed !== FILE ? '<span>' + esc(format(STRINGS.renamedFrom, renamed)) + '</span>' : '') +
+			(zoom !== null ? '<button type="button" class="vfhZoomReset">' + esc(STRINGS.resetZoom) + '</button>' : '');
 		if (indexes.length === 0) {
 			plot.innerHTML = '<div class="vfhEmpty">' + esc(STRINGS.noCommits) + '</div>'; lanesElem.innerHTML = ''; bars.innerHTML = ''; axis.innerHTML = '';
 			document.getElementById('details').innerHTML = '';
@@ -278,13 +285,19 @@ const SCRIPT = `
 		}
 		var newest = COMMITS[indexes[0]].d, oldest = COMMITS[indexes[indexes.length - 1]].d, span = Math.max(newest - oldest, 1);
 		var x = function (d) { return indexes.length === 1 ? 50 : 2 + (d - oldest) / span * 96; };
+		view = { oldest: oldest, span: span };
+		// Commits made at (almost) the same time are spread out, so that each can be seen & clicked
+		var order = indexes.slice().sort(function (a, b) { return COMMITS[a].d - COMMITS[b].d || b - a; }), lefts = {}, previousLeft = -Infinity, GAP = 1.2;
+		order.forEach(function (i) { lefts[i] = Math.max(x(COMMITS[i].d), previousLeft + GAP); previousLeft = lefts[i]; });
+		var last = lefts[order[order.length - 1]];
+		if (order.length > 1 && last > 98) order.forEach(function (i) { lefts[i] = 2 + (lefts[i] - 2) * 96 / (last - 2); });
 		var laneOf = function (author) { var i = lanes.indexOf(author); return i > -1 ? i : lanes.length - 1; };
 		lanesElem.innerHTML = lanes.map(function (author, i) { var name = author === null ? STRINGS.others : author; return '<div class="vfhLane" title="' + esc(name) + '"><span class="vfhInitial" style="background:' + COLOURS[i % COLOURS.length] + '">' + esc(Array.from(name.trim() || '?')[0].toUpperCase()) + '</span>' + esc(name) + '</div>'; }).join('');
 		plot.style.height = (lanes.length * LANE) + 'px';
 		var html = lanes.map(function (_, i) { return '<div class="vfhGrid" style="top:' + (i * LANE + LANE / 2) + 'px"></div>'; }).join(''), barsHtml = '<div class="mid"></div>';
 		var maxLines = 1; indexes.forEach(function (i) { maxLines = Math.max(maxLines, COMMITS[i].p, COMMITS[i].m); });
 		indexes.slice().reverse().forEach(function (i) {
-			var c = COMMITS[i], lane = laneOf(c.a), colour = COLOURS[lane % COLOURS.length], size = Math.round(8 + Math.sqrt(c.p + c.m) * 1.6), left = x(c.d).toFixed(2);
+			var c = COMMITS[i], lane = laneOf(c.a), colour = COLOURS[lane % COLOURS.length], size = Math.round(8 + Math.sqrt(c.p + c.m) * 1.6), left = lefts[i].toFixed(2);
 			html += '<button type="button" class="vfhBubble' + (i === selected ? ' selected' : '') + '" data-index="' + i + '" title="' + esc(c.s + ' \\u00b7 ' + c.a + ' \\u00b7 ' + date(c.d) + ' \\u00b7 +' + c.p + ' \\u2212' + c.m) + '" style="left:' + left + '%;top:' + (lane * LANE + LANE / 2) + 'px;width:' + size + 'px;height:' + size + 'px;background:' + colour + '55;border-color:' + colour + '"></button>';
 			barsHtml += '<div class="vfhBar add" style="left:' + left + '%;height:' + Math.max(1, Math.round(c.p / maxLines * 34)) + 'px"></div><div class="vfhBar del" style="left:' + left + '%;height:' + Math.max(c.m > 0 ? 1 : 0, Math.round(c.m / maxLines * 34)) + 'px"></div>';
 		});
@@ -309,13 +322,37 @@ const SCRIPT = `
 		var target = e.target instanceof Element ? e.target : null;
 		if (target === null) return;
 		var rangeButton = target.closest('.vfhRange button'), bubble = target.closest('.vfhBubble'), action = target.closest('[data-action]');
-		if (rangeButton) { range = parseInt(rangeButton.dataset.range); render(); }
+		if (rangeButton) { range = parseInt(rangeButton.dataset.range); zoom = null; render(); }
+		else if (target.closest('.vfhZoomReset')) { zoom = null; render(); }
 		else if (bubble) { selected = parseInt(bubble.dataset.index); document.querySelectorAll('.vfhBubble').forEach(function (b) { b.classList.toggle('selected', b === bubble); }); renderDetails(); }
 		else if (action) { vscode.postMessage({ command: action.dataset.action, index: selected }); }
 	});
 	document.addEventListener('dblclick', function (e) {
 		var bubble = e.target instanceof Element ? e.target.closest('.vfhBubble') : null;
 		if (bubble) vscode.postMessage({ command: 'openChanges', index: parseInt(bubble.dataset.index) });
+	});
+	// Dragging across the bars zooms into the range of dates
+	var barsElem = document.getElementById('bars'), brush = null, brushStart = 0;
+	var brushX = function (e) { var r = barsElem.getBoundingClientRect(); return Math.min(Math.max(e.clientX - r.left, 0), r.width); };
+	barsElem.addEventListener('mousedown', function (e) {
+		if (view === null || e.button !== 0) return;
+		brushStart = brushX(e);
+		brush = document.createElement('div'); brush.className = 'vfhBrush'; brush.style.left = brushStart + 'px'; brush.style.width = '0px';
+		barsElem.appendChild(brush);
+		e.preventDefault();
+	});
+	document.addEventListener('mousemove', function (e) {
+		if (brush === null) return;
+		var x = brushX(e); brush.style.left = Math.min(brushStart, x) + 'px'; brush.style.width = Math.abs(x - brushStart) + 'px';
+	});
+	document.addEventListener('mouseup', function (e) {
+		if (brush === null) return;
+		var x = brushX(e), from = Math.min(brushStart, x), to = Math.max(brushStart, x), width = barsElem.getBoundingClientRect().width;
+		brush.remove(); brush = null;
+		if (to - from < 6 || view === null || width === 0) return;
+		var toDate = function (px) { return view.oldest + (px / width * 100 - 2) / 96 * view.span; };
+		zoom = { from: toDate(from), to: toDate(to) };
+		render();
 	});
 	if (COMMITS.length > 0 && COMMITS[0].d - COMMITS[COMMITS.length - 1].d < 365 * 86400) range = 0;
 	render();

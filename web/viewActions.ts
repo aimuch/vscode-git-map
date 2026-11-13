@@ -986,6 +986,7 @@ class ViewActions {
 			const onlyStaged = msg.stagedSupported && hasStaged ? <boolean>values[index++] : false;
 			runAction({ command: 'pushStash', repo: this.view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[index], paths: paths, onlyStaged: onlyStaged }, t('Stashing uncommitted changes'));
 		}, target);
+		if (selectable) addFileSelectionToDialog(files.length);
 	}
 
 	/**
@@ -1000,9 +1001,9 @@ class ViewActions {
 			return;
 		}
 		const isHead = msg.commitHash === this.view.getCommitHead();
-		dialog.showForm(t('Edit the message of commit <b><i>{0}</i></b>:', abbrevCommit(msg.commitHash)) + '<br/><i>' + (isHead
-			? t('If the commit has been pushed, the branch must be force pushed afterwards.')
-			: t('The later commits are rebased onto the changed commit (they get new hashes). If they have been pushed, the branch must be force pushed afterwards.')) + '</i>', [
+		dialog.showForm(t('Edit the message of commit <b><i>{0}</i></b>:', abbrevCommit(msg.commitHash)) +
+			(isHead ? '' : '<br/><i>' + t('The later commits are rebased onto the changed commit (they get new hashes).') + '</i>') +
+			(msg.pushedTo !== null ? '<div class="dialogCallout warning">' + SVG_ICONS.alert + '<span>' + t('This commit is already on <b>{0}</b>. Changing it gives it a new hash, so the branch must be force-pushed.', escapeHtml(msg.pushedTo)) + '</span></div>' : ''), [
 			{ type: DialogInputType.TextArea, name: t('Message'), default: msg.message, placeholder: null }
 		], t('Save Message'), (values) => {
 			const message = (<string>values[0]).trim();
@@ -1037,8 +1038,8 @@ class ViewActions {
 				type: DialogInputType.Radio,
 				name: t('How'),
 				options: [
-					{ name: t('As commits on the current branch (keeping their authors & messages)'), value: 'commits' },
-					{ name: t('As uncommitted changes'), value: 'changes' }
+					{ name: t('As commits on the current branch'), description: t('Keeps their authors & messages (git am)'), value: 'commits' },
+					{ name: t('As uncommitted changes'), description: t('Merges with your changes where it can (git apply --3way)'), value: 'changes' }
 				],
 				default: 'commits'
 			}], t('Apply'), (values) => apply(values[0] === 'commits'), null);
@@ -1106,4 +1107,36 @@ class ViewActions {
 function getPatchName(hash: string, subject: string) {
 	const slug = subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50);
 	return abbrevCommit(hash) + (slug !== '' ? '-' + slug : '') + '.patch';
+}
+
+/**
+ * Add a "Files" heading with "All" & "None" to the checkboxes of the files of the open Stash dialog (inputs 1 to count), and name its
+ * button after the number of files selected (e.g. "Stash 2 Files").
+ * @param count The number of files.
+ */
+function addFileSelectionToDialog(count: number) {
+	const first = document.getElementById('dialogInput1'), action = document.getElementById('dialogAction');
+	const row = first !== null ? first.closest('tr') : null;
+	if (row === null || row.parentNode === null || action === null) return;
+	const header = document.createElement('tr');
+	header.className = 'dialogFilesHeader';
+	header.innerHTML = '<td colspan="2"><div class="dialogFormLabel">' + t('Files') + '<span class="dialogFormLinks"><span class="dialogLink" data-select="all" role="button" tabindex="0">' + t('All') + '</span> · <span class="dialogLink" data-select="none" role="button" tabindex="0">' + t('None') + '</span></span></div></td>';
+	row.parentNode.insertBefore(header, row);
+	const inputs: HTMLInputElement[] = [];
+	for (let i = 1; i <= count; i++) {
+		const input = document.getElementById('dialogInput' + i);
+		if (input instanceof HTMLInputElement) inputs.push(input);
+	}
+	const update = () => {
+		const selected = inputs.filter((input) => input.checked).length;
+		action.textContent = selected !== 1 ? t('Stash {0} Files', selected) : t('Stash 1 File');
+	};
+	header.addEventListener('click', (e) => {
+		const link = e.target instanceof Element ? <HTMLElement | null>e.target.closest('[data-select]') : null;
+		if (link === null) return;
+		inputs.forEach((input) => input.checked = link.dataset.select === 'all');
+		update();
+	});
+	inputs.forEach((input) => input.addEventListener('change', update));
+	update();
 }

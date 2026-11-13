@@ -179,7 +179,11 @@ class GitGraphView {
 			this.clearCommits();
 			this.requestLoadRepoInfoAndCommits(true, true);
 		});
-		this.branchDropdown.setFooterAction(SVG_ICONS.branches + '<span>' + t('Clean Up Branches') + ELLIPSIS + '</span>', () => this.branchCleanup.show());
+		this.setBranchCleanupCount(null);
+		// The number of branches that can be cleaned up is only loaded when the Branches dropdown is opened (not each time a repository is loaded)
+		this.branchDropdown.setOpenCallback(() => {
+			if (!this.branchCleanup.isOpen()) sendMessage({ command: 'loadBranchCleanup', repo: this.currentRepo });
+		});
 
 		this.authorDropdown = new Dropdown('authorDropdown', false, true, 'Authors', (values) => {
 			this.currentAuthors = values;
@@ -373,6 +377,7 @@ class GitGraphView {
 			this.branchCompare.reset();
 		}
 		this.branchCleanup.close();
+		if (repo !== this.currentRepo) this.setBranchCleanupCount(null);
 		this.lastUndoId = -1;
 		this.hideUndoToast();
 		this.selectedCommits = new Set();
@@ -597,6 +602,15 @@ class GitGraphView {
 		if (filter === null ? current === null : current !== null && filter.size === current.size && Array.from(filter).every((hash) => current.has(hash))) return;
 		this.commitFilter = filter;
 		this.showCommits();
+	}
+
+	/**
+	 * Show the number of branches that can be cleaned up on "Clean Up Branches…" at the bottom of the Branches dropdown (it's hidden when
+	 * there are none).
+	 * @param count The number of branches (NULL => not known yet).
+	 */
+	public setBranchCleanupCount(count: number | null) {
+		this.branchDropdown.setFooterAction(count === 0 ? null : SVG_ICONS.branches + '<span>' + t('Clean Up Branches') + ELLIPSIS + '</span>' + (count !== null ? '<span class="dropdownFooterBadge">' + count + '</span>' : ''), () => this.branchCleanup.show());
 	}
 
 	/**

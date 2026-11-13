@@ -77,6 +77,7 @@ interface DialogSelectInputOption {
 
 interface DialogRadioInputOption {
 	readonly name: string;
+	readonly description?: string; // Shown below the name
 	readonly value: string;
 }
 
@@ -225,7 +226,7 @@ class Dialog {
 			let inputHtml;
 			if (input.type === DialogInputType.Radio) {
 				inputHtml = '<span class="dialogFormRadio">' +
-					input.options.map((option, optionId) => '<label><input type="radio" name="dialogInput' + id + '" value="' + optionId + '"' + (option.value === input.default ? ' checked' : '') + ' tabindex="' + (id + 1) + '"/><span class="customRadio"></span>' + escapeHtml(option.name) + '</label>').join('<br>') +
+					input.options.map((option, optionId) => '<label><input type="radio" name="dialogInput' + id + '" value="' + optionId + '"' + (option.value === input.default ? ' checked' : '') + ' tabindex="' + (id + 1) + '"/><span class="customRadio"></span>' + (typeof option.description === 'string' ? '<span class="dialogRadioText">' + escapeHtml(option.name) + '<span class="dialogRadioDescription">' + escapeHtml(option.description) + '</span></span>' : escapeHtml(option.name)) + '</label>').join('<br>') +
 					'</span>';
 			} else if (input.type === DialogInputType.Select) {
 				inputHtml = '<div id="dialogFormSelect' + id + '"></div>' + (multiElement ? '' : infoHtml);

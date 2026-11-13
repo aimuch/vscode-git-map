@@ -790,7 +790,16 @@ async function run() {
 		const results = [];
 
 		const loaded = await respond({ command: 'loadCommitMessage', repo: repo, commitHash: older }, 'loadCommitMessage');
-		assert(loaded.error === null && loaded.message === 'Add b', 'Unexpected message: ' + JSON.stringify(loaded));
+		assert(loaded.error === null && loaded.message === 'Add b' && loaded.pushedTo === null, 'Unexpected message: ' + JSON.stringify(loaded));
+		// A commit that has been pushed is said to be on its remote branch
+		const origin = path.join(path.dirname(repo), 'rewrite-commits-origin.git');
+		fs.rmSync(origin, { recursive: true, force: true });
+		git(path.dirname(repo), 'init', '-q', '--bare', origin);
+		git(repo, 'remote', 'add', 'origin', origin);
+		git(repo, 'push', '-q', 'origin', 'main');
+		const pushed = await respond({ command: 'loadCommitMessage', repo: repo, commitHash: older }, 'loadCommitMessage');
+		assert(pushed.pushedTo === 'origin/main', 'The commit isn\'t said to have been pushed: ' + JSON.stringify(pushed));
+		git(repo, 'remote', 'remove', 'origin');
 
 		// The latest commit (amended)
 		let edited = await respond({ command: 'editCommitMessage', repo: repo, commitHash: latest, message: 'Add c\n\nWith a body' }, 'editCommitMessage');
@@ -958,7 +967,7 @@ async function run() {
 		const repo = createScratchRepo('visual-file-history-page', { 'readme.txt': 'The first commit doesn\'t change code.txt\n' });
 		await view.repoManager.registerRepo(repo, false);
 		// Commits by two authors over two years (the latest 3 within 90 days)
-		const day = 86400, now = Math.floor(Date.now() / 1000), commits = [[700, 'E2E Author', 'Grow the file'], [200, 'Second Author', 'Rewrite the middle'], [60, 'E2E Author', 'Fix a line'], [20, 'Second Author', 'Add the end'], [5, 'E2E Author', 'Tidy up']];
+		const day = 86400, now = Math.floor(Date.now() / 1000), commits = [[700, 'E2E Author', 'Grow the file'], [200, 'Second Author', 'Rewrite the middle'], [60, 'E2E Author', 'Fix a line'], [20, 'Second Author', 'Add the end'], [5, 'E2E Author', 'Tidy up'], [5, 'E2E Author', 'Tidy up more']];
 		let contents = '1\n';
 		commits.forEach(([daysAgo, author, subject], i) => {
 			contents += Array.from({ length: (i + 1) * 3 }, (_, j) => 'line ' + i + '.' + j + '\n').join('');
@@ -983,18 +992,25 @@ async function run() {
 				'click(document.querySelector(".vfhRange button[data-range=\\"0\\"]"));r.all=q(".vfhBubble").length;' +
 				'click(document.querySelector(".vfhBubble[data-index=\\"2\\"]"));r.selected=document.querySelector(".vfhDetails .subject").textContent;' +
 				'click(document.querySelector(".vfhDetails [data-action=\\"openChanges\\"]"));click(document.querySelector(".vfhBubble[data-index=\\"0\\"]"),"dblclick");' +
-				'r.summary=document.getElementById("summary").textContent;r.sent=sent;}catch(e){r.error=String(e&&e.stack||e);}api.postMessage({command:"e2eResults",results:r});},100);});})();';
+				'r.summary=document.getElementById("summary").textContent;r.sent=sent.slice();' +
+				'r.lefts=Array.from(q(".vfhBubble")).map(function(b){return b.style.left;});' +
+				'var bars=document.getElementById("bars").getBoundingClientRect(),y=bars.top+10;function m(type,x){(type==="mousedown"?document.getElementById("bars"):document).dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,button:0,clientX:x,clientY:y}));}' +
+				'm("mousedown",bars.left+bars.width*0.9);m("mousemove",bars.left+bars.width*0.95);m("mouseup",bars.left+bars.width);' +
+				'r.zoomed=q(".vfhBubble").length;r.zoomPressed=q(".vfhRange button[aria-pressed=\\"true\\"]").length;var reset=document.querySelector(".vfhZoomReset");r.reset=!!reset;if(reset)click(reset);r.afterReset=q(".vfhBubble").length;}catch(e){r.error=String(e&&e.stack||e);}api.postMessage({command:"e2eResults",results:r});},100);});})();';
 			const results = new Promise((resolve) => { const listener = panel.webview.onDidReceiveMessage((msg) => { if (msg.command === 'e2eResults') { listener.dispose(); resolve(msg.results); } }); });
 			panel.webview.html = html.replace('<script nonce="' + nonce + '">', '<script nonce="' + nonce + '">' + test + '</script><script nonce="' + nonce + '">');
 			const r = await withTimeout(results, 20000, 'the test script in the Visual File History page');
 			assert(typeof r.error === 'undefined', 'The test script failed: ' + r.error);
-			assert(JSON.stringify(r.initialRange) === '["365"]' && r.initial === 4 && r.all === 5 && r.days90 === 3 && r.year === 4, 'Unexpected time ranges: ' + JSON.stringify(r));
+			assert(JSON.stringify(r.initialRange) === '["365"]' && r.initial === 5 && r.all === 6 && r.days90 === 4 && r.year === 5, 'Unexpected time ranges: ' + JSON.stringify(r));
 			assert(JSON.stringify(r.lanes) === JSON.stringify(['EE2E Author', 'SSecond Author']), 'Unexpected rows: ' + JSON.stringify(r.lanes));
-			assert(r.selected === 'Fix a line' && JSON.stringify(r.sent) === JSON.stringify([{ command: 'openChanges', index: 2 }, { command: 'openChanges', index: 0 }]), 'Unexpected selection / messages: ' + JSON.stringify(r));
-			assert(r.summary.includes('5') && r.summary.includes('2'), 'Unexpected summary: ' + r.summary);
+			assert(r.selected === 'Add the end' && JSON.stringify(r.sent) === JSON.stringify([{ command: 'openChanges', index: 2 }, { command: 'openChanges', index: 0 }]), 'Unexpected selection / messages: ' + JSON.stringify(r));
+			assert(r.summary.includes('6 commits') && r.summary.includes('2 authors'), 'Unexpected summary: ' + r.summary);
+			// The two commits made at the same time are spread out, and dragging across the bars zooms into the latest commits
+			assert(new Set(r.lefts).size === r.lefts.length, 'Commits overlap: ' + JSON.stringify(r.lefts));
+			assert(r.zoomed > 0 && r.zoomed < r.all && r.zoomPressed === 0 && r.reset && r.afterReset === r.all, 'Unexpected zoom: ' + JSON.stringify({ zoomed: r.zoomed, pressed: r.zoomPressed, reset: r.reset, afterReset: r.afterReset }));
 			// The extension opened the changes of the commits
 			await waitFor('the changes of the commit to be opened', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label.startsWith('code.txt')));
-			return 'Rows: ' + r.lanes.join(', ') + '; circles: all ' + r.all + ', 1 year ' + r.year + ', 90 days ' + r.days90 + '; selected "' + r.selected + '"; opened its changes (button & double-click)';
+			return 'Rows: ' + r.lanes.join(', ') + '; circles: all ' + r.all + ', 1 year ' + r.year + ', 90 days ' + r.days90 + ', zoomed ' + r.zoomed + '; selected "' + r.selected + '"; opened its changes (button & double-click)';
 		} finally {
 			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 		}
@@ -1865,8 +1881,11 @@ async function run() {
 				enableScripts: true,
 				localResourceRoots: [vscode.Uri.file(path.join(extension.extensionPath, 'media'))]
 			});
+			let lastCheck = null;
 			const harnessResults = new Promise((resolve) => panel.webview.onDidReceiveMessage((msg) => {
-				if (msg.command === 'e2eResults') {
+				if (msg.command === 'e2eProgress') {
+					lastCheck = msg.id;
+				} else if (msg.command === 'e2eResults') {
 					resolve(msg.results);
 				} else if (msg.command === 'e2eScreenshot') {
 					// Screenshots of the UI, taken in English only
@@ -1874,7 +1893,9 @@ async function run() {
 				}
 			}));
 			panel.webview.html = harnessHtml;
-			const uiResults = await withTimeout(harnessResults, 180000, 'the Webview UI harness to report its results');
+			const uiResults = await withTimeout(harnessResults, 180000, 'the Webview UI harness to report its results').catch((err) => {
+				throw new Error(err.message + ' (the last check started: ' + lastCheck + ')');
+			});
 			uiResults.forEach((result) => results.push(Object.assign({}, result, { title: titlePrefix + result.title, durationMs: Date.now() - start })));
 			panel.dispose();
 		} catch (err) {

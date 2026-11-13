@@ -31,6 +31,7 @@ class Dropdown {
 	private readonly filterInput: HTMLInputElement;
 	private readonly footerElem: HTMLDivElement;
 	private footerAction: (() => void) | null = null;
+	private openCallback: (() => void) | null = null;
 
 	/**
 	 * Constructs a Dropdown instance.
@@ -83,6 +84,7 @@ class Dropdown {
 				if (this.dropdownVisible) {
 					this.filterInput.value = '';
 					this.filter();
+					if (this.openCallback !== null) this.openCallback();
 				}
 				this.elem.classList.toggle('dropdownOpen');
 				if (this.dropdownVisible) this.filterInput.focus();
@@ -102,6 +104,14 @@ class Dropdown {
 		}, true);
 		document.addEventListener('contextmenu', () => this.close(), true);
 		this.filterInput.addEventListener('keyup', () => this.filter());
+	}
+
+	/**
+	 * Set a callback invoked each time the dropdown is opened.
+	 * @param callback The callback (NULL => none).
+	 */
+	public setOpenCallback(callback: (() => void) | null) {
+		this.openCallback = callback;
 	}
 
 	/**

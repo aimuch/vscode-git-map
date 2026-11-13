@@ -214,6 +214,18 @@ body.vscode-high-contrast .dropdownOption:hover{
 .dropdownFooterAction:hover{
 	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.15));
 }
+.dropdownFooterBadge{
+	margin-left:auto;
+	min-width:18px;
+	padding:0 6px;
+	box-sizing:border-box;
+	border-radius:9px;
+	background-color:var(--vscode-badge-background, #616161);
+	color:var(--vscode-badge-foreground, #ffffff);
+	font-size:11px;
+	line-height:18px;
+	text-align:center;
+}
 .dropdownFooterAction svg{
 	flex:0 0 auto;
 	width:14px;
