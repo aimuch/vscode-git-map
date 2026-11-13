@@ -737,6 +737,11 @@ async function run() {
 		const files = response.fileChanges.map((file) => file.type + ' ' + file.newFilePath).sort();
 		assert(JSON.stringify(files) === JSON.stringify(['A f.txt', 'M a.txt']), 'Unexpected files (m.txt is only on main, so it isn\'t a change of feature): ' + JSON.stringify(files));
 
+		// Between the latest commits (A..B): m.txt is only on main, so it's deleted
+		const latest = await respond({ command: 'compareBranches', repo: repo, left: 'feature', right: 'main', fromMergeBase: false }, 'compareBranches');
+		const latestFiles = latest.fileChanges.map((file) => file.type + ' ' + file.newFilePath).sort();
+		assert(JSON.stringify(latestFiles) === JSON.stringify(['A f.txt', 'D m.txt', 'M a.txt']), 'Unexpected files between the latest commits: ' + JSON.stringify(latestFiles));
+
 		const opened = await respond({ command: 'openAllChanges', repo: repo, title: 'feature ↔ main', fromHash: comparison.mergeBase, toHash: comparison.leftHash, fileChanges: response.fileChanges }, 'openAllChanges');
 		try {
 			assert(opened.error === null, 'The changes couldn\'t be opened together: ' + opened.error);
@@ -828,7 +833,11 @@ async function run() {
 		const started = await respond({ command: 'bisect', repo: repo, action: 'start', commitHash: 'HEAD', goodRef: 'v1' }, 'bisect');
 		assert(started.error === null, 'Bisecting didn\'t start: ' + started.error);
 		let state = (await respond({ command: 'loadBisectState', repo: repo }, 'loadBisectState', (msg) => msg.repo === repo)).state, steps = 0;
-		assert(state !== null && state.bad === hashes[7] && state.remaining !== null, 'Unexpected state: ' + JSON.stringify(state));
+		assert(state !== null && state.bad === hashes[7] && state.remaining !== null && state.candidates.length === 8 && state.candidates.includes(hashes[7]) && !state.candidates.includes(git(repo, 'rev-parse', 'v1')), 'Unexpected state: ' + JSON.stringify(state));
+		// The log of the bisect is opened in an editor
+		const log = await respond({ command: 'viewBisectLog', repo: repo }, 'viewBisectLog');
+		assert(log.error === null && vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.fileName.endsWith('BISECT_LOG') && vscode.window.activeTextEditor.document.getText().includes('git bisect start'), 'The bisect log wasn\'t opened: ' + log.error);
+		await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
 		while (state !== null && state.firstBad === null && steps < 10) {
 			const action = fs.readFileSync(path.join(repo, 'value.txt'), 'utf8').startsWith('bug') ? 'bad' : 'good';
 			const marked = await respond({ command: 'bisect', repo: repo, action: action, commitHash: null, goodRef: null }, 'bisect');
@@ -929,13 +938,63 @@ async function run() {
 			await vscode.commands.executeCommand('git-map.visualFileHistory', vscode.Uri.file(path.join(repo, 'new.txt')));
 			const shown = await waitFor('the Visual File History', () => VisualFileHistory.getInstance().getShown());
 			assert(shown.repo === repo && shown.filePath === 'new.txt' && shown.commits === 4, 'Unexpected history: ' + JSON.stringify({ repo: shown.repo, filePath: shown.filePath, commits: shown.commits }));
-			assert(shown.html.includes('Content-Security-Policy') && shown.html.includes('Add another line') && shown.html.includes('E2E Author'), 'The page doesn\'t show the commits');
+			assert(shown.html.includes('Content-Security-Policy') && shown.html.includes('Add another line') && shown.html.includes('E2E Author') && shown.html.includes('"f":"old.txt"'), 'The page doesn\'t show the commits');
 			await waitFor('the tab of the Visual File History', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label === 'History: new.txt'));
+			await sleep(500);
+			await screenshot('visual-file-history');
 
 			// From the Git Map View
 			await view.respondToMessage({ command: 'viewVisualFileHistory', repo: repo, filePath: 'new.txt' });
 			await waitFor('the history to be shown again', () => { const again = VisualFileHistory.getInstance().getShown(); return again !== null && again.commits === 4; });
 			return 'Showed 4 commits of new.txt (including those before it was renamed), from a URI and from the Git Map View';
+		} finally {
+			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		}
+	});
+
+	await check('ui-visual-file-history', '[GitLens] The Visual File History page shows a row for each author, the commits in the time range chosen (90 days, 1 year, All), the selected commit\'s details, and opens its changes (clicking the button, or double-clicking a circle)', async () => {
+		const view = await getView();
+		const { VisualFileHistory } = require(path.join(extension.extensionPath, 'out', 'visualFileHistory.js'));
+		const repo = createScratchRepo('visual-file-history-page', { 'readme.txt': 'The first commit doesn\'t change code.txt\n' });
+		await view.repoManager.registerRepo(repo, false);
+		// Commits by two authors over two years (the latest 3 within 90 days)
+		const day = 86400, now = Math.floor(Date.now() / 1000), commits = [[700, 'E2E Author', 'Grow the file'], [200, 'Second Author', 'Rewrite the middle'], [60, 'E2E Author', 'Fix a line'], [20, 'Second Author', 'Add the end'], [5, 'E2E Author', 'Tidy up']];
+		let contents = '1\n';
+		commits.forEach(([daysAgo, author, subject], i) => {
+			contents += Array.from({ length: (i + 1) * 3 }, (_, j) => 'line ' + i + '.' + j + '\n').join('');
+			fs.writeFileSync(path.join(repo, 'code.txt'), contents);
+			git(repo, 'add', 'code.txt');
+			const date = new Date((now - daysAgo * day) * 1000).toISOString();
+			cp.execFileSync('git', ['commit', '-q', '-m', subject], { cwd: repo, env: Object.assign({}, GIT_ENV, { GIT_AUTHOR_NAME: author, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date }) });
+		});
+		try {
+			await vscode.commands.executeCommand('git-map.visualFileHistory', { repo: repo, filePath: 'code.txt' });
+			await waitFor('the Visual File History', () => { const shown = VisualFileHistory.getInstance().getShown(); return shown !== null && shown.repo === repo; });
+			// Run a test script in the page itself (its messages are still handled by the extension)
+			const panel = VisualFileHistory.getInstance().panel;
+			const html = panel.webview.html, nonce = html.match(/<script nonce="([^"]+)"/)[1];
+			const test = '(function(){var api=acquireVsCodeApi(),sent=[];window.acquireVsCodeApi=function(){return{postMessage:function(m){sent.push(m);api.postMessage(m);}};};' +
+				'function q(s){return document.querySelectorAll(s);}function click(e,type){e.dispatchEvent(new MouseEvent(type||"click",{bubbles:true,cancelable:true}));}' +
+				'window.addEventListener("load",function(){setTimeout(function(){var r={};try{' +
+				'r.initialRange=Array.from(q(".vfhRange button")).filter(function(b){return b.getAttribute("aria-pressed")==="true";}).map(function(b){return b.dataset.range;});' +
+				'r.lanes=Array.from(q(".vfhLane")).map(function(l){return l.textContent;});r.initial=q(".vfhBubble").length;' +
+				'click(document.querySelector(".vfhRange button[data-range=\\"90\\"]"));r.days90=q(".vfhBubble").length;' +
+				'click(document.querySelector(".vfhRange button[data-range=\\"365\\"]"));r.year=q(".vfhBubble").length;' +
+				'click(document.querySelector(".vfhRange button[data-range=\\"0\\"]"));r.all=q(".vfhBubble").length;' +
+				'click(document.querySelector(".vfhBubble[data-index=\\"2\\"]"));r.selected=document.querySelector(".vfhDetails .subject").textContent;' +
+				'click(document.querySelector(".vfhDetails [data-action=\\"openChanges\\"]"));click(document.querySelector(".vfhBubble[data-index=\\"0\\"]"),"dblclick");' +
+				'r.summary=document.getElementById("summary").textContent;r.sent=sent;}catch(e){r.error=String(e&&e.stack||e);}api.postMessage({command:"e2eResults",results:r});},100);});})();';
+			const results = new Promise((resolve) => { const listener = panel.webview.onDidReceiveMessage((msg) => { if (msg.command === 'e2eResults') { listener.dispose(); resolve(msg.results); } }); });
+			panel.webview.html = html.replace('<script nonce="' + nonce + '">', '<script nonce="' + nonce + '">' + test + '</script><script nonce="' + nonce + '">');
+			const r = await withTimeout(results, 20000, 'the test script in the Visual File History page');
+			assert(typeof r.error === 'undefined', 'The test script failed: ' + r.error);
+			assert(JSON.stringify(r.initialRange) === '["365"]' && r.initial === 4 && r.all === 5 && r.days90 === 3 && r.year === 4, 'Unexpected time ranges: ' + JSON.stringify(r));
+			assert(JSON.stringify(r.lanes) === JSON.stringify(['EE2E Author', 'SSecond Author']), 'Unexpected rows: ' + JSON.stringify(r.lanes));
+			assert(r.selected === 'Fix a line' && JSON.stringify(r.sent) === JSON.stringify([{ command: 'openChanges', index: 2 }, { command: 'openChanges', index: 0 }]), 'Unexpected selection / messages: ' + JSON.stringify(r));
+			assert(r.summary.includes('5') && r.summary.includes('2'), 'Unexpected summary: ' + r.summary);
+			// The extension opened the changes of the commits
+			await waitFor('the changes of the commit to be opened', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label.startsWith('code.txt')));
+			return 'Rows: ' + r.lanes.join(', ') + '; circles: all ' + r.all + ', 1 year ' + r.year + ', 90 days ' + r.days90 + '; selected "' + r.selected + '"; opened its changes (button & double-click)';
 		} finally {
 			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 		}
@@ -1807,10 +1866,15 @@ async function run() {
 				localResourceRoots: [vscode.Uri.file(path.join(extension.extensionPath, 'media'))]
 			});
 			const harnessResults = new Promise((resolve) => panel.webview.onDidReceiveMessage((msg) => {
-				if (msg.command === 'e2eResults') resolve(msg.results);
+				if (msg.command === 'e2eResults') {
+					resolve(msg.results);
+				} else if (msg.command === 'e2eScreenshot') {
+					// Screenshots of the UI, taken in English only
+					(titlePrefix === '[Webview UI] ' ? screenshot('ui-' + msg.name) : Promise.resolve(null)).then((file) => panel.webview.postMessage({ command: 'e2eScreenshotTaken', id: msg.id, file: file }));
+				}
 			}));
 			panel.webview.html = harnessHtml;
-			const uiResults = await withTimeout(harnessResults, 90000, 'the Webview UI harness to report its results');
+			const uiResults = await withTimeout(harnessResults, 180000, 'the Webview UI harness to report its results');
 			uiResults.forEach((result) => results.push(Object.assign({}, result, { title: titlePrefix + result.title, durationMs: Date.now() - start })));
 			panel.dispose();
 		} catch (err) {

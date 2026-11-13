@@ -828,7 +828,7 @@ export class GitGraphView extends Disposable {
 				let fileChanges: ReadonlyArray<any> = [], error = result.error;
 				if (result.comparison !== null) {
 					// The changes of the left branch since it diverged from the right branch (what merging it would bring in)
-					const from = result.comparison.mergeBase !== null ? result.comparison.mergeBase : result.comparison.rightHash;
+					const from = msg.fromMergeBase !== false && result.comparison.mergeBase !== null ? result.comparison.mergeBase : result.comparison.rightHash;
 					const comparison = await this.dataSource.getCommitComparison(msg.repo, from, result.comparison.leftHash);
 					fileChanges = comparison.fileChanges;
 					error = comparison.error;
@@ -889,6 +889,19 @@ export class GitGraphView extends Disposable {
 			case 'loadBisectState':
 				this.sendMessage({ command: 'loadBisectState', repo: msg.repo, state: await this.gitFeatures.getBisectState(msg.repo) });
 				break;
+			case 'viewBisectLog': {
+				const file = await this.gitFeatures.getBisectLogPath(msg.repo);
+				let error: ErrorInfo = file === null ? t('No bisect is in progress.') : null;
+				if (file !== null) {
+					try {
+						await vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true, viewColumn: getConfig().openNewTabEditorGroup });
+					} catch (err) {
+						error = String(err);
+					}
+				}
+				this.sendMessage({ command: 'viewBisectLog', error: error });
+				break;
+			}
 			case 'savePatch':
 				this.sendMessage({ command: 'savePatch', error: await this.savePatch(msg.repo, msg.kind, msg.hashes, msg.name, msg.copy) });
 				break;

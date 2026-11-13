@@ -248,6 +248,7 @@ class OperationBar {
 	private readonly elem: HTMLElement;
 	private operation: GG.GitOperation | null = null;
 	private bisect: GG.GitBisectState | null = null;
+	private bisectCandidates: Set<string> | null = null; // The commits that can still be the first bad commit
 
 	/**
 	 * Construct a new OperationBar instance.
@@ -290,6 +291,7 @@ class OperationBar {
 		if (msg.repo !== this.view.currentRepo) return;
 		const changed = JSON.stringify(msg.state) !== JSON.stringify(this.bisect);
 		this.bisect = msg.state;
+		this.bisectCandidates = msg.state !== null && msg.state.candidates !== null ? new Set(msg.state.candidates) : null;
 		this.render(this.operation);
 		if (changed) this.view.render(); // The labels of the good, bad & tested commits are shown on their rows
 	}
@@ -298,6 +300,17 @@ class OperationBar {
 	 * Get the HTML of the label of a commit that has been marked while bisecting (shown before its message).
 	 * @param hash The hash of the commit.
 	 */
+	/**
+	 * Get the class of the row of a commit while bisecting: commits that can no longer be the first bad commit are dimmed.
+	 * @param hash The hash of the commit.
+	 * @returns The class (with a leading space), or an empty string.
+	 */
+	public getBisectRowClass(hash: string) {
+		const bisect = this.bisect;
+		if (bisect === null || bisect.firstBad !== null || this.bisectCandidates === null || hash === UNCOMMITTED || this.bisectCandidates.has(hash)) return '';
+		return ' bisectExcluded';
+	}
+
 	public getBisectLabelHtml(hash: string) {
 		const bisect = this.bisect;
 		if (bisect === null) return '';
@@ -318,6 +331,8 @@ class OperationBar {
 		if (bisect === null) return;
 		if (action === 'viewFirstBad') {
 			if (bisect.firstBad !== null) this.view.scrollToCommit(bisect.firstBad, true, true);
+		} else if (action === 'viewLog') {
+			sendMessage({ command: 'viewBisectLog', repo: this.view.currentRepo });
 		} else if (action === 'good' || action === 'bad' || action === 'skip' || action === 'reset') {
 			runAction({ command: 'bisect', repo: this.view.currentRepo, action: action, commitHash: null, goodRef: null }, action === 'reset' ? t('Stopping Bisecting') : t('Bisecting'));
 		}
@@ -379,7 +394,7 @@ class OperationBar {
 		return SVG_ICONS.search + '<span class="operationBarText"><b>' + t('Bisecting') + '</b> — ' + status +
 			(bisect.current !== null && bisect.bad !== null && bisect.good.length > 0 ? ' <span class="operationBarMuted">' + t('Checked out {0}. Test it, then mark it:', '<span class="bisectHash">' + abbrevCommit(bisect.current) + '</span>') + '</span>' : '') + '</span>' +
 			button('good', SVG_ICONS.check + t('Good'), 'good') + button('bad', SVG_ICONS.close + t('Bad'), 'bad') + button('skip', t('Skip')) +
-			'<span class="operationBarSpacer"></span>' + button('reset', t('Stop Bisecting'));
+			'<span class="operationBarSpacer"></span>' + button('viewLog', t('View Log')) + button('reset', t('Stop Bisecting'));
 	}
 
 	/**

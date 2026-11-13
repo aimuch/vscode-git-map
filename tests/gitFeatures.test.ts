@@ -343,6 +343,7 @@ describe('Bisecting', () => {
 		expect(state!.good).toStrictEqual([hashes[0]]);
 		expect(state!.remaining).not.toBeNull();
 		expect(state!.steps).not.toBeNull();
+		expect(state!.candidates).toStrictEqual(hashes.slice(1).reverse());
 		for (let step = 0; step < 10 && state !== null && state.firstBad === null; step++) {
 			const action = read('value.txt').startsWith('bug') ? 'bad' : 'good';
 			expect(await features.bisect(repo, action, null, null)).toBeNull();

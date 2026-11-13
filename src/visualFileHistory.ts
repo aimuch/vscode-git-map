@@ -164,7 +164,10 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		year: t('1 year'),
 		all: t('All'),
 		commits: t('{0} commits'),
+		commit1: t('1 commit'),
 		authors: t('{0} authors'),
+		author1: t('1 author'),
+		renamedFrom: t('Renamed from {0}'),
 		lines: t('lines'),
 		others: t('Others'),
 		selected: t('Selected commit'),
@@ -177,7 +180,7 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		noCommits: t('No commits in this range.'),
 		hint: t('Click a circle to select its commit, double-click it to open its changes.')
 	};
-	const data = commits.map((commit) => ({ h: commit.hash, a: commit.author, e: commit.email, d: commit.date, s: commit.subject, p: commit.additions, m: commit.deletions }));
+	const data = commits.map((commit) => ({ h: commit.hash, a: commit.author, e: commit.email, d: commit.date, s: commit.subject, p: commit.additions, m: commit.deletions, f: commit.filePath }));
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
@@ -189,7 +192,7 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		'<div class="vfhBody"><figure class="vfhChart" aria-label="' + escapeHtml(t('Commits that changed the file, by author')) + '"><div class="vfhPlot"><div id="lanes" class="vfhLanes"></div><div id="plot" class="vfhArea"></div></div><div id="axis" class="vfhAxis"></div><div id="bars" class="vfhBars"></div>' +
 		'<figcaption class="vfhLegend"><span>' + escapeHtml(strings.sizeLegend) + '</span><span><i class="add"></i><i class="del"></i>' + escapeHtml(strings.barsLegend) + '</span><span>' + escapeHtml(strings.hint) + '</span></figcaption></figure>' +
 		'<aside id="details" class="vfhDetails" aria-live="polite"></aside></div>' +
-		'<script nonce="' + nonce + '">var COMMITS = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ', STRINGS = ' + JSON.stringify(strings).replace(/</g, '\\u003c') + ', LOCALE = ' + JSON.stringify(locale) + ';' + SCRIPT + '</script></body></html>';
+		'<script nonce="' + nonce + '">var COMMITS = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ', STRINGS = ' + JSON.stringify(strings).replace(/</g, '\\u003c') + ', LOCALE = ' + JSON.stringify(locale) + ', FILE = ' + JSON.stringify(filePath).replace(/</g, '\\u003c') + ';' + SCRIPT + '</script></body></html>';
 }
 
 function escapeHtml(text: string) {
@@ -211,7 +214,7 @@ button{font:inherit;color:inherit}
 .vfhButton.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
 .vfhButton:focus-visible,.vfhRange button:focus-visible,.vfhBubble:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
 .vfhSummary{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;font-size:12px}
-.vfhSummary span{padding:3px 10px;border-radius:10px;background:rgba(128,128,128,.15)}
+.vfhSummary > span{padding:3px 10px;border-radius:10px;background:rgba(128,128,128,.15)}
 .add{color:var(--vscode-gitDecoration-addedResourceForeground,#3fb950)}.del{color:var(--vscode-gitDecoration-deletedResourceForeground,#f85149)}
 .vfhBody{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
 .vfhChart{flex:999 1 560px;min-width:0;margin:0;padding:14px 16px 10px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));border-radius:8px;background:var(--vscode-sideBar-background,transparent)}
@@ -265,7 +268,9 @@ const SCRIPT = `
 		indexes.forEach(function (i) { var c = COMMITS[i]; counts[c.a] = (counts[c.a] || 0) + 1; add += c.p; del += c.m; });
 		var authors = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a]; }), lanes = authors.slice(0, MAX_LANES - (authors.length > MAX_LANES ? 1 : 0));
 		if (authors.length > lanes.length) lanes.push(null);
-		document.getElementById('summary').innerHTML = '<span>' + esc(format(STRINGS.commits, indexes.length)) + '</span><span>' + esc(format(STRINGS.authors, authors.length)) + '</span><span><span class="add">+' + add + '</span> <span class="del">\\u2212' + del + '</span> ' + esc(STRINGS.lines) + '</span>';
+		var renamed = indexes.length > 0 ? COMMITS[indexes[indexes.length - 1]].f : FILE;
+		document.getElementById('summary').innerHTML = '<span>' + esc(indexes.length === 1 ? STRINGS.commit1 : format(STRINGS.commits, indexes.length)) + '</span><span>' + esc(authors.length === 1 ? STRINGS.author1 : format(STRINGS.authors, authors.length)) + '</span><span><span class="add">+' + add + '</span> <span class="del">\\u2212' + del + '</span> ' + esc(STRINGS.lines) + '</span>' +
+			(renamed !== FILE ? '<span>' + esc(format(STRINGS.renamedFrom, renamed)) + '</span>' : '');
 		if (indexes.length === 0) {
 			plot.innerHTML = '<div class="vfhEmpty">' + esc(STRINGS.noCommits) + '</div>'; lanesElem.innerHTML = ''; bars.innerHTML = ''; axis.innerHTML = '';
 			document.getElementById('details').innerHTML = '';
@@ -285,7 +290,7 @@ const SCRIPT = `
 		});
 		plot.innerHTML = html;
 		bars.innerHTML = barsHtml;
-		var ticks = []; for (var t = 0; t <= 4; t++) ticks.push('<span>' + esc(date(oldest + span * t / 4)) + '</span>');
+		var ticks = [], previous = null; for (var t = 0; t <= 4; t++) { var label = date(oldest + span * t / 4); ticks.push('<span>' + (label !== previous ? esc(label) : '') + '</span>'); previous = label; }
 		axis.innerHTML = ticks.join('');
 		if (indexes.indexOf(selected) === -1) selected = indexes[0];
 		renderDetails();

@@ -3117,6 +3117,11 @@ label > input[type=radio]:checked ~ .customRadio:after{
 .compareBaseLabel{
 	background-color:rgba(128,128,128,0.25);
 }
+/* In the description of a commit (a row of flex items, as high as the row) */
+#commitTable tr.commit span.description .compareBaseLabel, #commitTable tr.commit span.description .bisectLabel{
+	flex-shrink:0;
+	align-self:center;
+}
 #comparePanel{
 	position:fixed;
 	top:0;
@@ -3233,6 +3238,13 @@ label > input[type=radio]:checked ~ .customRadio:after{
 	padding:10px;
 	color:var(--vscode-descriptionForeground);
 }
+.compareFromBase{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	font-size:12.5px;
+	cursor:pointer;
+}
 .comparePanelActions{
 	display:flex;
 	flex-wrap:wrap;
@@ -3275,7 +3287,7 @@ label > input[type=radio]:checked ~ .customRadio:after{
 }
 .branchCleanupItem{
 	display:grid;
-	grid-template-columns:20px minmax(0, 1fr) auto;
+	grid-template-columns:16px minmax(0, 1fr) auto;
 	column-gap:10px;
 	align-items:center;
 	padding:8px 12px;
@@ -3285,9 +3297,15 @@ label > input[type=radio]:checked ~ .customRadio:after{
 .branchCleanupItem:hover{
 	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.12));
 }
-.branchCleanupItem input{
-	margin:0;
-	accent-color:var(--vscode-focusBorder);
+.branchCleanupItem > .customCheckbox, .branchCleanupRemote > .customCheckbox, .explainDontAsk > .customCheckbox, .compareFromBase > .customCheckbox{
+	margin-top:0;
+}
+.branchCleanupItem > .customCheckbox{
+	align-self:start;
+	margin-top:2px;
+}
+.branchCleanupName{
+	display:block;
 }
 .branchCleanupText{
 	min-width:0;
@@ -3295,6 +3313,9 @@ label > input[type=radio]:checked ~ .customRadio:after{
 .branchCleanupName{
 	font-family:var(--vscode-editor-font-family);
 	font-size:12.5px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
 }
 .branchCleanupWarning{
 	color:var(--vscode-editorWarning-foreground, #cca700);
@@ -3371,6 +3392,9 @@ button.operationBarBtn svg{
 .operationBarMuted{
 	color:var(--vscode-descriptionForeground);
 }
+#commitTable tr.commit.bisectExcluded{
+	opacity:0.45;
+}
 .bisectLabel.good{
 	background-color:color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 25%, transparent);
 }
@@ -3390,7 +3414,7 @@ button.operationBarBtn svg{
 	vertical-align:-2px;
 }
 #cdvExplainView{
-	padding:12px 10px 16px 0;
+	padding:12px 12px 16px 10px;
 	line-height:19px;
 }
 #cdvExplainView.hidden{
@@ -3440,9 +3464,24 @@ button.operationBarBtn svg{
 .explainText p{
 	margin:0 0 8px;
 }
-.explainText ul, .explainText ol{
+/* (inside #cdvFiles, whose lists are the file tree) */
+#cdvExplainView .explainText ul, #cdvExplainView .explainText ol{
 	margin:0 0 8px;
-	padding-left:18px;
+	padding:0 0 0 18px;
+}
+#cdvExplainView .explainText ul{
+	list-style:disc;
+}
+#cdvExplainView .explainText ol{
+	list-style:decimal;
+}
+#cdvExplainView .explainText li{
+	margin-top:2px;
+	text-overflow:clip;
+	display:list-item;
+	overflow:visible;
+	white-space:normal;
+	overflow-wrap:anywhere;
 }
 .explainText code{
 	font-family:var(--vscode-editor-font-family);

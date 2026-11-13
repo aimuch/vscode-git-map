@@ -190,8 +190,11 @@ export class GitFeatures {
 		const bad = refs.find(([ref]) => ref === 'refs/bisect/bad'), good = refs.filter(([ref]) => ref.startsWith('refs/bisect/good-')).map(([, hash]) => hash);
 		const skipped = refs.filter(([ref]) => ref.startsWith('refs/bisect/skip-')).map(([, hash]) => hash);
 		const head = (await this.run(repo, ['rev-parse', '-q', '--verify', 'HEAD'])).stdout.toString().trim();
-		let remaining: number | null = null, steps: number | null = null;
+		let remaining: number | null = null, steps: number | null = null, candidates: string[] | null = null;
 		if (typeof bad !== 'undefined' && good.length > 0) {
+			// The commits that can still be the first bad commit (the bad commit, and its ancestors that aren't ancestors of a good commit)
+			const range = await this.run(repo, ['rev-list', '--max-count=10000', bad[1], '--not'].concat(good));
+			if (range.code === 0) candidates = splitLines(range.stdout);
 			const vars = (await this.run(repo, ['rev-list', '--bisect-vars', bad[1], '--not'].concat(good))).stdout.toString();
 			const value = (name: string) => {
 				const match = vars.match(new RegExp('^' + name + '=\'?(\\d+)', 'm'));
@@ -211,7 +214,8 @@ export class GitFeatures {
 			current: HASH_REGEXP.test(head) ? head : null,
 			remaining: remaining,
 			steps: steps,
-			firstBad: firstBad !== null ? firstBad[1] : null
+			firstBad: firstBad !== null ? firstBad[1] : null,
+			candidates: candidates
 		};
 	}
 
@@ -457,6 +461,16 @@ export class GitFeatures {
 		const result = await this.run(repo, ['rev-parse', '-q', '--verify', revision + '^{commit}']);
 		const hash = result.stdout.toString().trim();
 		return result.code === 0 && HASH_REGEXP.test(hash) ? hash : null;
+	}
+
+	/**
+	 * Get the path of the log of the bisect in progress.
+	 * @param repo The path of the repository.
+	 * @returns The path, or NULL if no bisect is in progress.
+	 */
+	public async getBisectLogPath(repo: string): Promise<string | null> {
+		const file = await this.getGitPath(repo, 'BISECT_LOG');
+		return file !== null && fs.existsSync(file) ? file : null;
 	}
 
 	/**

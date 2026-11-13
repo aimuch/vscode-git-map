@@ -69,6 +69,9 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'loadBisectState':
 				gitGraph.processLoadBisectStateResponse(msg);
 				break;
+			case 'viewBisectLog':
+				if (msg.error !== null) dialog.showError(t('Unable to View the Bisect Log'), msg.error, null, null);
+				break;
 			case 'savePatch':
 				finishOrDisplayError(msg.error, t('Unable to Save Patch'), true);
 				break;

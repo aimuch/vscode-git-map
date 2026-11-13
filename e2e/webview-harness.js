@@ -44,6 +44,9 @@
 	let operationFixture = null; // The operation in progress in the repository
 	let commitCountFixture = null; // The number of commits loaded (instead of 10 or 25)
 	let bisectFixture = null; // The state of the bisect in progress in the repository
+	let uncommittedFixture = false; // Are the uncommitted changes & a stash (based on the 3rd commit) loaded
+	const STASH_COMMIT = { hash: 'd'.repeat(40), parents: [hash(3)], author: 'E2E Author', email: 'author@example.com', date: NOW - 300, message: 'WIP on main: Experiment', heads: [], tags: [], remotes: [], stash: { selector: 'refs/stash@{0}', baseHash: hash(3), untrackedFilesHash: null } };
+	const withUncommitted = (commits) => uncommittedFixture ? [{ hash: '*', parents: [hash(HEAD_INDEX + 1)], author: '*', email: '', date: NOW, message: 'Uncommitted Changes (3)', heads: [], tags: [], remotes: [], stash: null }, STASH_COMMIT].concat(commits) : commits;
 	const respond = (msg) => {
 		switch (msg.command) {
 			case 'loadRepoInfo':
@@ -102,8 +105,8 @@
 				}
 				// HEAD is the 20th commit, which isn't included in the first load of 10 commits
 				return msg.maxCommits <= 10
-					? { command: 'loadCommits', refreshId: msg.refreshId, commits: makeCommits(10), head: hash(HEAD_INDEX + 1), tags: [], moreCommitsAvailable: true, onlyFollowFirstParent: msg.onlyFollowFirstParent, error: null }
-					: { command: 'loadCommits', refreshId: msg.refreshId, commits: makeCommits(25), head: hash(HEAD_INDEX + 1), tags: [], moreCommitsAvailable: false, onlyFollowFirstParent: msg.onlyFollowFirstParent, error: null };
+					? { command: 'loadCommits', refreshId: msg.refreshId, commits: withUncommitted(makeCommits(10)), head: hash(HEAD_INDEX + 1), tags: [], moreCommitsAvailable: true, onlyFollowFirstParent: msg.onlyFollowFirstParent, error: null }
+					: { command: 'loadCommits', refreshId: msg.refreshId, commits: withUncommitted(makeCommits(25)), head: hash(HEAD_INDEX + 1), tags: [], moreCommitsAvailable: false, onlyFollowFirstParent: msg.onlyFollowFirstParent, error: null };
 			case 'loadConfig':
 				return {
 					command: 'loadConfig', repo: msg.repo, error: null,
@@ -181,6 +184,29 @@
 				return { command: 'loadBisectState', repo: msg.repo, state: bisectFixture };
 			case 'bisect':
 				return { command: 'bisect', action: msg.action, error: null };
+			case 'viewBisectLog':
+				return { command: 'viewBisectLog', error: null };
+			case 'loadLanguageModels':
+				return { command: 'loadLanguageModels', models: [{ id: 'm1', name: 'Model One', vendor: 'copilot' }, { id: 'm2', name: 'Model Two', vendor: 'copilot' }], error: null };
+			case 'explainCommit':
+				// The first part of the explanation (the rest is sent by the check)
+				return { command: 'explainCommit', commitHash: msg.commitHash, text: '## Summary\nThis commit **fixes** a bug', done: false, model: 'Model One', truncated: false, error: null };
+			case 'loadStashableFiles':
+				return {
+					command: 'loadStashableFiles', filePath: msg.filePath, stagedSupported: true, error: null,
+					files: [{ path: 'src/new-name.ts', staged: true, unstaged: false, untracked: false }, { path: 'README.md', staged: false, unstaged: true, untracked: false }, { path: 'notes.txt', staged: false, unstaged: false, untracked: true }]
+				};
+			case 'pushStash':
+				return { command: 'pushStash', error: null };
+			case 'checkPatch':
+				return { command: 'checkPatch', error: null, patch: { file: '/e2e/fix.patch', name: 'fix.patch', commits: 2, files: 3, additions: 10, deletions: 2, appliesCleanly: true, checkError: null } };
+			case 'applyPatch':
+				return { command: 'applyPatch', error: null };
+			case 'restoreFileFromStash':
+				// The file has uncommitted changes, so it's only restored when forced
+				return { command: 'restoreFileFromStash', stashHash: msg.stashHash, selector: msg.selector, filePath: msg.filePath, untracked: msg.untracked, hasChanges: !msg.force, error: null };
+			case 'copyToClipboard':
+				return { command: 'copyToClipboard', type: msg.type, error: null };
 			case 'openExternalUrl':
 			case 'setGlobalViewState':
 			case 'setWorkspaceViewState':
@@ -238,6 +264,24 @@
 		return event;
 	};
 	const requestsOf = (command) => requests.filter((msg) => msg.command === command);
+	// Take a screenshot of the workbench (by the Extension Host, see ./suite.js), saved in e2e/.artifacts/screenshots as ui-<name>.png
+	let screenshotId = 0;
+	const shot = async (name) => {
+		await sleep(400); // Let the Webview repaint first
+		return shotNow(name);
+	};
+	const shotNow = (name) => new Promise((resolve) => {
+		const id = ++screenshotId;
+		const listener = (e) => {
+			if (e.data && e.data.command === 'e2eScreenshotTaken' && e.data.id === id) {
+				window.removeEventListener('message', listener);
+				resolve(e.data.file);
+			}
+		};
+		window.addEventListener('message', listener);
+		realApi.postMessage({ command: 'e2eScreenshot', name: name, id: id });
+		setTimeout(() => resolve(null), 10000);
+	});
 	const commitRow = (index) => document.querySelector('#commitTable tr.commit[data-id="' + index + '"]');
 	const isMac = navigator.platform.toUpperCase().indexOf('MAC') > -1;
 	const ctrl = isMac ? { metaKey: true } : { ctrlKey: true };
@@ -1522,13 +1566,28 @@
 				assert(document.querySelector('#commitTable tr.commit.compareBase .compareBaseLabel') !== null, 'The merge base isn\'t labelled');
 				const panel = await waitFor('the panel of the changed files', () => document.getElementById('comparePanel'));
 				const files = Array.from(panel.querySelectorAll('.comparePanelFile')).map((file) => file.textContent.replace(/\s+/g, ' ').trim());
-				assert(files.length === 2 && files[1].includes('docs/ (from docs/old.md)') && document.getElementById('view').style.right === '380px', 'Unexpected panel: ' + JSON.stringify(files));
+				assert(files.length === 2 && files[1].includes('docs/ (from docs/old.md)') && document.getElementById('view').style.right === panel.style.width && parseInt(panel.style.width) >= 280 && parseInt(panel.style.width) <= 380, 'Unexpected panel: ' + JSON.stringify(files));
+				await shot('branch-compare');
 				mouse(panel.querySelector('.comparePanelFile'), 'click');
 				const diff = await waitFor('the changes of the file to be opened', () => requestsOf('viewDiff').slice(-1)[0]);
 				assert(diff.fromHash === hash(5) && diff.toHash === hash(1) && diff.newFilePath === 'src/app.ts', 'Unexpected diff: ' + JSON.stringify(diff));
 				mouse(panel.querySelector('[data-panel="openAll"]'), 'click');
 				const openAll = await waitFor('all of the changes to be opened', () => requestsOf('openAllChanges').slice(-1)[0]);
-				assert(openAll.fileChanges.length === 2 && openAll.title === 'feature ↔ main', 'Unexpected request: ' + JSON.stringify(openAll));
+				assert(openAll.fileChanges.length === 2 && openAll.title === 'feature ↔ main' && openAll.fromHash === hash(5), 'Unexpected request: ' + JSON.stringify(openAll));
+				// The changes between the latest commits (A..B) instead of since the merge base
+				assert(request.fromMergeBase === true && panel.querySelector('[data-panel="fromMergeBase"]').checked && bar.textContent.includes('Merge base 00000000 · '), 'Unexpected merge base option / age: ' + bar.textContent);
+				const fromBase = panel.querySelector('[data-panel="fromMergeBase"]'), compares = requestsOf('compareBranches').length;
+				fromBase.checked = false;
+				fromBase.dispatchEvent(new Event('change', { bubbles: true }));
+				const latest = await waitFor('the latest commits to be compared', () => requestsOf('compareBranches').length > compares ? requestsOf('compareBranches').slice(-1)[0] : null);
+				await waitFor('the panel to describe it', () => document.getElementById('comparePanel').textContent.includes('The differences between the latest commits of feature and main.'));
+				mouse(document.querySelector('#comparePanel .comparePanelFile'), 'click');
+				const latestDiff = await waitFor('the changes between the latest commits', () => requestsOf('viewDiff').slice(-1)[0].fromHash === hash(HEAD_INDEX + 1) ? requestsOf('viewDiff').slice(-1)[0] : null);
+				assert(latest.fromMergeBase === false && latestDiff.toHash === hash(1), 'Unexpected request: ' + JSON.stringify(latest));
+				const again = document.querySelector('#comparePanel [data-panel="fromMergeBase"]');
+				again.checked = true;
+				again.dispatchEvent(new Event('change', { bubbles: true }));
+				await waitFor('the merge base to be used again', () => requestsOf('compareBranches').slice(-1)[0].fromMergeBase === true);
 				mouse(bar.querySelector('[data-compare="right"]'), 'click');
 				await waitFor('only the merge base to be shown (main has no other commits)', () => rows().length === 1);
 				return 'Bar: ' + segments.join(' / ') + '; ' + files.length + ' files in the panel; opened the changes of ' + diff.newFilePath + ' and all of them';
@@ -1547,6 +1606,7 @@
 			const list = await waitFor('the branches that can be deleted', () => document.querySelectorAll('#branchCleanup .branchCleanupItem').length === 2 ? document.getElementById('branchCleanup') : null);
 			const items = Array.from(list.querySelectorAll('.branchCleanupItem')), checked = items.map((item) => item.querySelector('input').checked);
 			assert(JSON.stringify(checked) === JSON.stringify([true, false]) && items[1].textContent.includes('Not merged: deleting it loses 2 commits') && items[1].textContent.includes('origin/spike is gone'), 'Unexpected branches: ' + list.textContent);
+			await shot('branch-cleanup');
 			const remote = list.querySelector('[data-action="deleteOnRemote"]');
 			remote.checked = true;
 			remote.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1570,6 +1630,7 @@
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Edit Commit Message…'), 'click');
 			const input = await waitFor('the dialog to open', () => document.querySelector('.dialog textarea.dialogTextArea'));
 			assert(input.value === 'Commit ' + HEAD_INDEX + '\n\nThe body' && document.activeElement === input, 'Unexpected input: ' + JSON.stringify(input.value));
+			await shot('edit-message');
 			const before = requestsOf('editCommitMessage').length;
 			key(input, 'Enter');
 			await sleep(100);
@@ -1585,14 +1646,20 @@
 
 		await check('ui-bisect', '[GitLens] While bisecting, the operation bar shows how many commits are left (with Good / Bad / Skip buttons) and the commits are labelled; when the first bad commit is found, it\'s shown', async () => {
 			const bar = document.getElementById('operationBar');
-			bisectFixture = { bad: hash(1), good: [hash(9)], skipped: [hash(3)], current: hash(5), remaining: 4, steps: 2, firstBad: null };
+			bisectFixture = { bad: hash(1), good: [hash(9)], skipped: [hash(3)], current: hash(5), remaining: 4, steps: 2, firstBad: null, candidates: [1, 2, 3, 4, 5, 6, 7, 8].map(hash) };
 			try {
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('the bisect bar', () => bar.classList.contains('active') && bar.classList.contains('bisect'));
 				const buttons = Array.from(bar.querySelectorAll('.operationBarBtn')).map((button) => button.textContent);
-				assert(bar.textContent.includes('Bisecting — 4 commits left to test (about 2 steps).') && bar.textContent.includes('Checked out 00000000') && JSON.stringify(buttons) === JSON.stringify(['Good', 'Bad', 'Skip', 'Stop Bisecting']), 'Unexpected bar: ' + bar.textContent + ' ' + JSON.stringify(buttons));
+				assert(bar.textContent.includes('Bisecting — 4 commits left to test (about 2 steps).') && bar.textContent.includes('Checked out 00000000') && JSON.stringify(buttons) === JSON.stringify(['Good', 'Bad', 'Skip', 'View Log', 'Stop Bisecting']), 'Unexpected bar: ' + bar.textContent + ' ' + JSON.stringify(buttons));
 				const labels = await waitFor('the commits to be labelled', () => commitRow(4) !== null && commitRow(4).querySelector('.bisectLabel.testing') ? [0, 2, 4, 8].map((i) => (commitRow(i).querySelector('.bisectLabel') || { textContent: '' }).textContent) : null);
 				assert(JSON.stringify(labels) === JSON.stringify(['bad', 'skipped', 'testing', 'good']), 'Unexpected labels: ' + JSON.stringify(labels));
+				const excluded = Array.from(document.querySelectorAll('#commitTable tr.commit.bisectExcluded')).map((row) => parseInt(row.dataset.id));
+				assert(excluded.length > 0 && excluded.every((i) => i >= 8), 'The commits that can\'t be the first bad commit aren\'t dimmed: ' + JSON.stringify(excluded));
+				mouse(bar.querySelector('[data-bisect="viewLog"]'), 'click');
+				await waitFor('the log to be opened', () => requestsOf('viewBisectLog').length > 0);
+				document.getElementById('view').scrollTop = 0;
+				await shot('bisect');
 				mouse(bar.querySelector('[data-bisect="good"]'), 'click');
 				const marked = await waitFor('the commit to be marked', () => requestsOf('bisect').slice(-1)[0]);
 				assert(marked.action === 'good' && marked.commitHash === null, 'Unexpected request: ' + JSON.stringify(marked));
@@ -1602,11 +1669,174 @@
 				bisectFixture = Object.assign({}, bisectFixture, { firstBad: hash(3) });
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('the first bad commit to be shown', () => bar.classList.contains('bisectDone') && bar.textContent.includes('Found the first bad commit: 00000000'));
+				await shot('bisect-done');
 				return 'Bar: ' + buttons.join(' / ') + '; labels: ' + labels.join(', ') + '; first bad commit shown';
 			} finally {
 				bisectFixture = null;
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('the bisect bar to be hidden', () => !bar.classList.contains('active'));
+			}
+		});
+
+		const closeDialog = async () => {
+			await waitFor('the dialog to close', () => document.querySelector('.dialog') === null || document.querySelector('.dialog.actionRunning') === null);
+			if (document.querySelector('.dialog') !== null) key(document.body, 'Escape');
+		};
+		const contextMenuItems = async (target) => {
+			mouse(target, 'contextmenu', { button: 2 });
+			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
+			return Array.from(menu.querySelectorAll('.contextMenuItem'));
+		};
+		const clickMenuItem = async (target, title) => {
+			const item = (await contextMenuItems(target)).find((elem) => elem.textContent === title);
+			assert(item, 'The context menu doesn\'t have "' + title + '"');
+			mouse(item, 'click');
+		};
+		const openDetails = async (row) => {
+			mouse(row, 'click');
+			return waitFor('the Commit Details View to load', () => document.querySelector('#cdv #cdvFileView .fileTreeFileRecord') !== null ? document.getElementById('cdv') : null);
+		};
+		const closeDetails = async () => {
+			if (document.getElementById('cdvClose') !== null) mouse(document.getElementById('cdvClose'), 'click');
+			await waitFor('the Commit Details View to close', () => document.getElementById('cdv') === null);
+		};
+		const fileRecord = (name) => Array.from(document.querySelectorAll('#cdvFileView .fileTreeFileRecord')).find((elem) => elem.textContent.includes(name));
+
+		await check('ui-explain-tab', '[AI] The Explain tab (git-map.ai.explainCommit.enabled) asks which language model the commit is sent to before sending it, then shows the explanation as it\'s received (rendered from Markdown, without rendering HTML), which can be copied', async () => {
+			initialState.config.explainCommit = true; // The config of the Git Map View
+			try {
+				await openDetails(commitRow(2));
+				const tab = await waitFor('the Explain tab', () => document.querySelector('.cdvTab[data-tab="explain"]'));
+				const models = requestsOf('loadLanguageModels').length, explained = requestsOf('explainCommit').length;
+				mouse(tab, 'click');
+				const consent = await waitFor('the consent card', () => document.querySelector('#cdvExplainView .explainConsent #explainModel') ? document.querySelector('#cdvExplainView .explainConsent') : null);
+				const options = Array.from(consent.querySelectorAll('#explainModel option')).map((option) => option.textContent);
+				assert(requestsOf('loadLanguageModels').length > models && requestsOf('explainCommit').length === explained, 'The commit was sent before it was confirmed');
+				assert(JSON.stringify(options) === JSON.stringify(['Model One (copilot)', 'Model Two (copilot)']) && consent.textContent.includes('up to 3,000 lines') && consent.querySelector('#explainDontAsk') !== null, 'Unexpected consent card: ' + consent.textContent);
+				await shot('explain-consent');
+				document.getElementById('explainModel').value = 'm2';
+				mouse(consent.querySelector('[data-explain="explain"]'), 'click');
+				const request = await waitFor('the commit to be explained', () => requestsOf('explainCommit').length > explained ? requestsOf('explainCommit').slice(-1)[0] : null);
+				assert(request.commitHash === hash(3) && request.modelId === 'm2', 'Unexpected request: ' + JSON.stringify(request));
+				await waitFor('the first part of the explanation', () => document.querySelector('#cdvExplainView .explainLoading') !== null && document.querySelector('#cdvExplainView .explainText') !== null);
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'explainCommit', commitHash: hash(3), done: true, model: 'Model Two', truncated: false, error: null, text: '## Summary\nThis commit **fixes** a bug in `parse()`.\n\n## Changes\n- Handles <img src=x onerror="window.e2eInjected=1"> empty input\n- Adds a test\n\n## Worth checking\nNothing in particular.' } }));
+				const view = await waitFor('the explanation', () => document.querySelector('#cdvExplainView .explainFooter') ? document.getElementById('cdvExplainView') : null);
+				const headings = Array.from(view.querySelectorAll('.explainHeading')).map((elem) => elem.textContent);
+				assert(JSON.stringify(headings) === JSON.stringify(['Summary', 'Changes', 'Worth checking']) && view.querySelectorAll('.explainText li').length === 2 && view.querySelector('.explainText code').textContent === 'parse()' && view.querySelector('.explainText b').textContent === 'fixes', 'Unexpected explanation: ' + view.innerHTML.substring(0, 300));
+				assert(view.querySelector('img') === null && typeof window.e2eInjected === 'undefined' && view.textContent.includes('<img src=x'), 'HTML in the explanation was rendered');
+				assert(view.querySelector('.explainFooter').textContent.includes('Model Two · may be inaccurate') && view.querySelector('.explainLoading') === null, 'Unexpected footer: ' + view.querySelector('.explainFooter').textContent);
+				await shot('explain-result');
+				mouse(view.querySelector('[data-explain="copy"]'), 'click');
+				const copied = await waitFor('the explanation to be copied', () => requestsOf('copyToClipboard').filter((msg) => msg.type === 'Explanation').slice(-1)[0]);
+				assert(copied.data.startsWith('## Summary'), 'Unexpected copy: ' + JSON.stringify(copied));
+				return 'Asked first (2 models), explained by Model Two: ' + headings.join(' / ') + '; HTML escaped; copied';
+			} finally {
+				initialState.config.explainCommit = false;
+				await closeDetails();
+			}
+		});
+
+		await check('ui-cdv-visual-file-history', '[GitLens] "Visual File History" in the context menu of a file in the Commit Details View opens the visual history of the file', async () => {
+			await openDetails(commitRow(1));
+			try {
+				const items = (await contextMenuItems(fileRecord('README.md'))).map((item) => item.textContent);
+				assert(items.includes('Visual File History') && !items.includes('Stash this File…') && !items.includes('Restore File from this Stash…'), 'Unexpected context menu: ' + JSON.stringify(items));
+				key(document.body, 'Escape');
+				await clickMenuItem(fileRecord('README.md'), 'Visual File History');
+				const request = await waitFor('the Visual File History to be opened', () => requestsOf('viewVisualFileHistory').slice(-1)[0]);
+				assert(request.repo === REPO && request.filePath === 'README.md', 'Unexpected request: ' + JSON.stringify(request));
+				return 'Requested the Visual File History of ' + request.filePath;
+			} finally {
+				await closeDetails();
+			}
+		});
+
+		// The uncommitted changes & a stash (for the checks that follow)
+		uncommittedFixture = true;
+		mouse(document.getElementById('refreshBtn'), 'click');
+		await waitFor('the uncommitted changes & the stash to be loaded', () => document.getElementById('uncommittedChanges') !== null && commitRow(1) !== null && commitRow(1).textContent.includes('WIP on main: Experiment'));
+
+		await check('ui-stash-partial', '[GitLens] "Stash uncommitted changes…" lists the changed files (so that only some of them are stashed), and can stash only the staged changes', async () => {
+			await clickMenuItem(document.getElementById('uncommittedChanges'), 'Stash uncommitted changes…');
+			const dialogElem = await waitFor('the dialog to open', () => document.querySelector('.dialog #dialogInput5') ? document.querySelector('.dialog') : null);
+			const labels = Array.from(dialogElem.querySelectorAll('.dialogFormCheckbox label')).map((label) => label.textContent.trim());
+			assert(JSON.stringify(labels.slice(0, 4)) === JSON.stringify(['src/new-name.ts staged', 'README.md modified', 'notes.txt untracked', 'Only the staged changes']) && [1, 2, 3].every((i) => document.getElementById('dialogInput' + i).checked), 'Unexpected dialog: ' + JSON.stringify(labels));
+			await shot('stash-partial');
+			document.getElementById('dialogInput2').checked = false;
+			document.getElementById('dialogInput5').checked = true;
+			const before = requestsOf('pushStash').length;
+			mouse(document.getElementById('dialogAction'), 'click');
+			const request = await waitFor('the changes to be stashed', () => requestsOf('pushStash').length > before ? requestsOf('pushStash').slice(-1)[0] : null);
+			assert(JSON.stringify(request.paths) === JSON.stringify(['src/new-name.ts', 'notes.txt']) && request.onlyStaged === false && request.includeUntracked === true, 'Unexpected request: ' + JSON.stringify(request));
+			await closeDialog();
+
+			// Only the staged changes
+			await clickMenuItem(document.getElementById('uncommittedChanges'), 'Stash uncommitted changes…');
+			await waitFor('the dialog to open', () => document.querySelector('.dialog #dialogInput4'));
+			document.getElementById('dialogInput4').checked = true;
+			mouse(document.getElementById('dialogAction'), 'click');
+			const staged = await waitFor('the staged changes to be stashed', () => requestsOf('pushStash').length > before + 1 ? requestsOf('pushStash').slice(-1)[0] : null);
+			assert(staged.paths === null && staged.onlyStaged === true, 'Unexpected request: ' + JSON.stringify(staged));
+			await closeDialog();
+			return 'Stashed ' + request.paths.join(', ') + ' (with untracked files); then only the staged changes';
+		});
+
+		await check('ui-stash-file', '[GitLens] "Stash this File…" in the context menu of a file of the uncommitted changes stashes only that file', async () => {
+			await openDetails(document.getElementById('uncommittedChanges'));
+			try {
+				await clickMenuItem(fileRecord('new-name.ts'), 'Stash this File…');
+				await waitFor('the dialog to open', () => document.querySelector('.dialog #dialogInput3'));
+				const checked = [1, 2, 3].map((i) => document.getElementById('dialogInput' + i).checked);
+				assert(JSON.stringify(checked) === JSON.stringify([true, false, false]), 'Only the file should be selected: ' + JSON.stringify(checked));
+				const before = requestsOf('pushStash').length;
+				mouse(document.getElementById('dialogAction'), 'click');
+				const request = await waitFor('the file to be stashed', () => requestsOf('pushStash').length > before ? requestsOf('pushStash').slice(-1)[0] : null);
+				assert(JSON.stringify(request.paths) === JSON.stringify(['src/new-name.ts']), 'Unexpected request: ' + JSON.stringify(request));
+				await closeDialog();
+				return 'Stashed ' + request.paths[0];
+			} finally {
+				await closeDetails();
+			}
+		});
+
+		await check('ui-restore-from-stash', '[GitLens] "Restore File from this Stash…" in the context menu of a file of a stash restores it, asking first (as a dangerous action) when the file has uncommitted changes', async () => {
+			await openDetails(commitRow(1));
+			try {
+				const before = requestsOf('restoreFileFromStash').length;
+				await clickMenuItem(fileRecord('README.md'), 'Restore File from this Stash…');
+				const first = await waitFor('the file to be restored', () => requestsOf('restoreFileFromStash').length > before ? requestsOf('restoreFileFromStash').slice(-1)[0] : null);
+				assert(first.stashHash === STASH_COMMIT.hash && first.selector === 'refs/stash@{0}' && first.filePath === 'README.md' && first.force === false, 'Unexpected request: ' + JSON.stringify(first));
+				const dialogElem = await waitFor('the confirmation', () => document.querySelector('.dialog'));
+				assert(dialogElem.classList.contains('danger') && dialogElem.textContent.includes('Restore README.md from stash@{0}? It has uncommitted changes'), 'Unexpected confirmation: ' + dialogElem.className + ' ' + dialogElem.textContent);
+				await shot('restore-from-stash');
+				mouse(document.getElementById('dialogAction'), 'click');
+				const forced = await waitFor('the file to be replaced', () => requestsOf('restoreFileFromStash').length > before + 1 ? requestsOf('restoreFileFromStash').slice(-1)[0] : null);
+				assert(forced.force === true, 'Unexpected request: ' + JSON.stringify(forced));
+				await closeDialog();
+				return 'Asked to confirm (danger), then restored ' + forced.filePath + ' from ' + forced.selector.substring(5);
+			} finally {
+				await closeDetails();
+			}
+		});
+
+		await check('ui-apply-patch', '[GitLens] "Apply Patch…" in the context menu of the uncommitted changes shows what the chosen patch contains and whether it applies cleanly, and applies it as commits or as uncommitted changes', async () => {
+			try {
+				await clickMenuItem(document.getElementById('uncommittedChanges'), 'Apply Patch…');
+				const dialogElem = await waitFor('the dialog to open', () => document.querySelector('.dialog .dialogNote') ? document.querySelector('.dialog') : null);
+				const radios = document.querySelectorAll('input[name="dialogInput0"]');
+				assert(dialogElem.textContent.includes('Apply the patch fix.patch?') && dialogElem.textContent.includes('2 commits · 3 files +10 −2') && dialogElem.querySelector('.dialogNote.ok') !== null && radios.length === 2 && radios[0].checked, 'Unexpected dialog: ' + dialogElem.textContent);
+				await shot('apply-patch');
+				radios[1].checked = true;
+				const before = requestsOf('applyPatch').length;
+				mouse(document.getElementById('dialogAction'), 'click');
+				const request = await waitFor('the patch to be applied', () => requestsOf('applyPatch').length > before ? requestsOf('applyPatch').slice(-1)[0] : null);
+				assert(request.file === '/e2e/fix.patch' && request.asCommits === false, 'Unexpected request: ' + JSON.stringify(request));
+				await closeDialog();
+				return 'Showed fix.patch (2 commits, 3 files, applies cleanly), applied as uncommitted changes';
+			} finally {
+				uncommittedFixture = false;
+				mouse(document.getElementById('refreshBtn'), 'click');
+				await waitFor('the uncommitted changes to be hidden', () => document.getElementById('uncommittedChanges') === null);
 			}
 		});
 	};

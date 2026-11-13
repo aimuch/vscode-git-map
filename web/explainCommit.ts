@@ -115,7 +115,7 @@ class CommitExplainer {
 			(models === null
 				? '<div class="explainLoading">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</div>'
 				: '<label for="explainModel" class="explainLabel">' + t('Model') + '</label><select id="explainModel">' + models.map((model) => '<option value="' + escapeHtml(model.id) + '"' + (first !== null && model.id === first.id ? ' selected' : '') + '>' + escapeHtml(model.name + ' (' + model.vendor + ')') + '</option>').join('') + '</select>' +
-				'<label class="explainDontAsk"><input type="checkbox" id="explainDontAsk">' + t('Don\'t ask again') + '</label>' +
+				'<label class="explainDontAsk"><input type="checkbox" id="explainDontAsk"><span class="customCheckbox"></span>' + t('Don\'t ask again') + '</label>' +
 				'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="explain">' + t('Explain') + '</button><button type="button" class="cdvActionBtn" data-explain="cancel">' + t('Cancel') + '</button></div>') +
 			'</div>';
 	}

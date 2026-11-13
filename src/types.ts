@@ -362,6 +362,7 @@ export interface GitBisectState {
 	readonly remaining: number | null; // The number of commits left to test
 	readonly steps: number | null; // The number of steps left (roughly)
 	readonly firstBad: string | null; // The first bad commit (once it has been found)
+	readonly candidates: ReadonlyArray<string> | null; // The commits that can still be the first bad commit (NULL if unknown)
 }
 
 /**
@@ -1798,6 +1799,7 @@ export interface RequestCompareBranches extends RepoRequest {
 	readonly command: 'compareBranches';
 	readonly left: string;
 	readonly right: string;
+	readonly fromMergeBase?: boolean; // The changes since the merge base (A...B, the default), otherwise between the latest commits (A..B)
 }
 export interface ResponseCompareBranches extends ResponseWithErrorInfo {
 	readonly command: 'compareBranches';
@@ -1889,6 +1891,13 @@ export interface ResponseLoadBisectState extends BaseMessage {
 	readonly command: 'loadBisectState';
 	readonly repo: string;
 	readonly state: GitBisectState | null;
+}
+
+export interface RequestViewBisectLog extends RepoRequest {
+	readonly command: 'viewBisectLog';
+}
+export interface ResponseViewBisectLog extends ResponseWithErrorInfo {
+	readonly command: 'viewBisectLog';
 }
 
 export interface RequestSavePatch extends RepoRequest {
@@ -2066,6 +2075,7 @@ export type RequestMessage =
 	| RequestFixupCommit
 	| RequestBisect
 	| RequestLoadBisectState
+	| RequestViewBisectLog
 	| RequestSavePatch
 	| RequestCheckPatch
 	| RequestApplyPatch
@@ -2162,6 +2172,7 @@ export type ResponseMessage =
 	| ResponseFixupCommit
 	| ResponseBisect
 	| ResponseLoadBisectState
+	| ResponseViewBisectLog
 	| ResponseSavePatch
 	| ResponseCheckPatch
 	| ResponseApplyPatch

@@ -95,7 +95,7 @@ class BranchCleanup {
 			if (candidate.upstreamGone) notes.push(t('{0} is gone', escapeHtml(candidate.upstream!)));
 			else if (candidate.upstream !== null) notes.push(escapeHtml(candidate.upstream));
 			const warning = candidate.unmergedCommits > 0 ? '<span class="branchCleanupWarning">' + (candidate.unmergedCommits !== 1 ? t('Not merged: deleting it loses {0} commits', candidate.unmergedCommits) : t('Not merged: deleting it loses 1 commit')) + '</span>' : '';
-			return '<label class="branchCleanupItem"><input type="checkbox" data-branch="' + escapeHtml(candidate.name) + '"' + (this.selected.has(candidate.name) ? ' checked' : '') + '>' +
+			return '<label class="branchCleanupItem"><input type="checkbox" data-branch="' + escapeHtml(candidate.name) + '"' + (this.selected.has(candidate.name) ? ' checked' : '') + '><span class="customCheckbox"></span>' +
 				'<span class="branchCleanupText"><span class="branchCleanupName">' + escapeHtml(candidate.name) + '</span><span class="stashListMeta">' + notes.map((note) => '<span>' + note + '</span>').join('') + warning + '</span></span>' +
 				'<span class="branchCleanupDate" title="' + escapeHtml(formatLongDate(candidate.date)) + '">' + escapeHtml(formatRelativeDate(candidate.date)) + '</span></label>';
 		};
@@ -104,7 +104,7 @@ class BranchCleanup {
 			(merged.length > 0 ? '<div class="branchCleanupGroup">' + t('Merged into {0}', escapeHtml(this.defaultBranch !== null ? this.defaultBranch : '')) + ' · ' + merged.length + '</div>' + merged.map(item).join('') : '') +
 			(gone.length > 0 ? '<div class="branchCleanupGroup">' + t('Remote branch deleted') + ' · ' + gone.length + '</div>' + gone.map(item).join('') : '') + '</div>' +
 			'<div class="branchCleanupFooter">' +
-			(remote !== null && merged.some((candidate) => candidate.remotes.includes(remote)) ? '<label class="branchCleanupRemote"><input type="checkbox" data-action="deleteOnRemote"' + (this.deleteOnRemote ? ' checked' : '') + '>' + t('Also delete the merged branches on {0}', escapeHtml(remote)) + '</label>' : '') +
+			(remote !== null && merged.some((candidate) => candidate.remotes.includes(remote)) ? '<label class="branchCleanupRemote"><input type="checkbox" data-action="deleteOnRemote"' + (this.deleteOnRemote ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Also delete the merged branches on {0}', escapeHtml(remote)) + '</label>' : '') +
 			'<span class="stashListSpacer"></span><button type="button" class="roundedBtn" data-action="close">' + t('Cancel') + '</button>' +
 			'<button type="button" class="roundedBtn branchCleanupDelete' + (count === 0 ? ' ' + CLASS_DISABLED : '') + '" data-action="delete"' + (count === 0 ? ' disabled' : '') + '>' + (count !== 1 ? t('Delete {0} Branches', count) : t('Delete 1 Branch')) + (this.deleteOnRemote && remoteBranches.length > 0 ? ' (+' + remoteBranches.length + ' ' + t('on {0}', escapeHtml(remote!)) + ')' : '') + '</button></div>';
 	}

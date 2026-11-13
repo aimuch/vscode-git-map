@@ -106,6 +106,20 @@ body.vscode-high-contrast .dialog{
 	margin-left:1px;
 	margin-right:7px;
 }
+/* Long options wrap (with their text aligned after the radio button) */
+.dialogContent > table.dialogForm tr.mediumField td{
+	white-space:normal;
+}
+.dialogContent .dialogFormRadio > label{
+	display:inline-flex;
+	align-items:flex-start;
+	margin:2px 0;
+	line-height:20px;
+}
+.dialogContent .dialogFormRadio > label > .customRadio{
+	flex:0 0 auto;
+	margin-top:3px;
+}
 .dialogContent .dialogFormCheckbox > label > input[type=checkbox]:checked ~ .customCheckbox:after{
 	border-color:var(--vscode-menu-foreground);
 }

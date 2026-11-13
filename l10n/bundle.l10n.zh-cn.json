@@ -1245,5 +1245,10 @@
 	"A commit that is bad (hash, tag or branch)": "一个坏的提交（哈希、标签或分支）",
 	"e.g. v1.0.0": "例如 v1.0.0",
 	"Start Bisecting": "开始二分查找",
-	"Starting to Bisect": "正在开始二分查找"
+	"Starting to Bisect": "正在开始二分查找",
+	"View Log": "查看日志",
+	"Unable to View the Bisect Log": "无法查看二分查找日志",
+	"No bisect is in progress.": "没有正在进行的二分查找。",
+	"The differences between the latest commits of <b>{0}</b> and <b>{1}</b>.": "<b>{0}</b> 与 <b>{1}</b> 最新提交之间的差异。",
+	"Compare from the merge base (A...B)": "从合并基础开始比较（A...B）"
 }

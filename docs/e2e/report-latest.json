@@ -1,5 +1,5 @@
 {
-	"date": "2026-11-13T12:26:51.585Z",
+	"date": "2026-11-13T13:14:08.394Z",
 	"vscodeVersion": "1.146.0",
 	"gitVersion": "git version 2.56.1",
 	"platform": "darwin arm64",
@@ -10,55 +10,55 @@
 			"title": "Git Map activates in this version of Visual Studio Code (onStartupFinished)",
 			"pass": true,
 			"details": "Visual Studio Code 1.146.0, engines.vscode ^1.85.0",
-			"durationMs": 0
+			"durationMs": 1
 		},
 		{
 			"id": "#903",
 			"title": "\"View Git Map\" is contributed to the scm/repository menu (Source Control Repositories view)",
 			"pass": true,
 			"details": "",
-			"durationMs": 1
+			"durationMs": 0
 		},
 		{
 			"id": "status-bar",
 			"title": "The Status Bar Item displays the Git Map icon and / or text, as configured by git-map.statusBarItemDisplay",
 			"pass": true,
 			"details": "{\"Icon\":\"$(git-map-logo)\",\"Text\":\"Git Map\",\"Icon & Text\":\"$(git-map-logo) Git Map\"}",
-			"durationMs": 79
+			"durationMs": 74
 		},
 		{
 			"id": "#794",
 			"title": "The \"View Git Map\" command opens the view when invoked with a null argument",
 			"pass": true,
 			"details": "Webview requests: loadRepoInfo, loadFileIconTheme, loadCommits, loadWorktrees, loadOperationInProgress, loadBisectState, setRepoState, loadCommitStats, loadConfig",
-			"durationMs": 204
+			"durationMs": 202
 		},
 		{
 			"id": "webview-csp",
 			"title": "The Webview HTML loads its script & stylesheet through the Webview resource URIs and CSP of this version",
 			"pass": true,
 			"details": "script src: https://file%2B.vscode-resource.vscode-cdn.net<repo>/media/out.min.js",
-			"durationMs": 1
+			"durationMs": 0
 		},
 		{
 			"id": "ui-file-icon-theme",
 			"title": "[Redesign] The file icon theme of Visual Studio Code (Seti) is sent to the Webview, with its language ids mapped to file extensions and its font loadable by the Webview",
 			"pass": true,
 			"details": "vs-seti: 383 icons, .ts → _typescript, font seti",
-			"durationMs": 1
+			"durationMs": 2
 		},
 		{
 			"id": "file-icon-theme-svg",
 			"title": "[Redesign] A file icon theme of SVG images is loaded, also if its definition can only be read later (e.g. while it's being written), and again when it changes",
 			"pass": true,
 			"details": "Loaded once readable (py: /icons/python.svg), and again after it changed (xlsx: /icons/excel.svg)",
-			"durationMs": 2684
+			"durationMs": 1450
 		},
 		{
 			"id": "#668",
 			"title": "Repositories, submodules and worktrees in the workspace are all discovered",
 			"pass": true,
-			"details": "Repositories: main, main/sub, wt",
+			"details": "Repositories: main, wt, main/sub",
 			"durationMs": 0
 		},
 		{
@@ -66,13 +66,13 @@
 			"title": "[Rename] The git-graph.* Extension Settings are copied to git-map.* when Git Map starts (once for the user & the workspace), and can then be removed",
 			"pass": true,
 			"details": "Copied at startup (user: maxDepthOfRepoSearch, integratedTerminalShell, muteMergeCommits → repository.commits.mute.mergeCommits, customEmojiShortcodeMappings; workspace: fileEncoding, commitOrdering → repository.commits.order; tabIconColourTheme kept); not migrated again; removed commitOrdering (Workspace), customEmojiShortcodeMappings (User), fileEncoding (Workspace), integratedTerminalShell (User), maxDepthOfRepoSearch (User), muteMergeCommits (User), tabIconColourTheme (User)",
-			"durationMs": 151
+			"durationMs": 175
 		},
 		{
 			"id": "#935",
 			"title": "Commits after a commit whose subject contains a raw CR character are loaded (from the Webview)",
 			"pass": true,
-			"details": "Loaded 5 commits, including 49918452 (before the CR commit)",
+			"details": "Loaded 5 commits, including b3013d3c (before the CR commit)",
 			"durationMs": 3
 		},
 		{
@@ -80,14 +80,14 @@
 			"title": "Commits can be filtered by author (a name containing regular expression characters is matched literally)",
 			"pass": true,
 			"details": "All authors: 5 commits, \"Dr. Q+A (Second)\": 1 commit",
-			"durationMs": 47
+			"durationMs": 48
 		},
 		{
 			"id": "ui-sync-search",
 			"title": "[Redesign] The repository info includes how far each branch is behind / ahead of its upstream, and commits can be searched by the files they change (file:) and the lines they add or remove (change:)",
 			"pass": true,
 			"details": "e2e-behind: 3 behind origin/main, e2e-gone: gone; file: 4 commits, change: 1 commit, t.o: 0 literal / 2 regex",
-			"durationMs": 70
+			"durationMs": 71
 		},
 		{
 			"id": "ui-commit-stats",
@@ -101,14 +101,14 @@
 			"title": "[Redesign] The stats of a stash (the files it changes, lines added & deleted, and untracked files it includes) are loaded for the list of stashes",
 			"pass": true,
 			"details": "refs/stash@{0}: {\"files\":2,\"additions\":2,\"deletions\":0,\"untrackedFiles\":1}",
-			"durationMs": 57
+			"durationMs": 60
 		},
 		{
 			"id": "ui-file-history",
 			"title": "[Redesign] The history of a file follows it through renames, with the parents of its commits rewritten (so the graph is connected), the changes to the file in each commit, and its diff",
 			"pass": true,
 			"details": "4 commits, renamed from dir/old.txt, diff of the rename: 13 lines",
-			"durationMs": 152
+			"durationMs": 163
 		},
 		{
 			"id": "ui-file-history-command",
@@ -122,182 +122,189 @@
 			"title": "Interactive rebase on a branch whose name contains shell syntax does not execute it",
 			"pass": true,
 			"details": "Rebase completed in the terminal, and the marker file was not created",
-			"durationMs": 2020
+			"durationMs": 2033
 		},
 		{
 			"id": "#708",
 			"title": "Tags & branches that share a name can be deleted from and pushed to a remote",
 			"pass": true,
 			"details": "",
-			"durationMs": 232
+			"durationMs": 246
 		},
 		{
 			"id": "cherry-pick-commits",
 			"title": "[GitLens] Several selected commits are cherry picked together, oldest first (recording their origin if chosen)",
 			"pass": true,
 			"details": "main: Add b ← Add c ← Add a ← Initial commit",
-			"durationMs": 161
+			"durationMs": 178
 		},
 		{
 			"id": "undo-merge",
 			"title": "[GitKraken] A merge can be undone (keeping uncommitted changes & untracked files), unless the repository has changed since",
 			"pass": true,
-			"details": "Undid the merge (local changes & untracked files kept); refused: \"Unable to undo Merge \"feature\", as the repository has changed since.\"; \"Unable to undo Cherry Pick \"6a30fc04\", as a merge is in progress. Finish or abort it first.\"",
-			"durationMs": 482
+			"details": "Undid the merge (local changes & untracked files kept); refused: \"Unable to undo Merge \"feature\", as the repository has changed since.\"; \"Unable to undo Cherry Pick \"2c4dd909\", as a merge is in progress. Finish or abort it first.\"",
+			"durationMs": 481
 		},
 		{
 			"id": "undo-refs",
 			"title": "[GitKraken] Creating, deleting, checking out & renaming branches and tags can be undone (restoring the same commits, tag objects & upstreams)",
 			"pass": true,
 			"details": "deleted branch restored with its upstream; deleted annotated tag restored (same tag object); added tag removed; created & checked out branch removed; checkout undone; rename undone",
-			"durationMs": 578
+			"durationMs": 569
 		},
 		{
 			"id": "undo-stash",
 			"title": "[GitKraken] Dropping a stash can be undone (the same stash is restored)",
 			"pass": true,
 			"details": "Restored stash@{0}: On main: Work in progress",
-			"durationMs": 153
+			"durationMs": 158
 		},
 		{
 			"id": "compare-branches",
 			"title": "[GitLens] Two branches are compared: the commits only on each (and their merge base), and the files changed on the first since they diverged, which can all be opened in one editor",
 			"pass": true,
 			"details": "feature: 2 commits, main: 1; files: A f.txt, M a.txt; opened in one editor",
-			"durationMs": 211
+			"durationMs": 240
 		},
 		{
 			"id": "branch-cleanup",
 			"title": "[GitLens] \"Clean Up Branches\" lists the branches merged into the default branch (never the current one or one checked out in a worktree), and deletes the selected ones together (also on the remote), which can be undone",
 			"pass": true,
 			"details": "Listed merged-1 (origin), merged-2; deleted them (and merged-1 on origin), and restored them with Undo",
-			"durationMs": 342
+			"durationMs": 370
 		},
 		{
 			"id": "rewrite-commits",
 			"title": "[GitLens] The message of the latest or an older commit can be edited, the latest commit undone (keeping its changes), and staged changes fixed up into a commit (keeping unstaged changes), each of which can be undone",
 			"pass": true,
 			"details": "latest message edited & undone; older message reworded & undone; commit undone (changes staged) & restored; staged change fixed up into \"Add b\" (unstaged change kept) & undone",
-			"durationMs": 605
+			"durationMs": 641
 		},
 		{
 			"id": "bisect",
 			"title": "[GitLens] Bisecting from a bad & a good commit finds the first bad commit as commits are marked good or bad, and stopping returns to the branch",
 			"pass": true,
 			"details": "Found \"Commit 6\" in 3 steps, then stopped bisecting (back on main)",
-			"durationMs": 416
+			"durationMs": 532
 		},
 		{
 			"id": "patches",
 			"title": "[GitLens] Commits, a stash & the uncommitted changes can be copied as a patch, and a patch can be checked and applied as commits (which can be undone) or as uncommitted changes",
 			"pass": true,
 			"details": "Copied commits (format-patch), the uncommitted changes & a stash (with its untracked file); applied as a commit (undone) and as changes",
-			"durationMs": 263
+			"durationMs": 284
 		},
 		{
 			"id": "stash-files",
 			"title": "[GitLens] Some of the changed files, or only the staged changes, can be stashed, and a file can be restored from a stash (asking first if it has changes)",
 			"pass": true,
 			"details": "stashed a.txt only; stashed the staged b.txt only; restored a.txt from its stash (after asking), keeping the stash",
-			"durationMs": 174
+			"durationMs": 204
 		},
 		{
 			"id": "visual-file-history",
 			"title": "[GitLens] \"Visual File History\" shows the commits that changed a file (following renames) on a timeline by author, from the Explorer / an editor (a URI) or the Git Map View (a repository & path)",
 			"pass": true,
 			"details": "Showed 4 commits of new.txt (including those before it was renamed), from a URI and from the Git Map View",
-			"durationMs": 219
+			"durationMs": 777
+		},
+		{
+			"id": "ui-visual-file-history",
+			"title": "[GitLens] The Visual File History page shows a row for each author, the commits in the time range chosen (90 days, 1 year, All), the selected commit's details, and opens its changes (clicking the button, or double-clicking a circle)",
+			"pass": true,
+			"details": "Rows: EE2E Author, SSecond Author; circles: all 5, 1 year 4, 90 days 3; selected \"Fix a line\"; opened its changes (button & double-click)",
+			"durationMs": 400
 		},
 		{
 			"id": "blame-options",
 			"title": "[GitLens] The blame of the current line is shown in the Status Bar (git-map.blame.statusBar), and blame can ignore whitespace changes (git-map.blame.ignoreWhitespace) and the commits listed in .git-blame-ignore-revs",
 			"pass": true,
-			"details": "Status Bar: $(git-commit) E2E Author, 0 seconds ago; hidden by git-map.blame.statusBar; whitespace change ignored; .git-blame-ignore-revs used (and not when the setting is empty)",
-			"durationMs": 458
+			"details": "Status Bar: $(git-commit) E2E Author, 1 second ago; hidden by git-map.blame.statusBar; whitespace change ignored; .git-blame-ignore-revs used (and not when the setting is empty)",
+			"durationMs": 460
 		},
 		{
 			"id": "explain-commit",
 			"title": "[AI] Explaining a commit is refused unless git-map.ai.explainCommit.enabled is on, and otherwise uses a language model provided in Visual Studio Code (an error explains what's needed when there isn't one)",
 			"pass": true,
 			"details": "Refused while turned off; without a language model: \"Explaining commits requires a language model provided in Visual Studio Code (e.g. by GitHub Copilot Chat), and Visual Studio Code 1.90 or later.\"",
-			"durationMs": 53
+			"durationMs": 63
 		},
 		{
 			"id": "worktrees",
 			"title": "[GitLens] The worktrees of a repository are listed, and can be added (for a branch, or at a commit), removed (only forced if they have changes) & pruned",
 			"pass": true,
 			"details": "Workspace: main, wt-branch; refused a checked out branch: \"Preparing worktree (checking out 'main')\"; removal refused without force: \"fatal: '<repo>/e2e/.artifacts/scratch/worktrees-feature' contains modified or untracked files, use --force to delete it\"; pruned",
-			"durationMs": 166
+			"durationMs": 183
 		},
 		{
 			"id": "line-history",
 			"title": "[GitLens] The history of a range of lines only includes the commits that change them (following them as they move, and the file through renames), with the graph kept connected",
 			"pass": true,
 			"details": "Line 5 of renamed.txt: Change line 3 again ← Change line 3 ← Initial commit; command: line 1 of file.txt (4 commits)",
-			"durationMs": 257
+			"durationMs": 285
 		},
 		{
 			"id": "line-blame",
 			"title": "[GitLens] The line the cursor is on is blamed using the contents of the editor (so lines of files with uncommitted changes match), and the blame links to the commit in Git Map",
 			"pass": true,
-			"details": "Blame: E2E Author, 0 seconds ago • Change line two; the link requested the details of 49918452",
-			"durationMs": 204
+			"details": "Blame: E2E Author, 1 second ago • Change line two; the link requested the details of b3013d3c",
+			"durationMs": 214
 		},
 		{
 			"id": "line-history-drawer",
 			"title": "[GitLens] The history of lines (right-click > Git Map > View Line History) is shown in a drawer on the right, or an inline window below the lines: the uncommitted changes & each commit that changed them, with its author, date & avatar",
 			"pass": true,
-			"details": "Lines 6-7 of the editor = lines 4-5 in HEAD: uncommitted ← Change line 4 again (E2E Author) ← Change line 4 (Second Author) ← Initial commit (E2E Author); inline window: 4 comments; link: https://github.com/e2e-owner/e2e-repo/blob/a09bb8a5adbc6b0cc26682ad8c90e1ab86e582e8/src.ts#L4-L5",
-			"durationMs": 7571
+			"details": "Lines 6-7 of the editor = lines 4-5 in HEAD: uncommitted ← Change line 4 again (E2E Author) ← Change line 4 (Second Author) ← Initial commit (E2E Author); inline window: 4 comments; link: https://github.com/e2e-owner/e2e-repo/blob/06ebcb885035724ee9bd904a0b664d8b790371f5/src.ts#L4-L5",
+			"durationMs": 7569
 		},
 		{
 			"id": "blame-hover-and-links",
 			"title": "[GitLens] The hover of the blame of a line shows how the commit changed it, with links to the history of the line, its changes, the commit & a link to it on the remote; the selected lines can be copied as a link to the remote",
 			"pass": true,
-			"details": "Hover of line 3 (line 2 at 1d8af1ca): -two / +two (changed); links: git-map.viewLineHistory, git-map.openLineChanges, git-map.viewCommitInGitMap, git-map.copyRemoteLink; remote links: https://gitlab.com/e2e-group/e2e-repo/-/blob/1d8af1cabeb78ee73816539c473f2d5d0417ac2c/code.txt#L2, https://gitlab.com/e2e-group/e2e-repo/-/blob/1d8af1cabeb78ee73816539c473f2d5d0417ac2c/code.txt#L2-3",
-			"durationMs": 2423
+			"details": "Hover of line 3 (line 2 at 2f75a9f2): -two / +two (changed); links: git-map.viewLineHistory, git-map.openLineChanges, git-map.viewCommitInGitMap, git-map.copyRemoteLink; remote links: https://gitlab.com/e2e-group/e2e-repo/-/blob/2f75a9f22679f53409eca60c5d39ec47fc648c07/code.txt#L2, https://gitlab.com/e2e-group/e2e-repo/-/blob/2f75a9f22679f53409eca60c5d39ec47fc648c07/code.txt#L2-3",
+			"durationMs": 2463
 		},
 		{
 			"id": "file-blame",
 			"title": "[GitLens] Toggle File Blame annotates the blocks of lines with the date & author of the commit that last changed them, coloured by how recently it was made (a heatmap)",
 			"pass": true,
 			"details": "Labels: Uncommitted You | 2020-01-01 Second Author | 2024-06-01 E2E Author | 2020-01-01 Second Author; heat: 0.0 0.0 0.0 1.0 1.0 0.0",
-			"durationMs": 1722
+			"durationMs": 1732
 		},
 		{
 			"id": "revision-navigation",
 			"title": "[GitLens] Show Previous / Next Revision step through the commits that changed a file (following it through renames), from its editor or the changes opened by Git Map",
 			"pass": true,
-			"details": "Previous: ea45ed20 moved.txt ← 89946d16 nav.txt → moved.txt ← 40744e56 nav.txt ← 1c86c868 nav.txt; next: 40744e56 → 89946d16 → ea45ed20 → uncommitted",
-			"durationMs": 1497
+			"details": "Previous: ea0bfa7a moved.txt ← 1fe5f22a nav.txt → moved.txt ← 9026c42b nav.txt ← 7cac0e29 nav.txt; next: 9026c42b → 1fe5f22a → ea0bfa7a → uncommitted",
+			"durationMs": 1544
 		},
 		{
 			"id": "code-lens",
 			"title": "[GitLens] The Git CodeLens (git-map.codeLens.enabled) shows who changed functions & classes most recently, and how many authors changed them",
 			"pass": true,
 			"details": "CodeLenses: Second Author, 7 years ago · 1 author | E2E Author, 2 years ago · 2 authors; clicking the second showed the history of lines 5-7 (2 changes)",
-			"durationMs": 572
+			"durationMs": 590
 		},
 		{
 			"id": "line-blame-toggle",
 			"title": "[GitLens] Toggle Current Line Blame hides & shows the blame of the current line (changing the workspace's setting if it has one)",
 			"pass": true,
 			"details": "Hidden & shown again (user setting); hidden by changing the workspace's setting",
-			"durationMs": 746
+			"durationMs": 758
 		},
 		{
 			"id": "escape",
 			"title": "[GitLens] Escape closes what Git Map showed most recently (the File Blame, the Line History inline window or drawer), returning to how it was before",
 			"pass": true,
 			"details": "Escape closed: inline window, then drawer (in b.txt, keeping the File Blame of a.txt), then File Blame of a.txt",
-			"durationMs": 357
+			"durationMs": 327
 		},
 		{
 			"id": "editor-context-menu",
 			"title": "[GitLens] The Git Map actions of the context menu of editors are in a \"Git Map\" submenu, or directly in the context menu, or hidden, as set by git-map.editorContextMenu",
 			"pass": true,
 			"details": "9 actions, each in the submenu or directly in the context menu (exclusively); a partial setting keeps the defaults of the other actions",
-			"durationMs": 33
+			"durationMs": 39
 		},
 		{
 			"id": "remote-links",
@@ -311,364 +318,406 @@
 			"title": "[GitLens] An interactive rebase runs the todo list chosen in the Rebase Editor (pick, reword, squash, fixup, drop & reorder) without opening an editor or running names / messages in a shell, and a rebase that stops can be continued or aborted",
 			"pass": true,
 			"details": "Rebased: B reworded $(>rebase-message-marker) ← Add b; stopped at a conflict: aborted, then continued after resolving it",
-			"durationMs": 561
+			"durationMs": 558
 		},
 		{
 			"id": "remove-files-from-history",
 			"title": "[History] \"Remove Files from History...\" removes files from every branch & tag (as if they had never been committed; by default they stay in the working directory as untracked files) once the name of the repository is typed to confirm it, using only Git; the backup restores the history, and cleaning up deletes the previous history",
 			"pass": true,
 			"details": "Refused with uncommitted changes; not run without the typed name; removed from main, side & v1 (2 file changes, 1 commit removed, the first commit unchanged); restored from the backup; removed again (by default the file stays in the working directory, untracked; it's only deleted from it when that's chosen) & cleaned up: no version of the file is stored in the repository",
-			"durationMs": 1318
+			"durationMs": 1332
 		},
 		{
 			"id": "#932",
 			"title": "An externally configured GIT_ASKPASS is used for authentication instead of Git Map's",
 			"pass": true,
-			"details": "External Askpass prompts: Username for 'http://127.0.0.1:63467':  | Password for 'http://e2e-user@127.0.0.1:63467':",
-			"durationMs": 145
+			"details": "External Askpass prompts: Username for 'http://127.0.0.1:60234':  | Password for 'http://e2e-user@127.0.0.1:60234':",
+			"durationMs": 595
 		},
 		{
 			"id": "#789",
 			"title": "The view refreshes when a commit is made in a submodule from outside of Visual Studio Code",
 			"pass": true,
-			"details": "Refreshed, and loaded the new commit e3d2e5d1",
-			"durationMs": 3666
+			"details": "Refreshed, and loaded the new commit 1d57d470",
+			"durationMs": 3529
 		},
 		{
 			"id": "#668-watch",
 			"title": "The view refreshes when a commit is made in a worktree from outside of Visual Studio Code",
 			"pass": true,
-			"details": "Refreshed, and loaded the new commit 29e57c57",
-			"durationMs": 3534
+			"details": "Refreshed, and loaded the new commit 5a7e5185",
+			"durationMs": 3532
 		},
 		{
 			"id": "#775",
 			"title": "Selecting a graph colour preset re-renders the open Git Map View with the preset's colours",
 			"pass": true,
 			"details": "Tokyo Subway → --git-graph-color0: #f62e36, Default → #0085d9",
-			"durationMs": 53
+			"durationMs": 85
 		},
 		{
 			"id": "#857",
 			"title": "[Webview UI] \"Scroll to HEAD\" loads more commits until HEAD is loaded",
 			"pass": true,
 			"details": "Requested maxCommits 10 → 25",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#892",
 			"title": "[Webview UI] The second keypress of a keybinding chord (e.g. Ctrl+K Ctrl+H) is left to Visual Studio Code",
 			"pass": true,
 			"details": "",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#928",
 			"title": "[Webview UI] Tooltips are shown for elements with a title (e.g. the (i) icons)",
 			"pass": true,
 			"details": "",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#852",
 			"title": "[Webview UI] The mouse back / forward buttons navigate the editor history",
 			"pass": true,
 			"details": "",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#723",
 			"title": "[Webview UI] Renamed files show their original name in the Commit Details View",
 			"pass": true,
 			"details": "← lib/moved.ts, ← old-name.ts",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#792",
 			"title": "[Webview UI] Issue links using a custom URL scheme are opened (via the extension)",
 			"pass": true,
 			"details": "Opened gitgraph-e2e://issue/12",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#864",
 			"title": "[Webview UI] The Menu key / Shift+F10 opens the context menu of the commit selected with the keyboard",
 			"pass": true,
 			"details": "",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-toolbar",
 			"title": "[Webview UI] [Redesign] The control bar is sticky, has its labels inside the dropdowns, and a Jump to HEAD button",
 			"pass": true,
 			"details": "Labels: Repo, Branches, Authors; sync: Pull1, Push2",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-cdv",
 			"title": "[Webview UI] [Redesign] The Commit Details View is docked to the right, with buttons for the most common commit actions",
 			"pass": true,
 			"details": "Width: 380px, actions: Checkout… | Create Branch… | Cherry Pick… | ···",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-cdv-panel",
 			"title": "[Webview UI] [Redesign] The Commit Details View has a header with previous / next buttons, chips to copy the hash / open on the remote / compare, the branches containing the commit, and tabs of the changed files & commit message",
 			"pass": true,
 			"details": "Chips: 00000000 | Open on Remote | Compare with…; branches: feature; stats: 3 files+3−2; files: R bar, R bar, M bar; icons: README.md=M, moved.ts=F, new-name.ts=F",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-commit-list",
 			"title": "[Webview UI] [Redesign] The commits have a Branches / Tags column (with how far branches are ahead / behind their upstream) and a Changes column (loaded on demand, which can be hidden), and a footer",
 			"pass": true,
 			"details": "Columns: Branches / Tags | Graph | Description | Date | Author | Changes | Commit; main: main↑2↓1; footer: 25 commits loadedScrollbar markers:HEADBranchesTagsFind Matches",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-stash-list",
 			"title": "[Webview UI] [Redesign] The Stashes button lists the stashes (with their branch, date & changes), applies / pops / drops them, and goes to them",
 			"pass": true,
 			"details": "main10 minutes ago3 files · +46 −8Not in the loaded commits | feature2 hours ago2 files · +5 −0Includes untracked filesNot in the loaded commits",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-branch-highlight",
 			"title": "[Webview UI] [GitLens] Hovering over a commit highlights the branch it is on in the graph",
 			"pass": true,
 			"details": "1 line(s) & 25 vertices highlighted",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-minimap",
 			"title": "[Webview UI] [GitLens] The minimap shows the activity of the loaded commits, where HEAD & branches are, and the visible commits",
 			"pass": true,
 			"details": "30 days, 2 with commits (25 commits); axis: 15 Oct | 20 Oct | 24 Oct | 28 Oct | 1 Nov | 5 Nov | 9 Nov | Today; The commits in view: 13 Nov 2026 (9 commits) Drag to scroll through the commits.",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-minimap-zoom",
 			"title": "[Webview UI] [GitLens] The minimap can be zoomed in on a range of dates (its bars & axis changing with it) and panned, its box of the commits in view dragged to scroll, and its height changed",
 			"pass": true,
-			"details": "All: 30 bars (15 Oct | 20 Oct | 24 Oct | 28 Oct | 1 Nov | 5 Nov | 9 Nov | Today); zoomed in: 7 Nov | 8 Nov | 9 Nov | 10 Nov | 11 Nov | 12 Nov | Today; panned: 31 Oct | 1 Nov | 2 Nov | 3 Nov | 4 Nov | 5 Nov | 6 Nov; dragging the box scrolled 560px to commit 21; height 58 -> 98px",
-			"durationMs": 8196
+			"details": "All: 30 bars (15 Oct | 20 Oct | 24 Oct | 28 Oct | 1 Nov | 5 Nov | 9 Nov | Today); zoomed in: 7 Nov | 8 Nov | 9 Nov | 10 Nov | 11 Nov | 12 Nov | Today; panned: 31 Oct | 1 Nov | 2 Nov | 3 Nov | 4 Nov | 5 Nov | 6 Nov; dragging the box scrolled 560px to commit 22; height 58 -> 98px",
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-refs-column",
 			"title": "[Webview UI] [Redesign] The Branches / Tags column can be resized (remembered for each repository, double-clicking its edge resets it), and the labels that don't fit are truncated",
 			"pass": true,
 			"details": "Width 172 -> 332 -> 120 (first label 60 of 152px) -> 172px",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-frozen-panes",
 			"title": "[Webview UI] [Redesign] The column headers & the footer stay visible while scrolling through the commits (both can be unfrozen)",
 			"pass": true,
 			"details": "Frozen below the controls & at the bottom of the view; sent: graph.freezeColumnHeaders=false, graph.freezeFooter=false",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#856",
 			"title": "[Webview UI] Pasting a branch name with the mouse enables the \"Create Branch\" button",
 			"pass": true,
 			"details": "",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#652",
 			"title": "[Webview UI] The dialog buttons can be focused with Tab (after the inputs), and activated with Enter",
 			"pass": true,
 			"details": "Tab order: inputs 1, 2 → buttons 3, 4",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-components",
 			"title": "[Webview UI] [Redesign] Dialogs show the commit they are for, labels above inputs & the buttons on the right; context menus show keyboard shortcuts (Ctrl/Cmd+C copies the commit hash); the Authors dropdown shows initials, checkboxes & counts",
 			"pass": true,
 			"details": "Shortcut: ⌘C; subtitle: Commit 00000000 · Resolve #104; authors: E2E Author:E:17, Second Author:S:8",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#707",
 			"title": "[Webview UI] Adding Issue Linking prefills the Issue URL of the repository's GitHub remote (not an example URL)",
 			"pass": true,
 			"details": "Prefilled: #(\\d+) → https://github.com/e2e-owner/e2e-repo/issues/$1",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "#171",
 			"title": "[Webview UI] Commits can be filtered by selecting authors in the Authors dropdown",
 			"pass": true,
 			"details": "Options: Show All, E2E Author, Second Author → requested authors [\"Second Author\"]",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-file-history",
 			"title": "[Webview UI] [Redesign] The history of a file (opened by the extension) shows the commits that change it, how they change it, its renames, and its changes in a commit (with a diff)",
 			"pass": true,
 			"details": "5 commits: +1−0, +2−1, +3−2, +4−3, +5−4; diff: 4 lines",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-graph-fit",
 			"title": "[Webview UI] [Redesign] When the lanes of the graph don't fit in the Graph column, they're moved closer together (so the commits aren't cut off)",
 			"pass": true,
 			"details": "40 lanes, 8.399999999999999px apart, in a 359.6px wide graph (natural width 656px)",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-settings-panel",
 			"title": "[Webview UI] [Redesign] The Repository Settings panel changes the colour preset, line style, language & Status Bar Item for all repositories",
 			"pass": true,
 			"details": "Sent: graph.colourPreset=Tokyo Subway, graph.style=angular, statusBarItemDisplay=Icon, graph.density=Compact, graph.nodeStyle=Avatar, graph.freezeColumnHeaders=false, graph.freezeFooter=false, language=English",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-find-operators",
 			"title": "[Webview UI] [GitLens] The Find Widget supports the author:, message: & commit: search operators, shown alongside the scrollbar",
 			"pass": true,
 			"details": "{\"author:\\\"Second Author\\\" Commit\":\"1 of 2\",\"@:second\":\"1 of 3\",\"message:Resolve =:#10\":\"1 of 4\",\"commit:0000000000000000000000000000000000000005\":\"1 of 1\"}, scrollbar markers shown, minimap: 13 Nov 2026: 1 matching commit",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-find-dates",
 			"title": "[Webview UI] [GitLens] The after: & before: search operators find the commits in a range of dates (which can also be searched for from the zoomed in minimap)",
 			"pass": true,
 			"details": "{\"after:today\":\"1 of 1\",\"before:today\":\"1 of 19\",\">:yesterday <:today\":\"1 of 1\",\"after:1w\":\"2 of 8\",\"after:2026-11-01 before:2026-11-08\":\"1 of 7\"}; invalid: Error: \"2026-02-30\" isn't a date. Use YYYY-MM-DD, YYYY-MM, YYYY, today, yesterday, or a number of days, weeks, months or years ago (e.g. 7d, 2w, 3m, 1y).; minimap range: after:2026-10-24 before:2026-11-12 → 1 of 18",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-multi-select",
 			"title": "[Webview UI] [GitLens] Commits can be selected with Shift (+ Ctrl / Cmd) + click, and cherry picked together (oldest first, merge commits refused), or their hashes copied",
 			"pass": true,
 			"details": "Copied: 00000006, 00000004, 00000003; cherry picked: 00000006, 00000004, 00000003; merge commit refused",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-row-actions",
 			"title": "[Webview UI] [GitLens] Hovering over a commit shows buttons of its most common actions at the end of its row (which run the actions of its context menu)",
 			"pass": true,
 			"details": "Buttons: Create Branch… | Checkout… | Cherry Pick… | Copy Commit Hash to Clipboard | More Actions…; copied 00000004, opened the Create Branch dialog & the context menu",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-undo",
 			"title": "[Webview UI] [GitKraken] After an action that can be undone, an Undo button & a notification are shown, which undo it (after confirming)",
 			"pass": true,
 			"details": "Button: Undo: Merge \"feature\"; notified once; undo requested for /e2e/harness-repo",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-worktrees",
 			"title": "[Webview UI] [GitLens] The Worktrees button lists the worktrees (opening, removing & pruning them), branches checked out in other worktrees are marked, and worktrees are created from the context menu",
 			"pass": true,
 			"details": "Listed 3 worktrees; opened /e2e/harness-repo-feature; removed /e2e/harness-repo-feature; pruned; created /e2e/harness-repo-00000000 (wt-test)",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-line-history",
 			"title": "[Webview UI] [GitLens] The history of lines (opened by the extension) shows the commits that change them, and how they change them",
 			"pass": true,
 			"details": "FLine HistoryLines 3–5src/lines.ts3 commits · 2 authorsAll BranchesCurrent BranchOpen in EditorExit Line History; changes: +1−1, +2−1, +3−1",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-rebase-editor",
 			"title": "[Webview UI] [GitLens] An interactive rebase opens the Rebase Editor (reordering commits by dragging them, and choosing to pick, reword, squash, fixup or drop each one), and an operation in progress can be continued or aborted",
 			"pass": true,
 			"details": "Todo: reword 00000004, drop 00000002, pick 00000005, fixup 00000003; operation bar: continued & aborted",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-find-filter",
 			"title": "[Webview UI] [Redesign] The search box adds conditions as chips, can only show the matching commits (keeping the graph connected), and searches the files changed by the commits (file:)",
 			"pass": true,
 			"details": "3 commit(s) by Second Author (1 graph column), 1 also changing README, of 10",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-virtual-rows",
 			"title": "[Webview UI] [Performance] When thousands of commits are loaded, only the rows near the view are rendered (the others are replaced by spacers of the same height), and scrolling, finding, the scrollbar markers & the Commit Details View work on all of the commits",
 			"pass": true,
-			"details": "Loaded 5000 commits in 59ms: 91 rows rendered (6567 DOM nodes), table 160031px high; rows in line with the graph at commits 2500 & 4999 (drift 0.00px); found commit 4997 (scrollbar marker at 99.923%); Commit Details View docked: 89 rows rendered, inline: 5000",
-			"durationMs": 8196
+			"details": "Loaded 5000 commits in 58ms: 91 rows rendered (6567 DOM nodes), table 160031px high; rows in line with the graph at commits 2500 & 4999 (drift 0.00px); found commit 4997 (scrollbar marker at 99.923%); Commit Details View docked: 89 rows rendered, inline: 5000",
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-branch-compare",
 			"title": "[Webview UI] [GitLens] \"Compare with Branch…\" shows a bar with the two branches, their merge base & the commits only on each (only those commits are shown, marked), and a panel of the files changed, which open their changes",
 			"pass": true,
 			"details": "Bar: Only in feature 4 / Only in main 0 / Both 4; 2 files in the panel; opened the changes of src/app.ts and all of them",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-branch-cleanup",
 			"title": "[Webview UI] [GitLens] \"Clean Up Branches…\" (at the bottom of the Branches dropdown) lists the branches that can be deleted (those that aren't merged unselected, with a warning), and deletes the selected ones (also on the remote, if chosen)",
 			"pass": true,
 			"details": "Listed old-feature (selected) & spike (not merged, unselected); deleted old-feature (and on origin)",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-edit-message",
 			"title": "[Webview UI] [GitLens] \"Edit Commit Message…\" opens a dialog with the full message in a multi-line input (Enter adds a line, Ctrl / Cmd + Enter saves it)",
 			"pass": true,
 			"details": "Saved \"New subject\\n\\nNew body\" with Cmd + Enter",
-			"durationMs": 8196
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-bisect",
 			"title": "[Webview UI] [GitLens] While bisecting, the operation bar shows how many commits are left (with Good / Bad / Skip buttons) and the commits are labelled; when the first bad commit is found, it's shown",
 			"pass": true,
-			"details": "Bar: Good / Bad / Skip / Stop Bisecting; labels: bad, skipped, testing, good; first bad commit shown",
-			"durationMs": 8196
+			"details": "Bar: Good / Bad / Skip / View Log / Stop Bisecting; labels: bad, skipped, testing, good; first bad commit shown",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-explain-tab",
+			"title": "[Webview UI] [AI] The Explain tab (git-map.ai.explainCommit.enabled) asks which language model the commit is sent to before sending it, then shows the explanation as it's received (rendered from Markdown, without rendering HTML), which can be copied",
+			"pass": true,
+			"details": "Asked first (2 models), explained by Model Two: Summary / Changes / Worth checking; HTML escaped; copied",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-cdv-visual-file-history",
+			"title": "[Webview UI] [GitLens] \"Visual File History\" in the context menu of a file in the Commit Details View opens the visual history of the file",
+			"pass": true,
+			"details": "Requested the Visual File History of README.md",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-stash-partial",
+			"title": "[Webview UI] [GitLens] \"Stash uncommitted changes…\" lists the changed files (so that only some of them are stashed), and can stash only the staged changes",
+			"pass": true,
+			"details": "Stashed src/new-name.ts, notes.txt (with untracked files); then only the staged changes",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-stash-file",
+			"title": "[Webview UI] [GitLens] \"Stash this File…\" in the context menu of a file of the uncommitted changes stashes only that file",
+			"pass": true,
+			"details": "Stashed src/new-name.ts",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-restore-from-stash",
+			"title": "[Webview UI] [GitLens] \"Restore File from this Stash…\" in the context menu of a file of a stash restores it, asking first (as a dangerous action) when the file has uncommitted changes",
+			"pass": true,
+			"details": "Asked to confirm (danger), then restored README.md from stash@{0}",
+			"durationMs": 13124
+		},
+		{
+			"id": "ui-apply-patch",
+			"title": "[Webview UI] [GitLens] \"Apply Patch…\" in the context menu of the uncommitted changes shows what the chosen patch contains and whether it applies cleanly, and applies it as commits or as uncommitted changes",
+			"pass": true,
+			"details": "Showed fix.patch (2 commits, 3 files, applies cleanly), applied as uncommitted changes",
+			"durationMs": 13124
 		},
 		{
 			"id": "ui-settings-update",
 			"title": "[Redesign] The Repository Settings panel can only update its whitelisted Extension Settings, for all repositories",
 			"pass": true,
 			"details": "Valid: updated; invalid value: \"The Extension Setting \"git-map.statusBarItemDisplay\" can't be set to \"Huge\".\"; other setting: \"The Extension Setting \"git-map.repository.commits.initialLoad\" can't be set to \"1\".\"; boolean: updated, as a string: \"The Extension Setting \"git-map.graph.freezeColumnHeaders\" can't be set to \"false\".\"",
-			"durationMs": 628
+			"durationMs": 663
 		},
 		{
 			"id": "l10n",
 			"title": "Setting git-map.language to Simplified Chinese re-renders the open Git Map View & Status Bar Item in Simplified Chinese",
 			"pass": true,
 			"details": "437 contribution descriptions in package.nls.json & package.nls.zh-cn.json, Status Bar Item tooltip: View Git Map → 查看 Git Map",
-			"durationMs": 154
+			"durationMs": 153
 		},
 		{
 			"id": "l10n-view",
 			"title": "[Webview UI, 简体中文] The control bar, column headers, dates & tooltips are displayed in Simplified Chinese",
 			"pass": true,
-			"details": "Columns: 分支 / 标签 | 图形 | 说明 | 日期 | 作者 | 改动 | 提交, date: 2026年11月13日 20:26",
-			"durationMs": 122
+			"details": "Columns: 分支 / 标签 | 图形 | 说明 | 日期 | 作者 | 改动 | 提交, date: 2026年11月13日 21:14",
+			"durationMs": 1854
 		},
 		{
 			"id": "l10n-menu-dialog",
 			"title": "[Webview UI, 简体中文] Context menus and dialogs are displayed in Simplified Chinese",
 			"pass": true,
 			"details": "Commit context menu: 添加标签… | 创建分支… | 创建工作树… | 签出… | 拣选… | 还原… | 合并到当前分支… | 将当前分支变基到此提交… | 将当前分支重置到此提交… | 开始二分查找：此提交是坏的… | 开始二分查找：此提交是好的… | 复制提交哈希到剪贴板⌘C | 复制提交标题到剪贴板 | 另存为补丁… | 复制为补丁; branch context menu: 11 items; dialog buttons: 创建分支 / 取消",
-			"durationMs": 122
+			"durationMs": 1854
 		},
 		{
 			"id": "l10n-cdv",
 			"title": "[Webview UI, 简体中文] The Commit Details View and the Authors dropdown are displayed in Simplified Chinese",
 			"pass": true,
 			"details": "Author options: 全部, E2E Author, Second Author",
-			"durationMs": 122
+			"durationMs": 1854
 		},
 		{
 			"id": "l10n-settings",
 			"title": "[Webview UI, 简体中文] The Repository Settings Widget and its dialogs are displayed in Simplified Chinese",
 			"pass": true,
 			"details": "Sections: 外观 · 所有仓库, 界面语言 · 所有仓库, 状态栏 · 所有仓库, 此仓库, Issue 链接, 远程仓库, 常规, 用户信息, 拉取请求创建; Issue Linking dialog buttons: 保存 / 取消",
-			"durationMs": 122
+			"durationMs": 1854
 		},
 		{
 			"id": "l10n-reset",
 			"title": "Resetting git-map.language re-renders the open Git Map View in the display language of Visual Studio Code (English)",
 			"pass": true,
 			"details": "vscode.env.language: en",
-			"durationMs": 58
+			"durationMs": 33
 		}
 	]
 }
