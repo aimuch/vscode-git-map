@@ -66,6 +66,14 @@ export class UndoManager {
 		return typeof record !== 'undefined' ? { id: record.id, description: record.description } : null;
 	}
 
+	/**
+	 * Forget the action in a repository that can be undone (e.g. when its history is rewritten, as the commits it refers to are replaced).
+	 * @param repo The path of the repository.
+	 */
+	public clear(repo: string) {
+		delete this.records[repo];
+	}
+
 
 	/* Tracking Actions */
 
@@ -314,4 +322,24 @@ export class UndoManager {
 			return typeof error === 'string' ? error : String(error);
 		}
 	}
+}
+
+/**
+ * The Undo Manager of each DataSource (shared by everything that uses the DataSource, so that an action can still be undone after the
+ * Git Map View is reopened).
+ */
+const undoManagers = new WeakMap<DataSource, UndoManager>();
+
+/**
+ * Get the Undo Manager of a DataSource (creating it if required).
+ * @param dataSource The DataSource.
+ * @returns The Undo Manager.
+ */
+export function getUndoManager(dataSource: DataSource) {
+	let undoManager = undoManagers.get(dataSource);
+	if (typeof undoManager === 'undefined') {
+		undoManager = new UndoManager(dataSource);
+		undoManagers.set(dataSource, undoManager);
+	}
+	return undoManager;
 }

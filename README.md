@@ -80,6 +80,7 @@ View a graph of your repository's Git history, and easily perform Git actions fr
 * File Blame: "Toggle File Blame" annotates each block of lines with the date & author of the commit that last changed it, coloured by how recently it was made (a heatmap from blue, the oldest, to orange, the newest).
 * Revisions: "Show Previous Revision" & "Show Next Revision" (arrow buttons on the diffs & files opened by Git Map) step through the commits that changed a file.
 * Remote Links: "Copy Remote Link to Lines" & "Open Lines on Remote" link to the selected lines on the remote's web page (GitHub, GitLab, Bitbucket, Gitea / Forgejo / Codeberg & Azure DevOps), at a commit.
+* Remove Files from History ("Git Map: Remove Files from History..." in the Command Palette, and in the context menus of files in the Explorer & the Commit Details View): removes files or folders from every branch & tag, as if they had never been committed (e.g. large files, or files containing passwords & keys), including files that have since been deleted. Only the history is changed: by default the files themselves stay in the working directory as untracked files (they can also be added to .gitignore, or deleted from it as well). It only uses Git itself (`git fast-export` & `git fast-import`), on Linux, macOS & Windows: no other tool (e.g. git-filter-repo, Python or Java) is required, and nothing is run by a shell. Before anything changes, it shows what will be rewritten, and the name of the repository must be typed to confirm it. A backup (a Git bundle) is created first, which "Git Map: Restore History from Backup" restores. Nothing is ever pushed: a document lists the steps that follow (force-pushing the rewritten branches & tags, and "Git Map: Clean Up after Removing Files from History", which deletes the previous history from the repository and reports what still contains the files).
 * Git CodeLens (`git-map.codeLens.enabled`, off by default): who changed each function, method & class most recently, and how many authors changed it.
 * The editor's context menu has a "Git Map" submenu with these actions (each can be moved directly into the context menu, or hidden, with `git-map.editorContextMenu`). Escape closes the drawer, inline window or File Blame that was shown most recently. No other extension is required: everything uses Visual Studio Code's API and Git.
 * A broad range of configurable settings (e.g. graph style, branch colours, and more...). See the 'Extension Settings' section below for more information.
@@ -184,10 +185,13 @@ This extension contributes the following commands:
 * `git-map.view`: Git Map: View Git Map
 * `git-map.addGitRepository`: Git Map: Add Git Repository... _(used to add sub-repos to Git Map)_
 * `git-map.clearAvatarCache`: Git Map: Clear Avatar Cache
+* `git-map.cleanUpRemovedFiles`: Git Map: Clean Up after Removing Files from History... _(deletes the previous history from the repository once its files have been removed, and reports what still contains them)_
 * `git-map.endAllWorkspaceCodeReviews`: Git Map: End All Code Reviews in Workspace
 * `git-map.endSpecificWorkspaceCodeReview`: Git Map: End a specific Code Review in Workspace... _(used to end a specific Code Review without having to first open it in the Git Map View)_
 * `git-map.fetch`: Git Map: Fetch from Remote(s) _(used to open the Git Map View and immediately run "Fetch from Remote(s)")_
+* `git-map.removeFilesFromHistory`: Git Map: Remove Files from History... _(removes files or folders from every branch & tag, after showing what will be rewritten and asking for confirmation)_
 * `git-map.removeGitRepository`: Git Map: Remove Git Repository... _(used to remove repositories from Git Map)_
+* `git-map.restoreHistoryBackup`: Git Map: Restore History from Backup... _(restores the branches & tags from the backup created before files were removed from the history)_
 * `git-map.resumeWorkspaceCodeReview`: Git Map: Resume a specific Code Review in Workspace... _(used to open the Git Map View to a Code Review that is already in progress)_
 * `git-map.selectGraphColourPreset`: Git Map: Select Graph Colour Preset...
 * `git-map.toggleFileBlame`: Git Map: Toggle File Blame

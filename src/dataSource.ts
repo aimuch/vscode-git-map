@@ -2379,12 +2379,6 @@ export class DataSource extends Disposable {
 		});
 	}
 
-	/**
-	 * Run a Git command (typically for a Git Map View action).
-	 * @param args The arguments to pass to Git.
-	 * @param repo The repository to run the command in.
-	 * @returns The returned ErrorInfo (suitable for being sent to the Git Map View).
-	 */
 	/* Interactive Rebase & Operations in Progress */
 
 	/**
@@ -2545,6 +2539,38 @@ export class DataSource extends Disposable {
 		return this.spawnGit(args, repo, (stdout) => stdout);
 	}
 
+	/**
+	 * Spawn Git, returning its process. Used for long-running commands whose input & output are streamed, and which can be cancelled
+	 * (see HistoryRewriter).
+	 * @param args The arguments to pass to Git.
+	 * @param repo The repository to run the command in.
+	 * @param env Additional environment variables.
+	 * @returns The process.
+	 * @throws If there isn't a Git executable.
+	 */
+	public spawnGitProcess(args: string[], repo: string, env: { [name: string]: string } = {}) {
+		if (this.gitExecutable === null) throw new Error(UNABLE_TO_FIND_GIT_MSG);
+		this.logger.logCmd('git', args);
+		return cp.spawn(this.gitExecutable.path, args, {
+			cwd: repo,
+			env: Object.assign({}, process.env, this.askpassEnv, env)
+		});
+	}
+
+	/**
+	 * Get the version of the Git executable.
+	 * @returns The version, or NULL if there isn't a Git executable.
+	 */
+	public getGitVersion() {
+		return this.gitExecutable !== null ? this.gitExecutable.version : null;
+	}
+
+	/**
+	 * Run a Git command (typically for a Git Map View action).
+	 * @param args The arguments to pass to Git.
+	 * @param repo The repository to run the command in.
+	 * @returns The returned ErrorInfo (suitable for being sent to the Git Map View).
+	 */
 	private runGitCommand(args: string[], repo: string): Promise<ErrorInfo> {
 		return this._spawnGit(args, repo, () => null).catch((errorMessage: string) => errorMessage);
 	}

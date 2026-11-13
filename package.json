@@ -140,6 +140,21 @@
 			},
 			{
 				"category": "Git Map",
+				"command": "git-map.removeFilesFromHistory",
+				"title": "%command.removeFilesFromHistory.title%"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.cleanUpRemovedFiles",
+				"title": "%command.cleanUpRemovedFiles.title%"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.restoreHistoryBackup",
+				"title": "%command.restoreHistoryBackup.title%"
+			},
+			{
+				"category": "Git Map",
 				"command": "git-map.viewLineHistoryInGitMap",
 				"title": "%command.viewLineHistoryInGitMap.title%",
 				"icon": "$(git-merge)"
@@ -454,6 +469,10 @@
 								"resetFileToThisRevision": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.resetFileToThisRevision.title%"
+								},
+								"removeFromHistory": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.removeFromHistory.title%"
 								},
 								"copyAbsoluteFilePath": {
 									"type": "boolean",
@@ -2031,6 +2050,11 @@
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@1",
 					"when": "resourceScheme == file && !explorerResourceIsFolder"
+				},
+				{
+					"command": "git-map.removeFilesFromHistory",
+					"group": "gitMap@2",
+					"when": "resourceScheme == file"
 				}
 			],
 			"editor/title/context": [

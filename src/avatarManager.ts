@@ -182,7 +182,7 @@ export class AvatarManager extends Disposable {
 				if (remoteUrl !== null) {
 					// Depending on the domain of the remote repo source, determine the type of source it is
 					let match;
-					if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.*)\.git$/)) !== null) {
+					if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(\.git)?\/?$/)) !== null) {
 						remoteSource = { type: 'github', owner: match[2], repo: match[3] };
 					} else if (remoteUrl.startsWith('https://gitlab.com/') || remoteUrl.startsWith('git@gitlab.com:')) {
 						remoteSource = { type: 'gitlab' };
@@ -296,7 +296,7 @@ export class AvatarManager extends Disposable {
 		};
 
 		https.get({
-			hostname: 'gitlab.com', path: '/api/v4/users?search=' + avatarRequest.email,
+			hostname: 'gitlab.com', path: '/api/v4/users?search=' + encodeURIComponent(avatarRequest.email).replace(/%40/g, '@'), // The email address is encoded (e.g. it may contain "+" or "&")
 			headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' }, // Token only has read access
 			agent: false, timeout: 15000
 		}, (res) => {
@@ -384,8 +384,10 @@ export class AvatarManager extends Disposable {
 				let imageBufferArray: Buffer[] = [];
 				res.on('data', (chunk: Buffer) => { imageBufferArray.push(chunk); });
 				res.on('end', () => {
-					if (res.statusCode === 200) { // If success response, save the image to the avatar folder
-						let format = res.headers['content-type']!.split('/')[1];
+					// The format of the image is part of the name of its file (and of its data URI), so only the type of an image is accepted
+					const contentType = /^image\/([A-Za-z0-9.+-]+)/.exec(res.headers['content-type'] || '');
+					if (res.statusCode === 200 && contentType !== null) { // If success response, save the image to the avatar folder
+						let format = contentType[1];
 						fs.writeFile(this.avatarStorageFolder + '/' + hash + '.' + format, Buffer.concat(imageBufferArray), err => {
 							complete(err ? null : hash + '.' + format);
 						});

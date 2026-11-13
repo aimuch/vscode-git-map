@@ -1244,14 +1244,14 @@ body.freezeFooter #footer{
 	font-size:11.5px;
 	line-height:15px;
 }
-.fileTreeFileIcon, .fileTreeFolderIcon, .fileTreeRepoIcon, .fileTreeFileAction, #cdvLastFileViewed{
+.fileTreeFolderIcon, .fileTreeRepoIcon, .fileTreeFileAction, #cdvLastFileViewed{
 	position:relative;
 	display:inline-block;
 	width:13px;
 	height:18px;
 	vertical-align:top;
 }
-.fileTreeFileIcon, .fileTreeFolderIcon, .fileTreeRepoIcon{
+.fileTreeFolderIcon, .fileTreeRepoIcon{
 	margin-right:8px;
 }
 #cdvLastFileViewed{
@@ -2952,7 +2952,7 @@ label > input[type=radio]:checked ~ .customRadio:after{
 
 /* General */
 
-#commitGraph, #commitTable th, #commitTable td, .gitRef, #loadingHeader, .unselectable, .roundedBtn, #controls label{
+#commitGraph, #commitTable th, #commitTable td, .gitRef, #loadingHeader, .roundedBtn, #controls label{
 	-webkit-user-select:none;
 	user-select:none;
 }

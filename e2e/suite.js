@@ -1336,6 +1336,127 @@ async function run() {
 		return 'Rebased: ' + subjects.join(' ← ') + '; stopped at a conflict: aborted, then continued after resolving it';
 	});
 
+	await check('remove-files-from-history', '[History] "Remove Files from History..." removes files from every branch & tag (as if they had never been committed; by default they stay in the working directory as untracked files) once the name of the repository is typed to confirm it, using only Git; the backup restores the history, and cleaning up deletes the previous history', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('remove-from-history', { 'a.txt': 'a\n' }), name = 'remove-from-history';
+		const first = git(repo, 'rev-parse', 'HEAD');
+		fs.writeFileSync(path.join(repo, 'b.txt'), 'b\n');
+		commitFile(repo, 'secret.bin', 'secret 1\n', 'Add the secret (and b.txt)');
+		const blob = git(repo, 'rev-parse', 'HEAD:secret.bin');
+		git(repo, 'add', 'b.txt');
+		git(repo, 'commit', '-q', '--amend', '--no-edit');
+		git(repo, 'tag', '-a', 'v1', '-m', 'Version 1');
+		git(repo, 'branch', 'side');
+		commitFile(repo, 'secret.bin', 'secret 2\n', 'Only change the secret');
+		commitFile(repo, 'a.txt', 'a2\n', 'Change a.txt');
+		git(repo, 'checkout', '-q', 'side');
+		commitFile(repo, 'side.txt', 'side\n', 'Add side.txt');
+		git(repo, 'checkout', '-q', 'main');
+		git(repo, 'update-ref', 'refs/remotes/origin/main', 'main'); // As if main had been pushed
+		await view.repoManager.registerRepo(repo, false);
+		const refs = () => git(repo, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/tags');
+		const inHistory = () => git(repo, 'log', '--branches', '--tags', '--format=%s', '--', 'secret.bin');
+		const before = refs();
+
+		// The dialogs of Visual Studio Code are answered by the check (and recorded)
+		const dialogs = [], answers = { pick: () => undefined, warning: () => undefined, input: () => undefined };
+		const originals = { showQuickPick: vscode.window.showQuickPick, showWarningMessage: vscode.window.showWarningMessage, showInputBox: vscode.window.showInputBox, showInformationMessage: vscode.window.showInformationMessage, showErrorMessage: vscode.window.showErrorMessage };
+		vscode.window.showQuickPick = async (items, options) => {
+			dialogs.push({ type: 'pick', message: options.placeHolder, items: (await items).map((item) => item.label) });
+			return answers.pick(await items);
+		};
+		vscode.window.showWarningMessage = async (message, options, ...buttons) => {
+			dialogs.push({ type: 'warning', message: message, detail: options && options.detail, modal: !!(options && options.modal), buttons: buttons });
+			return options && options.modal ? answers.warning(buttons) : undefined;
+		};
+		vscode.window.showInputBox = async (options) => {
+			dialogs.push({ type: 'input', message: options.prompt, validate: options.validateInput });
+			return answers.input(options);
+		};
+		vscode.window.showInformationMessage = async (message) => { dialogs.push({ type: 'information', message: message }); };
+		vscode.window.showErrorMessage = async (message, options) => { dialogs.push({ type: 'error', message: message, detail: options && options.detail }); };
+		const last = (type) => dialogs.filter((dialog) => dialog.type === type).pop();
+		const run = (command, arg) => withTimeout(vscode.commands.executeCommand(command, arg), 60000, command);
+		const remove = () => run('git-map.removeFilesFromHistory', { repo: repo, paths: ['secret.bin'] });
+
+		try {
+			// It's refused while there are uncommitted changes, explaining why
+			fs.writeFileSync(path.join(repo, 'a.txt'), 'uncommitted\n');
+			await remove();
+			assert(last('error') && last('error').message.includes('can\'t be removed') && last('error').detail.includes('uncommitted changes'), 'The uncommitted changes weren\'t reported: ' + JSON.stringify(last('error')));
+			git(repo, 'checkout', '--', 'a.txt');
+
+			// Nothing happens unless the name of the repository is typed
+			answers.pick = (items) => items[1]; // Keep the file, and add it to .gitignore
+			answers.warning = (buttons) => buttons[0]; // Back Up & Remove
+			answers.input = () => undefined;
+			await remove();
+			const confirmation = last('warning');
+			assert(last('pick').items.join(' | ') === 'Keep them as untracked files | Keep them, and add them to .gitignore | Delete them from the working directory too', 'Keeping the file isn\'t the default option: ' + last('pick').items.join(' | '));
+			assert(confirmation.modal && confirmation.message.includes('secret.bin') && confirmation.detail.includes('aren\'t deleted') && confirmation.detail.includes('2 commit(s) change them') && confirmation.detail.includes('Branches: main, side') && confirmation.detail.includes('Tags: v1') && confirmation.detail.includes('origin/main'), 'What it will do wasn\'t shown: ' + JSON.stringify(confirmation));
+			assert(confirmation.buttons.join(', ') === 'Back Up & Remove, Remove Without a Backup', 'Unexpected buttons: ' + confirmation.buttons.join(', '));
+			assert(last('input').validate('wrong') !== null && last('input').validate(name) === null, 'The name of the repository isn\'t required to confirm');
+			assert(refs() === before && inHistory() !== '', 'The history was changed without confirmation');
+
+			// Removing the file (with a backup)
+			answers.input = () => name;
+			await remove();
+			assert(inHistory() === '' && refs() !== before, 'The file is still in the history: ' + inHistory());
+			assert(git(repo, 'rev-list', '--count', 'main') === '3' && git(repo, 'log', '--format=%s', 'main') === 'Change a.txt\nAdd the secret (and b.txt)\nInitial commit', 'Unexpected commits: ' + git(repo, 'log', '--format=%s', 'main'));
+			assert(git(repo, 'rev-parse', 'main~2') === first && git(repo, 'log', '-1', '--format=%s', 'v1') === 'Add the secret (and b.txt)' && git(repo, 'cat-file', '-t', 'v1') === 'tag', 'The commit before the file, or the tag, changed');
+			assert(fs.readFileSync(path.join(repo, 'secret.bin'), 'utf8') === 'secret 2\n' && fs.readFileSync(path.join(repo, '.gitignore'), 'utf8') === '/secret.bin\n' && git(repo, 'status', '--porcelain') === '?? .gitignore', 'The file wasn\'t kept & ignored: ' + git(repo, 'status', '--porcelain'));
+			const steps = vscode.window.activeTextEditor.document.getText();
+			assert(steps.includes('git push --force-with-lease origin main') && steps.includes('git push --force origin refs/tags/v1') && steps.includes('Clean Up after Removing Files from History'), 'The steps that follow weren\'t shown: ' + steps);
+			await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+			const backup = (steps.match(/`([^`]+\.bundle)`/) || [])[1];
+			assert(backup && fs.existsSync(backup) && !realpath(backup).startsWith(repo + '/'), 'The backup wasn\'t created outside of the repository: ' + backup);
+			const rewritten = refs();
+
+			// Restoring the backup
+			answers.pick = (items) => items[0];
+			await run('git-map.restoreHistoryBackup');
+			assert(refs() === before && git(repo, 'show', 'main:secret.bin') === 'secret 2', 'The history wasn\'t restored: ' + JSON.stringify(last('error')));
+
+			// Removing it again, keeping it as an untracked file (the default)
+			answers.pick = (items) => items[0];
+			answers.warning = (buttons) => buttons[1]; // Remove Without a Backup
+			await remove();
+			await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+			assert(inHistory() === '' && refs() === rewritten && fs.readFileSync(path.join(repo, 'secret.bin'), 'utf8') === 'secret 2\n' && git(repo, 'ls-files', 'secret.bin') === '', 'The file wasn\'t removed from the history again (rewriting it the same way), or isn\'t an untracked file in the working directory');
+
+			// Restoring it, and removing it once more: the file is only deleted from the working directory when that's chosen
+			answers.warning = (buttons) => buttons[0];
+			await run('git-map.restoreHistoryBackup');
+			assert(refs() === before, 'The history wasn\'t restored again: ' + JSON.stringify(last('error')));
+			answers.pick = (items) => items[2];
+			answers.warning = (buttons) => buttons[1]; // Remove Without a Backup
+			await remove();
+			await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
+			assert(inHistory() === '' && refs() === rewritten && !fs.existsSync(path.join(repo, 'secret.bin')) && dialogs.filter((dialog) => dialog.type === 'warning' && dialog.modal).pop().detail.includes('also deleted from the working directory'), 'The file wasn\'t deleted from the working directory when that was chosen (or that wasn\'t said before confirming)');
+			answers.warning = (buttons) => buttons[1]; // Clean Up & Delete the Backup
+			await run('git-map.cleanUpRemovedFiles');
+			const cleanUp = dialogs.filter((dialog) => dialog.type === 'warning' && dialog.modal).pop(), remaining = last('warning');
+			assert(cleanUp.detail.includes('origin/main') && cleanUp.buttons.join(', ') === 'Clean Up, Clean Up & Delete the Backup', 'The remote-tracking branch wasn\'t reported before cleaning up: ' + JSON.stringify(cleanUp));
+			assert(!remaining.modal && remaining.message.includes('2 of 2 versions') && remaining.message.includes('origin/main') && !fs.existsSync(backup), 'What still contains the file wasn\'t reported: ' + JSON.stringify(remaining));
+
+			// Once the remote-tracking branch is updated, cleaning up deletes every version of the file from the repository
+			git(repo, 'update-ref', 'refs/remotes/origin/main', 'main');
+			answers.warning = (buttons) => buttons[0];
+			await run('git-map.cleanUpRemovedFiles');
+			let stored = true;
+			try {
+				git(repo, 'cat-file', '-e', blob);
+			} catch (_) {
+				stored = false;
+			}
+			assert(!stored && last('information').message.includes('no longer stored in the repository'), 'The file is still stored in the repository: ' + JSON.stringify(last('information')));
+			assert(git(repo, 'fsck', '--no-dangling') === '' && git(repo, 'log', '--all', '--format=%s', '--', 'secret.bin') === '', 'The repository is damaged, or still contains the file');
+			return 'Refused with uncommitted changes; not run without the typed name; removed from main, side & v1 (2 file changes, 1 commit removed, the first commit unchanged); restored from the backup; removed again (by default the file stays in the working directory, untracked; it\'s only deleted from it when that\'s chosen) & cleaned up: no version of the file is stored in the repository';
+		} finally {
+			Object.assign(vscode.window, originals);
+		}
+	});
+
 	await check('#932', 'An externally configured GIT_ASKPASS is used for authentication instead of Git Map\'s', async () => {
 		const result = await withTimeout((await getView()).dataSource.fetch(main, 'httpauth', false, false), 30000, 'fetching from the remote requiring authentication (Git Map\'s own Askpass prompt would wait for input)');
 		assert(result !== null, 'The fetch unexpectedly succeeded');

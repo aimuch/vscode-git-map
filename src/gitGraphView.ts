@@ -8,7 +8,7 @@ import { buildFileIconTheme, findFileIconTheme, getFileIconThemeExtensionPaths, 
 import { Logger } from './logger';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { UndoManager } from './undoManager';
+import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
@@ -201,6 +201,23 @@ export class GitGraphView extends Disposable {
 	 */
 	private async respondToMessage(msg: RequestMessage) {
 		this.repoFileWatcher.mute();
+		try {
+			await this.processMessage(msg);
+		} catch (error) {
+			// The front-end doesn't receive a response, so the error is shown here (otherwise it would only be an unhandled rejection)
+			const reason = error instanceof Error ? error.message : String(error);
+			this.logger.logError('Unable to process the "' + msg.command + '" message from the Git Map View: ' + reason);
+			showErrorMessage(t('An unexpected error occurred while running the command "{0}".', msg.command) + ' ' + reason);
+		} finally {
+			this.repoFileWatcher.unmute();
+		}
+	}
+
+	/**
+	 * Process a message sent from the front-end (responding to it, if it has a response).
+	 * @param msg The message that was received.
+	 */
+	private async processMessage(msg: RequestMessage) {
 		let errorInfos: ErrorInfo[];
 
 		switch (msg.command) {
@@ -623,6 +640,10 @@ export class GitGraphView extends Disposable {
 					error: await this.undoManager.trackRenameBranch(msg.repo, t('Rename Branch "{0}"', msg.oldName), msg.oldName, msg.newName, () => this.dataSource.renameBranch(msg.repo, msg.oldName, msg.newName))
 				});
 				break;
+			case 'removeFilesFromHistory':
+				// The command asks for confirmation itself (it isn't awaited, as it takes as long as its dialogs are open)
+				vscode.commands.executeCommand('git-map.removeFilesFromHistory', { repo: msg.repo, paths: msg.filePaths }).then(() => { }, () => { });
+				break;
 			case 'rescanForRepos':
 				if (!(await this.repoManager.searchWorkspaceForRepos())) {
 					showErrorMessage(t('No Git repositories were found in the current workspace.'));
@@ -776,8 +797,6 @@ export class GitGraphView extends Disposable {
 				});
 				break;
 		}
-
-		this.repoFileWatcher.unmute();
 	}
 
 	/**
@@ -895,7 +914,7 @@ export class GitGraphView extends Disposable {
 				<div id="footer"></div>
 			</div>
 			<div id="scrollShadow"></div>
-			<script nonce="${nonce}">var initialState = ${JSON.stringify(initialState)}, globalState = ${JSON.stringify(globalState)}, workspaceState = ${JSON.stringify(workspaceState)};</script>
+			<script nonce="${nonce}">var initialState = ${serialiseForScript(initialState)}, globalState = ${serialiseForScript(globalState)}, workspaceState = ${serialiseForScript(workspaceState)};</script>
 			<script nonce="${nonce}" src="${this.getMediaUri('out.min.js')}"></script>
 			</body>`;
 		} else {
@@ -1056,22 +1075,14 @@ export class GitGraphView extends Disposable {
 }
 
 /**
- * The Undo Manager of each DataSource (shared by all Git Map Views, so that an action can still be undone after the view is reopened).
+ * Serialise a value as JSON that's embedded in a script element of the Webview's HTML. "<" is escaped, so that a string in the value
+ * (e.g. the name of a repository or branch, or a setting) can't end the script element (e.g. with "</script>").
+ * @param value The value.
+ * @returns The JSON.
  */
-const undoManagers = new WeakMap<DataSource, UndoManager>();
-
-/**
- * Get the Undo Manager of a DataSource (creating it if required).
- * @param dataSource The DataSource.
- * @returns The Undo Manager.
- */
-function getUndoManager(dataSource: DataSource) {
-	let undoManager = undoManagers.get(dataSource);
-	if (typeof undoManager === 'undefined') {
-		undoManager = new UndoManager(dataSource);
-		undoManagers.set(dataSource, undoManager);
-	}
-	return undoManager;
+export function serialiseForScript(value: any) {
+	const json = JSON.stringify(value);
+	return typeof json === 'string' ? json.replace(/</g, '\\u003c') : 'undefined';
 }
 
 /**

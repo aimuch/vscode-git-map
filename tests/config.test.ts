@@ -265,6 +265,25 @@ describe('Config', () => {
 	});
 
 	describe('contextMenuActionsVisibility', () => {
+		it('Should ignore values that are null (keeping the default values)', () => {
+			// Setup
+			vscode.mockExtensionSettingReturnValue('contextMenuActionsVisibility', { branch: null, commit: { addTag: false, checkout: null } });
+
+			// Run
+			const value = config.contextMenuActionsVisibility;
+
+			// Assert
+			expect(value.branch.checkout).toBe(true);
+			expect(value.commit.addTag).toBe(false);
+			expect(value.commit.checkout).toBe(true);
+
+			// Setup
+			vscode.mockExtensionSettingReturnValue('contextMenuActionsVisibility', null);
+
+			// Run & Assert
+			expect(config.contextMenuActionsVisibility.branch.checkout).toBe(true);
+		});
+
 		it('Should return the default value (all items enabled) when the configuration value is invalid', () => {
 			// Setup
 			vscode.mockExtensionSettingReturnValue('contextMenuActionsVisibility', 1);
@@ -312,6 +331,7 @@ describe('Config', () => {
 					markAsReviewed: true,
 					markAsNotReviewed: true,
 					resetFileToThisRevision: true,
+					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
 					copyRelativeFilePath: true
 				},
@@ -396,6 +416,7 @@ describe('Config', () => {
 					markAsReviewed: true,
 					markAsNotReviewed: true,
 					resetFileToThisRevision: true,
+					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
 					copyRelativeFilePath: true
 				},
@@ -498,6 +519,7 @@ describe('Config', () => {
 					markAsReviewed: true,
 					markAsNotReviewed: true,
 					resetFileToThisRevision: false,
+					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
 					copyRelativeFilePath: true
 				},

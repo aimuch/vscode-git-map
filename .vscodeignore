@@ -5,6 +5,8 @@ coverage/
 docs/
 e2e/
 node_modules/*/*.md
+node_modules/**/*.d.ts
+node_modules/safer-buffer/tests.js
 out/**/*.d.ts
 out/**/*.js.map
 out/*.d.ts

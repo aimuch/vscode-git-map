@@ -27,6 +27,7 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 	private readonly repoManager: RepoManager;
 	private readonly onDidChangeCodeLensesEmitter = new vscode.EventEmitter<void>();
 	private readonly blames = new Map<string, { version: number, blame: Promise<GitFileBlame | null> }>(); // The blame of each document, by its URI
+	private registration: vscode.Disposable | null = null; // The registration of the provider (NULL => the Git CodeLens is disabled)
 	public readonly onDidChangeCodeLenses = this.onDidChangeCodeLensesEmitter.event;
 
 	/**
@@ -41,12 +42,32 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 		this.repoManager = repoManager;
 		this.registerDisposables(
 			this.onDidChangeCodeLensesEmitter,
-			vscode.languages.registerCodeLensProvider({ scheme: 'file' }, this),
 			onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.codeLens.enabled')) this.onDidChangeCodeLensesEmitter.fire();
+				if (event.affectsConfiguration('git-map.codeLens.enabled')) this.updateRegistration();
 			}),
-			vscode.workspace.onDidCloseTextDocument((document) => this.blames.delete(document.uri.toString()))
+			vscode.workspace.onDidCloseTextDocument((document) => this.blames.delete(document.uri.toString())),
+			{
+				dispose: () => {
+					if (this.registration !== null) this.registration.dispose();
+				}
+			}
 		);
+		this.updateRegistration();
+	}
+
+	/**
+	 * Register the provider while the Git CodeLens is enabled (it's off by default), so that Visual Studio Code doesn't ask for the
+	 * CodeLenses of every document when it's disabled.
+	 */
+	private updateRegistration() {
+		const enabled = getConfig().codeLensEnabled;
+		if (enabled && this.registration === null) {
+			this.registration = vscode.languages.registerCodeLensProvider({ scheme: 'file' }, this);
+		} else if (!enabled && this.registration !== null) {
+			this.registration.dispose();
+			this.registration = null;
+			this.blames.clear();
+		}
 	}
 
 	/**

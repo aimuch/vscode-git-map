@@ -22,6 +22,7 @@ Git Map has two parts that communicate with messages: the extension (`src/`, run
 | `lineBlame.ts`, `fileBlame.ts` | The blame of the current line (and its hover), and the File Blame (with a heatmap). |
 | `revisionNavigation.ts` | Show Previous / Next Revision of a file. |
 | `codeLens.ts` | The optional Git CodeLens. |
+| `removeFromHistory.ts`, `historyRewrite.ts`, `historyFilter.ts` | Remove Files from History: the commands & their confirmation (`removeFromHistory.ts`), running `git fast-export` & `git fast-import`, the backup, restoring it & cleaning up (`historyRewrite.ts`, which doesn't depend on Visual Studio Code), and the filter that removes the files from the fast-export stream (`historyFilter.ts`). |
 | `remoteLinks.ts` | Links to lines & commits on the web pages of remote repositories. |
 | `settingsMigration.ts` | Copies the Extension Settings named `git-graph.*` (before version 2.1.0, and by the original Git Graph extension) to `git-map.*` when Git Map starts. |
 | `l10n.ts` | Translation of messages (see [Localisation](#localisation)). |

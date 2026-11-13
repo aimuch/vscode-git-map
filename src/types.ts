@@ -580,6 +580,7 @@ export interface ContextMenuActionsVisibility {
 		readonly markAsReviewed: boolean;
 		readonly markAsNotReviewed: boolean;
 		readonly resetFileToThisRevision: boolean;
+		readonly removeFromHistory: boolean;
 		readonly copyAbsoluteFilePath: boolean;
 		readonly copyRelativeFilePath: boolean;
 	};
@@ -1551,6 +1552,11 @@ export interface RequestRescanForRepos extends BaseMessage {
 	readonly command: 'rescanForRepos';
 }
 
+export interface RequestRemoveFilesFromHistory extends RepoRequest {
+	readonly command: 'removeFilesFromHistory';
+	readonly filePaths: ReadonlyArray<string>;
+}
+
 export interface RequestResetFileToRevision extends RepoRequest {
 	readonly command: 'resetFileToRevision';
 	readonly commitHash: string;
@@ -1746,6 +1752,7 @@ export type RequestMessage =
 	| RequestRenameBranch
 	| RequestRescanForRepos
 	| RequestSearchCommits
+	| RequestRemoveFilesFromHistory
 	| RequestResetFileToRevision
 	| RequestResetToCommit
 	| RequestRevertCommit

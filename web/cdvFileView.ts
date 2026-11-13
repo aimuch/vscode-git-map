@@ -314,6 +314,12 @@ class CdvFileView {
 						title: t('Reset File to this Revision') + ELLIPSIS,
 						visible: visibility.resetFileToThisRevision && fileExistsAtThisRevision && expandedCommit.compareWithHash === null,
 						onClick: () => triggerResetFileToRevision(file, fileElem)
+					},
+					{
+						// The extension shows what removing the file will do, and asks for confirmation (also removing its previous name, if it was renamed)
+						title: t('Remove File from History') + ELLIPSIS,
+						visible: visibility.removeFromHistory && file.type !== GG.GitFileStatus.Untracked,
+						onClick: () => sendMessage({ command: 'removeFilesFromHistory', repo: this.view.currentRepo, filePaths: file.oldFilePath !== file.newFilePath ? [file.newFilePath, file.oldFilePath] : [file.newFilePath] })
 					}
 				],
 				[

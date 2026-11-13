@@ -53,6 +53,7 @@ The context menus, and the key of each of their actions:
 | | `markAsReviewed` | Mark as Reviewed |
 | | `markAsNotReviewed` | Mark as Not Reviewed |
 | | `resetFileToThisRevision` | Reset File to this Revision... |
+| | `removeFromHistory` | Remove File from History... |
 | | `copyAbsoluteFilePath` | Copy Absolute File Path to Clipboard |
 | | `copyRelativeFilePath` | Copy Relative File Path to Clipboard |
 | `remoteBranch` (a remote branch label) | `checkout` | Checkout Branch... |

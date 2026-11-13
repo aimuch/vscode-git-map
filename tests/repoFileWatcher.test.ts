@@ -102,6 +102,19 @@ describe('RepoFileWatcher', () => {
 		expect(callback).toHaveBeenCalledTimes(1);
 	});
 
+	it('Should receive file events for the packed references in the .git directory', () => {
+		// Setup
+		repoFileWatcher.start('/path/to/repo');
+		const onDidChange = (<jest.Mock<any, any>>repoFileWatcher['fsWatcher']!.onDidChange).mock.calls[0][0];
+
+		// Run
+		onDidChange(vscode.Uri.file('/path/to/repo/.git/packed-refs'));
+		jest.runOnlyPendingTimers();
+
+		// Assert
+		expect(callback).toHaveBeenCalledTimes(1);
+	});
+
 	it('Should ignore file system events on files ignored within .git directory', () => {
 		// Setup
 		repoFileWatcher.start('/path/to/repo');

@@ -11,6 +11,7 @@ import { FileBlame } from './fileBlame';
 import { LineBlame } from './lineBlame';
 import { LineHistory } from './lineHistory';
 import { Logger } from './logger';
+import { RemoveFromHistory } from './removeFromHistory';
 import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
@@ -32,16 +33,18 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const extensionState = new ExtensionState(context, onDidChangeGitExecutable);
 
-	// The Extension Settings are copied from git-graph.* to git-map.* before anything reads them
-	const settingsMigration = await migrateSettings(context.globalState, context.workspaceState, context.extension.packageJSON, logger);
+	// The Extension Settings are copied from git-graph.* to git-map.* before anything reads them. Git is found at the same time (it's
+	// configured by the "git.path" setting of Visual Studio Code, not by Git Map's settings).
+	const [settingsMigration, foundGit] = await Promise.all([
+		migrateSettings(context.globalState, context.workspaceState, context.extension.packageJSON, logger),
+		findGit(extensionState).then((executable) => executable, () => null)
+	]);
 
-	let gitExecutable: GitExecutable | null;
-	try {
-		gitExecutable = await findGit(extensionState);
+	const gitExecutable: GitExecutable | null = foundGit;
+	if (gitExecutable !== null) {
 		gitExecutableEmitter.emit(gitExecutable);
 		logger.log('Using ' + gitExecutable.path + ' (version: ' + gitExecutable.version + ')');
-	} catch (_) {
-		gitExecutable = null;
+	} else {
 		showErrorMessage(t(UNABLE_TO_FIND_GIT_MSG));
 		logger.logError(UNABLE_TO_FIND_GIT_MSG);
 	}
@@ -61,6 +64,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const fileBlame = new FileBlame(dataSource, repoManager, logger);
 	const revisionNavigation = new RevisionNavigation(dataSource, repoManager);
 	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration);
+	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
@@ -92,6 +96,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		fileBlame,
 		revisionNavigation,
 		codeLens,
+		removeFromHistory,
 		commandManager,
 		statusBarItem,
 		repoManager,

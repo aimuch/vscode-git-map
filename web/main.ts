@@ -753,9 +753,10 @@ class GitGraphView {
 		this.avatars[email] = image;
 		this.saveState();
 		this.graph.loadAvatar(email, image);
-		let avatarsElems = <HTMLCollectionOf<HTMLElement>>document.getElementsByClassName('avatar'), escapedEmail = escapeHtml(email);
+		let avatarsElems = <HTMLCollectionOf<HTMLElement>>document.getElementsByClassName('avatar');
 		for (let i = 0; i < avatarsElems.length; i++) {
-			if (avatarsElems[i].dataset.email === escapedEmail) {
+			// The value of the attribute is the email address itself (it's only escaped in the HTML it was written in)
+			if (avatarsElems[i].dataset.email === email) {
 				avatarsElems[i].innerHTML = '<img class="avatarImg" src="' + image + '">';
 			}
 		}

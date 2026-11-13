@@ -549,6 +549,7 @@ export class RepoManager extends Disposable {
 	 * @param path The path of the directory.
 	 */
 	private startWatchingFolder(path: string) {
+		if (typeof this.folderWatchers[path] !== 'undefined') return; // The folder is already watched (e.g. it was added to the workspace while Git Map was starting)
 		const watcher = vscode.workspace.createFileSystemWatcher(path + '/**');
 		watcher.onDidCreate(this.onWatcherCreate.bind(this));
 		watcher.onDidChange(this.onWatcherChange.bind(this));
@@ -561,6 +562,7 @@ export class RepoManager extends Disposable {
 	 * @param path The path of the directory.
 	 */
 	private stopWatchingFolder(path: string) {
+		if (typeof this.folderWatchers[path] === 'undefined') return; // The folder isn't watched (e.g. it was removed from the workspace while Git Map was starting)
 		this.folderWatchers[path].dispose();
 		delete this.folderWatchers[path];
 	}

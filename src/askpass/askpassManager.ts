@@ -63,7 +63,15 @@ export class AskpassManager extends Disposable {
 		req.setEncoding('utf8');
 		req.on('data', (d) => reqData += d);
 		req.on('end', () => {
-			let data = JSON.parse(reqData) as AskpassRequest;
+			let data: AskpassRequest;
+			try {
+				data = JSON.parse(reqData) as AskpassRequest;
+			} catch (_) {
+				// The request isn't from Git Map's Askpass
+				res.writeHead(400);
+				res.end();
+				return;
+			}
 			vscode.window.showInputBox({ placeHolder: data.request, prompt: 'Git Map: ' + data.host, password: /password/i.test(data.request), ignoreFocusOut: true }).then(result => {
 				res.writeHead(200);
 				res.end(JSON.stringify(result || ''));

@@ -11,7 +11,7 @@ import { ConfigurationChangeEvent } from 'vscode';
 import { AvatarEvent, AvatarManager } from '../src/avatarManager';
 import { DataSource } from '../src/dataSource';
 import { ExtensionState } from '../src/extensionState';
-import { GitGraphView, standardiseCspSource } from '../src/gitGraphView';
+import { GitGraphView, serialiseForScript, standardiseCspSource } from '../src/gitGraphView';
 import { Logger } from '../src/logger';
 import { RepoChangeEvent, RepoManager } from '../src/repoManager';
 import { CodeReview, CommitOrdering, GitCommitStash, GitConfigLocation, GitFileStatus, GitGraphViewGlobalState, GitGraphViewWorkspaceState, GitPushBranchMode, GitResetMode, MergeActionOn, PullRequestConfig, PullRequestProvider, RebaseActionOn, RequestMessage, ResponseMessage, TagType } from '../src/types';
@@ -486,6 +486,28 @@ describe('GitGraphView', () => {
 		afterEach(() => {
 			expect(spyOnRepoFileWatcherMute).toHaveBeenCalledWith();
 			expect(spyOnRepoFileWatcherUnmute).toHaveBeenCalledWith();
+		});
+
+		describe('unexpected errors', () => {
+			it('Should report an error that occurs while processing a message, and unmute the file watcher', async () => {
+				// Setup
+				jest.spyOn(dataSource, 'addRemote').mockRejectedValueOnce(new Error('Unexpected failure'));
+				vscode.window.showErrorMessage.mockResolvedValueOnce(null);
+
+				// Run
+				onDidReceiveMessage({
+					command: 'addRemote',
+					repo: '/path/to/repo',
+					name: 'origin',
+					url: 'url',
+					pushUrl: 'pushUrl',
+					fetch: true
+				});
+
+				// Assert
+				await waitForExpect(() => expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('An unexpected error occurred while running the command "addRemote". Unexpected failure'));
+				expect(spyOnRepoFileWatcherUnmute).toHaveBeenCalledTimes(1);
+			});
 		});
 
 		describe('addRemote', () => {
@@ -3823,5 +3845,21 @@ describe('standardiseCspSource', () => {
 
 		// Assert
 		expect(result).toBe('https://www.mhutchie.com:443');
+	});
+});
+
+describe('serialiseForScript', () => {
+	it('Should serialise a value as JSON that can\'t end the script element it\'s embedded in', () => {
+		// Run
+		const result = serialiseForScript({ name: '</script><img src=x>', nested: ['a < b', '<b>bold</b>'], count: 1 });
+
+		// Assert
+		expect(result).not.toContain('<');
+		expect(JSON.parse(result)).toStrictEqual({ name: '</script><img src=x>', nested: ['a < b', '<b>bold</b>'], count: 1 });
+	});
+
+	it('Should serialise undefined as undefined', () => {
+		// Run & Assert
+		expect(serialiseForScript(undefined)).toBe('undefined');
 	});
 });

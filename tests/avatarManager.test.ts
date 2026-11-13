@@ -108,6 +108,46 @@ describe('AvatarManager', () => {
 		});
 
 		describe('GitHub', () => {
+			it('Should fetch a new avatar from GitHub when the URL of the remote doesn\'t end with ".git"', async () => {
+				// Setup
+				spyOnGetRemoteUrl.mockResolvedValueOnce('https://github.com/mhutchie/test-repo');
+				mockHttpsResponse(200, '{"author":{"avatar_url":"https://avatar-url"}}');
+				mockHttpsResponse(200, 'binary-image-data');
+				mockWriteFile(null);
+				mockReadFile('binary-image-data');
+				const avatarEvents = waitForEvents(avatarManager, 1);
+
+				// Run
+				avatarManager.fetchAvatarImage('user4@mhutchie.com', 'test-repo', 'test-remote', ['1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b']);
+
+				// Assert
+				await avatarEvents;
+				expect(spyOnHttpsGet).toHaveBeenCalledWith(expect.objectContaining({
+					hostname: 'api.github.com',
+					path: '/repos/mhutchie/test-repo/commits/1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b'
+				}), expect.anything());
+			});
+
+			it('Should encode the email address when searching for a user on GitLab', async () => {
+				// Setup
+				spyOnGetRemoteUrl.mockResolvedValueOnce('https://gitlab.com/mhutchie/test-repo.git');
+				mockHttpsResponse(200, '[{"avatar_url":"https://avatar-url"}]');
+				mockHttpsResponse(200, 'binary-image-data');
+				mockWriteFile(null);
+				mockReadFile('binary-image-data');
+				const avatarEvents = waitForEvents(avatarManager, 1);
+
+				// Run
+				avatarManager.fetchAvatarImage('user+tag&more@mhutchie.com', 'test-repo', 'test-remote', ['1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b']);
+
+				// Assert
+				await avatarEvents;
+				expect(spyOnHttpsGet).toHaveBeenCalledWith(expect.objectContaining({
+					hostname: 'gitlab.com',
+					path: '/api/v4/users?search=user%2Btag%26more@mhutchie.com'
+				}), expect.anything());
+			});
+
 			it('Should fetch a new avatar from GitHub (HTTPS Remote)', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('https://github.com/mhutchie/test-repo.git');

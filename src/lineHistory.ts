@@ -277,7 +277,10 @@ export class LineHistory extends Disposable {
 	 * @param editor The editor whose selection changed.
 	 */
 	private onSelectionChange(editor: vscode.TextEditor) {
-		if (!getConfig().lineHistoryFollowCursor || getConfig().lineHistoryLocation !== LineHistoryLocation.Drawer || !this.drawer.isVisible() || editor.document.uri.scheme !== 'file') return;
+		// The visibility of the drawer is checked first, as this is called whenever the cursor moves in an editor
+		if (!this.drawer.isVisible() || editor.document.uri.scheme !== 'file') return;
+		const config = getConfig();
+		if (!config.lineHistoryFollowCursor || config.lineHistoryLocation !== LineHistoryLocation.Drawer) return;
 		if (this.followTimeout !== null) clearTimeout(this.followTimeout);
 		this.followTimeout = setTimeout(async () => {
 			this.followTimeout = null;
