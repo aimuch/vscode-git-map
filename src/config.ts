@@ -105,13 +105,13 @@ class Config {
 	get contextMenuActionsVisibility(): ContextMenuActionsVisibility {
 		const userConfig = this.config.get('contextMenuActionsVisibility', {});
 		const config: ContextMenuActionsVisibility = {
-			branch: { checkout: true, rename: true, delete: true, merge: true, rebase: true, push: true, viewIssue: true, createPullRequest: true, createArchive: true, createWorktree: true, selectInBranchesDropdown: true, unselectInBranchesDropdown: true, copyName: true },
-			commit: { addTag: true, createBranch: true, createWorktree: true, checkout: true, cherrypick: true, revert: true, drop: true, merge: true, rebase: true, reset: true, copyHash: true, copySubject: true },
-			commitDetailsViewFile: { viewDiff: true, viewFileAtThisRevision: true, viewDiffWithWorkingFile: true, openFile: true, markAsReviewed: true, markAsNotReviewed: true, resetFileToThisRevision: true, removeFromHistory: true, copyAbsoluteFilePath: true, copyRelativeFilePath: true },
-			remoteBranch: { checkout: true, delete: true, fetch: true, merge: true, pull: true, viewIssue: true, createPullRequest: true, createArchive: true, selectInBranchesDropdown: true, unselectInBranchesDropdown: true, copyName: true },
-			stash: { apply: true, createBranch: true, pop: true, drop: true, copyName: true, copyHash: true },
+			branch: { checkout: true, rename: true, delete: true, merge: true, rebase: true, push: true, viewIssue: true, createPullRequest: true, createArchive: true, createWorktree: true, selectInBranchesDropdown: true, unselectInBranchesDropdown: true, copyName: true, compare: true },
+			commit: { addTag: true, createBranch: true, createWorktree: true, checkout: true, cherrypick: true, revert: true, drop: true, merge: true, rebase: true, reset: true, copyHash: true, copySubject: true, editMessage: true, undoCommit: true, fixup: true, bisect: true, savePatch: true },
+			commitDetailsViewFile: { viewDiff: true, viewFileAtThisRevision: true, viewDiffWithWorkingFile: true, openFile: true, markAsReviewed: true, markAsNotReviewed: true, resetFileToThisRevision: true, removeFromHistory: true, copyAbsoluteFilePath: true, copyRelativeFilePath: true, stashFile: true, restoreFromStash: true, visualFileHistory: true },
+			remoteBranch: { checkout: true, delete: true, fetch: true, merge: true, pull: true, viewIssue: true, createPullRequest: true, createArchive: true, selectInBranchesDropdown: true, unselectInBranchesDropdown: true, copyName: true, compare: true },
+			stash: { apply: true, createBranch: true, pop: true, drop: true, copyName: true, copyHash: true, savePatch: true },
 			tag: { viewDetails: true, delete: true, push: true, createArchive: true, copyName: true },
-			uncommittedChanges: { stash: true, reset: true, clean: true, openSourceControlView: true }
+			uncommittedChanges: { stash: true, reset: true, clean: true, openSourceControlView: true, savePatch: true, applyPatch: true }
 		};
 		mergeConfigObjects(config, userConfig);
 		return config;
@@ -417,6 +417,35 @@ class Config {
 	 */
 	get blameCurrentLine() {
 		return !!this.config.get('blame.currentLine', true);
+	}
+
+	/**
+	 * Get the value of the `git-map.blame.statusBar` Extension Setting.
+	 */
+	get blameStatusBar() {
+		return !!this.config.get('blame.statusBar', true);
+	}
+
+	/**
+	 * Get the value of the `git-map.blame.ignoreWhitespace` Extension Setting.
+	 */
+	get blameIgnoreWhitespace() {
+		return !!this.config.get('blame.ignoreWhitespace', false);
+	}
+
+	/**
+	 * Get the value of the `git-map.blame.ignoreRevsFile` Extension Setting.
+	 */
+	get blameIgnoreRevsFile() {
+		const value = this.config.get('blame.ignoreRevsFile', '.git-blame-ignore-revs');
+		return typeof value === 'string' ? value.trim() : '';
+	}
+
+	/**
+	 * Get the value of the `git-map.ai.explainCommit.enabled` Extension Setting.
+	 */
+	get explainCommit() {
+		return !!this.config.get('ai.explainCommit.enabled', false);
 	}
 
 	/**

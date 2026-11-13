@@ -51,7 +51,8 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-map.addGitRepository', () => this.addGitRepository());
 		this.registerCommand('git-map.removeGitRepository', () => this.removeGitRepository());
 		this.registerCommand('git-map.clearAvatarCache', () => this.clearAvatarCache());
-		this.registerCommand('git-map.fetch', () => this.fetch());
+		this.registerCommand('git-map.fetch', () => this.openAndRun('fetch'));
+		this.registerCommand('git-map.cleanUpBranches', () => this.openAndRun('cleanUpBranches'));
 		this.registerCommand('git-map.endAllWorkspaceCodeReviews', () => this.endAllWorkspaceCodeReviews());
 		this.registerCommand('git-map.endSpecificWorkspaceCodeReview', () => this.endSpecificWorkspaceCodeReview());
 		this.registerCommand('git-map.resumeWorkspaceCodeReview', () => this.resumeWorkspaceCodeReview());
@@ -310,9 +311,11 @@ export class CommandManager extends Disposable {
 	}
 
 	/**
-	 * The method run when the `git-map.fetch` command is invoked.
+	 * The method run when the `git-map.fetch` or `git-map.cleanUpBranches` command is invoked: open a repository in Git Map, and fetch from
+	 * its remote(s) or open the list of the branches that can be cleaned up.
+	 * @param command The command run when the repository is loaded.
 	 */
-	private fetch() {
+	private openAndRun(command: 'fetch' | 'cleanUpBranches') {
 		const repos = this.repoManager.getRepos();
 		const repoPaths = getSortedRepositoryPaths(repos, getConfig().repoDropdownOrder);
 
@@ -332,22 +335,22 @@ export class CommandManager extends Disposable {
 			}
 
 			vscode.window.showQuickPick(items, {
-				placeHolder: t('Select the repository you want to open in Git Map, and fetch from remote(s):'),
+				placeHolder: command === 'fetch' ? t('Select the repository you want to open in Git Map, and fetch from remote(s):') : t('Select the repository whose branches you want to clean up:'),
 				canPickMany: false
 			}).then((item) => {
 				if (item && item.description) {
 					GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, {
 						repo: item.description,
-						runCommandOnLoad: 'fetch'
+						runCommandOnLoad: command
 					});
 				}
 			}, () => {
-				showErrorMessage(t('An unexpected error occurred while running the command "{0}".', t('Fetch from Remote(s)')));
+				showErrorMessage(t('An unexpected error occurred while running the command "{0}".', command === 'fetch' ? t('Fetch from Remote(s)') : t('Clean Up Branches')));
 			});
 		} else if (repoPaths.length === 1) {
 			GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, {
 				repo: repoPaths[0],
-				runCommandOnLoad: 'fetch'
+				runCommandOnLoad: command
 			});
 		} else {
 			GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, null);

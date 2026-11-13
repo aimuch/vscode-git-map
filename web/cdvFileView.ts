@@ -268,6 +268,8 @@ class CdvFileView {
 			const fileExistsAtThisRevisionAndDiffPossible = fileExistsAtThisRevision && diffPossible;
 			const codeReviewInProgressAndNotReviewed = expandedCommit.codeReview !== null && expandedCommit.codeReview.remainingFiles.includes(file.newFilePath);
 			const visibility = this.view.config.contextMenuActionsVisibility.commitDetailsViewFile;
+			const commit = this.view.commits[this.view.commitLookup[expandedCommit.commitHash]];
+			const stash = expandedCommit.compareWithHash === null && typeof commit !== 'undefined' ? commit.stash : null;
 
 			contextMenu.show([
 				[
@@ -295,6 +297,11 @@ class CdvFileView {
 						title: t('View File History'),
 						visible: file.type !== GG.GitFileStatus.Untracked && this.view.fileHistory !== file.newFilePath,
 						onClick: () => this.view.setFileHistory(file.newFilePath)
+					},
+					{
+						title: t('Visual File History'),
+						visible: visibility.visualFileHistory && file.type !== GG.GitFileStatus.Untracked && !(isUncommitted && file.type === GG.GitFileStatus.Added),
+						onClick: () => sendMessage({ command: 'viewVisualFileHistory', repo: this.view.currentRepo, filePath: file.newFilePath })
 					}
 				],
 				[
@@ -314,6 +321,19 @@ class CdvFileView {
 						title: t('Reset File to this Revision') + ELLIPSIS,
 						visible: visibility.resetFileToThisRevision && fileExistsAtThisRevision && expandedCommit.compareWithHash === null,
 						onClick: () => triggerResetFileToRevision(file, fileElem)
+					},
+					{
+						title: t('Stash this File') + ELLIPSIS,
+						visible: visibility.stashFile && isUncommitted && expandedCommit.compareWithHash === null,
+						onClick: () => this.view.actions.stashUncommittedChangesAction(null, file.newFilePath)
+					},
+					{
+						title: t('Restore File from this Stash') + ELLIPSIS,
+						visible: visibility.restoreFromStash && stash !== null && file.type !== GG.GitFileStatus.Deleted,
+						onClick: () => {
+							if (stash === null) return;
+							sendMessage({ command: 'restoreFileFromStash', repo: this.view.currentRepo, stashHash: expandedCommit.commitHash, selector: stash.selector, filePath: file.newFilePath, untracked: file.type === GG.GitFileStatus.Untracked, force: false });
+						}
 					},
 					{
 						// The extension shows what removing the file will do, and asks for confirmation (also removing its previous name, if it was renamed)

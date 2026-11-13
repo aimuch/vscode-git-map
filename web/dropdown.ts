@@ -29,6 +29,8 @@ class Dropdown {
 	private readonly optionsElem: HTMLDivElement;
 	private readonly noResultsElem: HTMLDivElement;
 	private readonly filterInput: HTMLInputElement;
+	private readonly footerElem: HTMLDivElement;
+	private footerAction: (() => void) | null = null;
 
 	/**
 	 * Constructs a Dropdown instance.
@@ -64,6 +66,10 @@ class Dropdown {
 		this.noResultsElem.className = 'dropdownNoResults';
 		this.noResultsElem.innerHTML = t('No results found.');
 
+		this.footerElem = this.menuElem.appendChild(document.createElement('div'));
+		this.footerElem.className = 'dropdownFooterAction';
+		this.footerElem.style.display = 'none';
+
 		this.currentValueElem = this.elem.appendChild(document.createElement('div'));
 		this.currentValueElem.className = 'dropdownCurrentValue';
 
@@ -83,6 +89,9 @@ class Dropdown {
 			} else if (this.dropdownVisible) {
 				if ((<HTMLElement>e.target).closest('.dropdown') !== this.elem) {
 					this.close();
+				} else if ((<HTMLElement>e.target).closest('.dropdownFooterAction') === this.footerElem) {
+					this.close();
+					if (this.footerAction !== null) this.footerAction();
 				} else {
 					const option = <HTMLElement | null>(<HTMLElement>e.target).closest('.dropdownOption');
 					if (option !== null && option.parentNode === this.optionsElem && typeof option.dataset.id !== 'undefined') {
@@ -93,6 +102,17 @@ class Dropdown {
 		}, true);
 		document.addEventListener('contextmenu', () => this.close(), true);
 		this.filterInput.addEventListener('keyup', () => this.filter());
+	}
+
+	/**
+	 * Set the action at the bottom of the dropdown (e.g. "Clean Up Branches…" in the Branches dropdown).
+	 * @param html The HTML of the action (an icon and a label), or NULL to remove it.
+	 * @param onClick A callback invoked when the action is clicked (after the dropdown is closed).
+	 */
+	public setFooterAction(html: string | null, onClick: () => void) {
+		this.footerAction = html !== null ? onClick : null;
+		this.footerElem.innerHTML = html !== null ? html : '';
+		this.footerElem.style.display = html !== null ? '' : 'none';
 	}
 
 	/**

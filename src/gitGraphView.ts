@@ -1,15 +1,19 @@
+import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource, GitConfigKey } from './dataSource';
+import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
+import { explainCommit, getLanguageModels } from './explainCommit';
 import { ExtensionState } from './extensionState';
 import { buildFileIconTheme, findFileIconTheme, getFileIconThemeExtensionPaths, getLanguageFiles } from './fileIconTheme';
+import { GitFeatures } from './gitFeatures';
 import { Logger } from './logger';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { UndoManager, getUndoManager } from './undoManager';
-import { ErrorInfo, GitConfigLocation, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
+import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 import { getL10nBundle, getLanguage, t } from './l10n';
@@ -40,6 +44,8 @@ export class GitGraphView extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly logger: Logger;
 	private readonly undoManager: UndoManager;
+	private readonly gitFeatures: GitFeatures;
+	private explainCancellation: vscode.CancellationTokenSource | null = null;
 	private isGraphViewLoaded: boolean = false;
 	private fileIconThemeWatcher: vscode.Disposable | null = null;
 	private fileIconThemeWatched: string | null = null; // The path of the definition of the file icon theme that's watched
@@ -104,6 +110,7 @@ export class GitGraphView extends Disposable {
 		this.logger = logger;
 		this.loadViewTo = loadViewTo;
 		this.undoManager = getUndoManager(dataSource);
+		this.gitFeatures = new GitFeatures(dataSource);
 
 		const config = getConfig();
 		this.panel = vscode.window.createWebviewPanel('git-map', 'Git Map', column || vscode.ViewColumn.One, {
@@ -618,7 +625,7 @@ export class GitGraphView extends Disposable {
 			case 'pushStash':
 				this.sendMessage({
 					command: 'pushStash',
-					error: await this.dataSource.pushStash(msg.repo, msg.message, msg.includeUntracked)
+					error: await this.dataSource.pushStash(msg.repo, msg.message, msg.includeUntracked, msg.paths, msg.onlyStaged)
 				});
 				break;
 			case 'pushTag':
@@ -803,7 +810,213 @@ export class GitGraphView extends Disposable {
 					error: await viewScm()
 				});
 				break;
+			default:
+				await this.processFeatureMessage(msg);
 		}
+	}
+
+	/**
+	 * Process a message of the features added by Git Map: comparing branches, cleaning up branches, rewriting the latest commits,
+	 * bisecting, patches, stashing parts of the uncommitted changes, the visual history of a file, and explaining commits.
+	 * @param msg The message that was received.
+	 */
+	private async processFeatureMessage(msg: RequestMessage) {
+		const signCommits = getConfig().signCommits;
+		switch (msg.command) {
+			case 'compareBranches': {
+				const result = await this.gitFeatures.compareBranches(msg.repo, msg.left, msg.right);
+				let fileChanges: ReadonlyArray<any> = [], error = result.error;
+				if (result.comparison !== null) {
+					// The changes of the left branch since it diverged from the right branch (what merging it would bring in)
+					const from = result.comparison.mergeBase !== null ? result.comparison.mergeBase : result.comparison.rightHash;
+					const comparison = await this.dataSource.getCommitComparison(msg.repo, from, result.comparison.leftHash);
+					fileChanges = comparison.fileChanges;
+					error = comparison.error;
+				}
+				this.sendMessage({ command: 'compareBranches', comparison: result.comparison, fileChanges: <any>fileChanges, error: error });
+				break;
+			}
+			case 'openAllChanges':
+				this.sendMessage({ command: 'openAllChanges', error: await this.openAllChanges(msg.repo, msg.title, msg.fromHash, msg.toHash, msg.fileChanges) });
+				break;
+			case 'loadBranchCleanup': {
+				const result = await this.gitFeatures.getBranchCleanupCandidates(msg.repo);
+				this.sendMessage({ command: 'loadBranchCleanup', repo: msg.repo, defaultBranch: result.defaultBranch, candidates: result.candidates, error: result.error });
+				break;
+			}
+			case 'deleteBranches': {
+				const errors: ErrorInfo[] = [];
+				let deleted = 0;
+				await this.undoManager.trackDeleteBranches(msg.repo, t('Delete {0} Branches', msg.branches.length), msg.branches, async () => {
+					for (const branch of msg.branches) {
+						const error = await this.dataSource.deleteBranch(msg.repo, branch, true);
+						if (error === null) deleted++; else errors.push(error);
+					}
+				});
+				for (const remoteBranch of msg.remoteBranches) {
+					const error = await this.dataSource.deleteRemoteBranch(msg.repo, remoteBranch.branch, remoteBranch.remote);
+					if (error !== null) errors.push(error);
+				}
+				this.sendMessage({ command: 'deleteBranches', deleted: deleted, errors: errors });
+				break;
+			}
+			case 'loadCommitMessage': {
+				const message = await this.gitFeatures.getCommitMessage(msg.repo, msg.commitHash);
+				this.sendMessage({ command: 'loadCommitMessage', commitHash: msg.commitHash, message: message !== null ? message : '', error: message !== null ? null : t('Unable to read the message of the commit.') });
+				break;
+			}
+			case 'editCommitMessage':
+				this.sendMessage({
+					command: 'editCommitMessage',
+					error: await this.undoManager.trackHead(msg.repo, t('Edit Message of "{0}"', abbrevCommit(msg.commitHash)), () => this.editCommitMessage(msg.repo, msg.commitHash, msg.message, signCommits), (error) => error === null)
+				});
+				break;
+			case 'undoCommit':
+				this.sendMessage({
+					command: 'undoCommit',
+					error: await this.undoManager.trackHead(msg.repo, t('Undo Commit'), () => this.gitFeatures.undoCommit(msg.repo, msg.mode), (error) => error === null, true)
+				});
+				break;
+			case 'fixupCommit':
+				this.sendMessage({
+					command: 'fixupCommit',
+					error: await this.undoManager.trackHead(msg.repo, t('Fix Up "{0}"', abbrevCommit(msg.commitHash)), () => this.gitFeatures.fixupCommit(msg.repo, msg.commitHash, signCommits), (error) => error === null, true)
+				});
+				break;
+			case 'bisect':
+				this.sendMessage({ command: 'bisect', action: msg.action, error: await this.gitFeatures.bisect(msg.repo, msg.action, msg.commitHash, msg.goodRef) });
+				break;
+			case 'loadBisectState':
+				this.sendMessage({ command: 'loadBisectState', repo: msg.repo, state: await this.gitFeatures.getBisectState(msg.repo) });
+				break;
+			case 'savePatch':
+				this.sendMessage({ command: 'savePatch', error: await this.savePatch(msg.repo, msg.kind, msg.hashes, msg.name, msg.copy) });
+				break;
+			case 'checkPatch': {
+				const uris = await vscode.window.showOpenDialog({ defaultUri: vscode.Uri.file(msg.repo), canSelectFiles: true, canSelectFolders: false, canSelectMany: false, openLabel: t('Apply Patch'), filters: { [t('Patches')]: ['patch', 'diff'], [t('All Files')]: ['*'] } });
+				if (typeof uris === 'undefined' || uris.length === 0) {
+					this.sendMessage({ command: 'checkPatch', patch: null, error: null });
+				} else {
+					const result = await this.gitFeatures.checkPatch(msg.repo, uris[0].fsPath);
+					this.sendMessage({ command: 'checkPatch', patch: result.patch, error: result.error });
+				}
+				break;
+			}
+			case 'applyPatch':
+				this.sendMessage({
+					command: 'applyPatch',
+					error: msg.asCommits
+						? await this.undoManager.trackHead(msg.repo, t('Apply Patch'), () => this.gitFeatures.applyPatch(msg.repo, msg.file, true), (error) => error === null)
+						: await this.gitFeatures.applyPatch(msg.repo, msg.file, false)
+				});
+				break;
+			case 'loadStashableFiles': {
+				const result = await this.gitFeatures.getStashableFiles(msg.repo);
+				this.sendMessage({ command: 'loadStashableFiles', files: result.files, filePath: msg.filePath, stagedSupported: this.dataSource.isStashStagedSupported(), error: result.error });
+				break;
+			}
+			case 'restoreFileFromStash': {
+				const result = await this.gitFeatures.restoreFileFromStash(msg.repo, msg.stashHash, msg.filePath, msg.untracked, msg.force);
+				this.sendMessage({ command: 'restoreFileFromStash', stashHash: msg.stashHash, selector: msg.selector, filePath: msg.filePath, untracked: msg.untracked, hasChanges: result.hasChanges, error: result.error });
+				break;
+			}
+			case 'viewVisualFileHistory':
+				vscode.commands.executeCommand('git-map.visualFileHistory', { repo: msg.repo, filePath: msg.filePath }).then(() => { }, () => { });
+				break;
+			case 'loadLanguageModels': {
+				const result = await getLanguageModels();
+				this.sendMessage({ command: 'loadLanguageModels', models: result.models, error: result.error });
+				break;
+			}
+			case 'explainCommit':
+				await this.explainCommit(msg.repo, msg.commitHash, msg.modelId);
+				break;
+		}
+	}
+
+	/**
+	 * Change the message of a commit of the current branch: the commit HEAD refers to is amended, an older commit is reworded by an
+	 * interactive rebase from its parent (the commits between it and HEAD can't be merges).
+	 */
+	private async editCommitMessage(repo: string, hash: string, message: string, sign: boolean): Promise<ErrorInfo> {
+		const head = await this.gitFeatures.resolveCommit(repo, 'HEAD');
+		if (head === hash) return this.gitFeatures.amendMessage(repo, message, sign);
+		if (message.trim() === '') return t('The message can\'t be empty.');
+		const parent = await this.gitFeatures.resolveCommit(repo, hash + '^');
+		if (parent === null) return t('The message of the first commit can only be changed while it\'s the latest commit.');
+		const { commits, error } = await this.dataSource.getRebaseCommits(repo, parent);
+		if (error !== null) return error;
+		if (commits.length === 0 || commits[0].hash !== hash) return t('Only the commits of the current branch (since its latest merge) can be changed.');
+		return this.dataSource.rebaseInteractive(repo, parent, commits.map((commit) => ({ action: commit.hash === hash ? 'reword' : 'pick', hash: commit.hash, message: commit.hash === hash ? message : null })));
+	}
+
+	/**
+	 * Save a patch to a file (chosen by the person), or copy it to the clipboard.
+	 */
+	private async savePatch(repo: string, kind: 'commits' | 'stash' | 'uncommitted', hashes: ReadonlyArray<string>, name: string, copy: boolean): Promise<ErrorInfo> {
+		const result = kind === 'commits' ? await this.gitFeatures.getCommitsPatch(repo, hashes)
+			: kind === 'stash' ? await this.gitFeatures.getStashPatch(repo, hashes[0])
+				: await this.gitFeatures.getUncommittedPatch(repo);
+		if (result.error !== null) return result.error;
+		if (result.patch === '') return t('There are no changes to save as a patch.');
+		if (copy) {
+			const error = await copyToClipboard(result.patch);
+			if (error === null) vscode.window.setStatusBarMessage(t('Copied the patch to the clipboard.'), 4000);
+			return error;
+		}
+		const uri = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(repo, name.replace(/[\\/:*?"<>|]/g, '-'))), saveLabel: t('Save Patch'), filters: { [t('Patches')]: ['patch'] } });
+		if (typeof uri === 'undefined') return null;
+		try {
+			await fs.promises.writeFile(uri.fsPath, result.patch);
+		} catch (error) {
+			return t('Unable to save the patch: {0}', String(error));
+		}
+		vscode.window.setStatusBarMessage(t('Saved the patch to {0}.', uri.fsPath), 4000);
+		return null;
+	}
+
+	/**
+	 * Open the changes of files between two commits in one editor (the multi-file diff editor of Visual Studio Code).
+	 */
+	private async openAllChanges(repo: string, title: string, fromHash: string, toHash: string, fileChanges: ReadonlyArray<{ oldFilePath: string, newFilePath: string, type: GitFileStatus }>): Promise<ErrorInfo> {
+		const resources = fileChanges.map((file) => [
+			vscode.Uri.file(path.join(repo, file.newFilePath)),
+			encodeDiffDocUri(repo, file.oldFilePath, fromHash, file.type, DiffSide.Old),
+			encodeDiffDocUri(repo, file.newFilePath, toHash, file.type, DiffSide.New)
+		]);
+		try {
+			await vscode.commands.executeCommand('vscode.changes', title, resources);
+			return null;
+		} catch (_) {
+			return t('This version of Visual Studio Code can\'t show the changes of several files together. Click on each file to see its changes.');
+		}
+	}
+
+	/**
+	 * Explain a commit with a language model, sending the explanation to the front-end as it's received.
+	 */
+	private async explainCommit(repo: string, hash: string, modelId: string | null) {
+		if (this.explainCancellation !== null) this.explainCancellation.cancel();
+		const cancellation = this.explainCancellation = new vscode.CancellationTokenSource();
+		const send = (text: string, done: boolean, model: string | null, truncated: boolean, error: ErrorInfo) => this.sendMessage({ command: 'explainCommit', commitHash: hash, text: text, done: done, model: model, truncated: truncated, error: error });
+		if (!getConfig().explainCommit) {
+			send('', true, null, false, t('Explaining commits is turned off (the "git-map.ai.explainCommit.enabled" setting).'));
+			return;
+		}
+		const commit = await this.gitFeatures.getCommitForExplanation(repo, hash);
+		if (commit.error !== null) {
+			send('', true, null, false, commit.error);
+			return;
+		}
+		let lastSent = 0;
+		const result = await explainCommit(commit.text, modelId, getLanguage(), (text, model) => {
+			if (Date.now() - lastSent < 150) return;
+			lastSent = Date.now();
+			send(text, false, model, commit.truncated, null);
+		}, cancellation.token);
+		// Also sent when it was cancelled (by explaining another commit), so that it doesn't look like it's still being explained
+		send(result.text, true, result.model, commit.truncated, result.error);
+		if (this.explainCancellation === cancellation) this.explainCancellation = null;
 	}
 
 	/**
@@ -853,6 +1066,7 @@ export class GitGraphView extends Disposable {
 				defaultColumnVisibility: config.defaultColumnVisibility,
 				dialogDefaults: config.dialogDefaults,
 				enhancedAccessibility: config.enhancedAccessibility,
+				explainCommit: config.explainCommit,
 				fetchAndPrune: config.fetchAndPrune,
 				fetchAndPruneTags: config.fetchAndPruneTags,
 				fetchAvatars: config.fetchAvatars && this.extensionState.isAvatarStorageAvailable(),
@@ -911,6 +1125,7 @@ export class GitGraphView extends Disposable {
 					<div id="terminalBtn" class="controlBtn" title="${t('Open a Terminal for this Repository')}"></div>
 					<div id="settingsBtn" class="controlBtn" title="${t('Repository Settings')}"></div>
 					<div id="fileHistoryBar"></div>
+					<div id="compareBar"></div>
 					<div id="operationBar"></div>
 					<div id="minimap"></div>
 				</div>

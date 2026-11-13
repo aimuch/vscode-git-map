@@ -247,6 +247,7 @@ class OperationBar {
 	private readonly view: GitGraphView;
 	private readonly elem: HTMLElement;
 	private operation: GG.GitOperation | null = null;
+	private bisect: GG.GitBisectState | null = null;
 
 	/**
 	 * Construct a new OperationBar instance.
@@ -257,7 +258,12 @@ class OperationBar {
 		this.elem = document.getElementById('operationBar')!;
 		this.elem.addEventListener('click', (e) => {
 			const buttonElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.operationBarBtn') : null;
-			if (buttonElem !== null && this.operation !== null) this.runAction(this.operation, <'continue' | 'skip' | 'abort' | 'scm'>buttonElem.dataset.action);
+			if (buttonElem === null) return;
+			if (typeof buttonElem.dataset.bisect === 'string') {
+				this.runBisectAction(buttonElem.dataset.bisect);
+			} else if (this.operation !== null) {
+				this.runAction(this.operation, <'continue' | 'skip' | 'abort' | 'scm'>buttonElem.dataset.action);
+			}
 		});
 	}
 
@@ -266,6 +272,55 @@ class OperationBar {
 	 */
 	public requestOperation() {
 		sendMessage({ command: 'loadOperationInProgress', repo: this.view.currentRepo });
+		sendMessage({ command: 'loadBisectState', repo: this.view.currentRepo });
+	}
+
+	/**
+	 * Get the state of the bisect in progress (NULL if no bisect is in progress).
+	 */
+	public getBisectState() {
+		return this.bisect;
+	}
+
+	/**
+	 * Process the state of the bisect in progress in the current repository.
+	 * @param msg The message containing the state.
+	 */
+	public processLoadBisectStateResponse(msg: GG.ResponseLoadBisectState) {
+		if (msg.repo !== this.view.currentRepo) return;
+		const changed = JSON.stringify(msg.state) !== JSON.stringify(this.bisect);
+		this.bisect = msg.state;
+		this.render(this.operation);
+		if (changed) this.view.render(); // The labels of the good, bad & tested commits are shown on their rows
+	}
+
+	/**
+	 * Get the HTML of the label of a commit that has been marked while bisecting (shown before its message).
+	 * @param hash The hash of the commit.
+	 */
+	public getBisectLabelHtml(hash: string) {
+		const bisect = this.bisect;
+		if (bisect === null) return '';
+		if (hash === bisect.firstBad) return '<span class="bisectLabel bad">' + t('first bad commit') + '</span>';
+		if (hash === bisect.bad) return '<span class="bisectLabel bad">' + t('bad') + '</span>';
+		if (bisect.good.includes(hash)) return '<span class="bisectLabel good">' + t('good') + '</span>';
+		if (bisect.skipped.includes(hash)) return '<span class="bisectLabel skipped">' + t('skipped') + '</span>';
+		if (hash === bisect.current && bisect.firstBad === null) return '<span class="bisectLabel testing">' + t('testing') + '</span>';
+		return '';
+	}
+
+	/**
+	 * Mark the commit being tested, or stop bisecting.
+	 * @param action The action.
+	 */
+	private runBisectAction(action: string) {
+		const bisect = this.bisect;
+		if (bisect === null) return;
+		if (action === 'viewFirstBad') {
+			if (bisect.firstBad !== null) this.view.scrollToCommit(bisect.firstBad, true, true);
+		} else if (action === 'good' || action === 'bad' || action === 'skip' || action === 'reset') {
+			runAction({ command: 'bisect', repo: this.view.currentRepo, action: action, commitHash: null, goodRef: null }, action === 'reset' ? t('Stopping Bisecting') : t('Bisecting'));
+		}
 	}
 
 	/**
@@ -283,16 +338,20 @@ class OperationBar {
 	 */
 	public render(operation: GG.GitOperation | null) {
 		this.operation = operation;
-		alterClass(this.elem, CLASS_ACTIVE, operation !== null);
+		const bisect = operation === null ? this.bisect : null;
+		alterClass(this.elem, CLASS_ACTIVE, operation !== null || bisect !== null);
+		alterClass(this.elem, 'bisect', bisect !== null && bisect.firstBad === null);
+		alterClass(this.elem, 'bisectDone', bisect !== null && bisect.firstBad !== null);
 		if (operation === null) {
-			this.elem.innerHTML = '';
+			this.elem.innerHTML = bisect !== null ? this.getBisectHtml(bisect) : '';
 			return;
 		}
 		const descriptions: { [operation: string]: string } = {
 			'rebase': t('A rebase is in progress. Resolve any conflicts (in the Source Control View), then continue the rebase.'),
 			'merge': t('A merge is in progress. Resolve any conflicts (in the Source Control View), then commit the merge.'),
 			'cherry-pick': t('A cherry pick is in progress. Resolve any conflicts (in the Source Control View), then continue the cherry pick.'),
-			'revert': t('A revert is in progress. Resolve any conflicts (in the Source Control View), then continue the revert.')
+			'revert': t('A revert is in progress. Resolve any conflicts (in the Source Control View), then continue the revert.'),
+			'am': t('A patch is being applied. Resolve any conflicts (in the Source Control View), then continue applying it.')
 		};
 		const button = (action: string, label: string, className: string = '') => '<span class="operationBarBtn' + (className !== '' ? ' ' + className : '') + '" data-action="' + action + '">' + label + '</span>';
 		this.elem.innerHTML = SVG_ICONS.alert + '<span class="operationBarText">' + descriptions[operation] + '</span><span class="operationBarSpacer"></span>' +
@@ -300,6 +359,27 @@ class OperationBar {
 			button('continue', operation === 'merge' ? t('Commit Merge') : t('Continue'), 'primary') +
 			(operation !== 'merge' ? button('skip', t('Skip Commit')) : '') +
 			button('abort', t('Abort'), 'danger');
+	}
+
+	/**
+	 * Get the HTML of the bar while bisecting.
+	 * @param bisect The state of the bisect.
+	 */
+	private getBisectHtml(bisect: GG.GitBisectState) {
+		const button = (action: string, label: string, className: string = '') => '<button type="button" class="operationBarBtn' + (className !== '' ? ' ' + className : '') + '" data-bisect="' + action + '">' + label + '</button>';
+		if (bisect.firstBad !== null) {
+			const commit = this.view.getLoadedCommits().find((commit) => commit.hash === bisect.firstBad);
+			return SVG_ICONS.alert + '<span class="operationBarText"><b>' + t('Found the first bad commit:') + '</b> <span class="bisectHash">' + abbrevCommit(bisect.firstBad) + '</span>' +
+				(typeof commit !== 'undefined' ? ' “' + escapeHtml(commit.message) + '” · ' + escapeHtml(commit.author) : '') + '</span><span class="operationBarSpacer"></span>' +
+				button('viewFirstBad', t('View Commit'), 'primary') + button('reset', t('Stop Bisecting'));
+		}
+		const status = bisect.bad === null || bisect.good.length === 0
+			? (bisect.bad === null ? t('Mark a bad commit (with the bug) to continue.') : t('Mark a good commit (without the bug) to continue.'))
+			: bisect.remaining !== null ? (bisect.steps !== null ? t('{0} commits left to test (about {1} steps).', bisect.remaining, bisect.steps) : t('{0} commits left to test.', bisect.remaining)) : '';
+		return SVG_ICONS.search + '<span class="operationBarText"><b>' + t('Bisecting') + '</b> — ' + status +
+			(bisect.current !== null && bisect.bad !== null && bisect.good.length > 0 ? ' <span class="operationBarMuted">' + t('Checked out {0}. Test it, then mark it:', '<span class="bisectHash">' + abbrevCommit(bisect.current) + '</span>') + '</span>' : '') + '</span>' +
+			button('good', SVG_ICONS.check + t('Good'), 'good') + button('bad', SVG_ICONS.close + t('Bad'), 'bad') + button('skip', t('Skip')) +
+			'<span class="operationBarSpacer"></span>' + button('reset', t('Stop Bisecting'));
 	}
 
 	/**
@@ -311,7 +391,7 @@ class OperationBar {
 		if (action === 'scm') {
 			sendMessage({ command: 'viewScm' });
 		} else if (action === 'abort') {
-			const names: { [operation: string]: string } = { 'rebase': t('the rebase'), 'merge': t('the merge'), 'cherry-pick': t('the cherry pick'), 'revert': t('the revert') };
+			const names: { [operation: string]: string } = { 'rebase': t('the rebase'), 'merge': t('the merge'), 'cherry-pick': t('the cherry pick'), 'revert': t('the revert'), 'am': t('applying the patch') };
 			dialog.asDangerous().showConfirmation(t('Are you sure you want to abort {0}? The repository is returned to the state it was in before it started (the conflicts resolved so far are lost).', names[operation]), t('Yes, abort'), () => {
 				runAction({ command: 'controlOperation', repo: this.view.currentRepo, operation: operation, action: action }, t('Aborting'));
 			}, null);

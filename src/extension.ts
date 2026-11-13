@@ -14,6 +14,7 @@ import { Logger } from './logger';
 import { RemoveFromHistory } from './removeFromHistory';
 import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
+import { VisualFileHistory } from './visualFileHistory';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
 import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage } from './utils';
@@ -65,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const revisionNavigation = new RevisionNavigation(dataSource, repoManager);
 	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration);
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
+	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
 
 	context.subscriptions.push(
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
@@ -97,6 +99,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		revisionNavigation,
 		codeLens,
 		removeFromHistory,
+		visualFileHistory,
 		commandManager,
 		statusBarItem,
 		repoManager,

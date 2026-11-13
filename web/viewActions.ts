@@ -4,6 +4,8 @@
  */
 class ViewActions {
 	private readonly view: GitGraphView;
+	private editMessageTarget: (DialogTarget & CommitTarget) | null = null; // The target of the Edit Commit Message dialog (while its message is loaded)
+	private stashTarget: DialogTarget | null = null; // The target of the Stash dialog (while the files are loaded)
 
 	/**
 	 * Construct a new ViewActions instance.
@@ -106,12 +108,20 @@ class ViewActions {
 					sendMessage({ command: 'copyToClipboard', type: t('Branch Name'), data: refName });
 				}
 			}
+		], [
+			{
+				title: t('Compare with Branch') + ELLIPSIS,
+				visible: visibility.compare,
+				onClick: () => this.view.branchCompare.chooseAndCompare(refName, target)
+			}
 		]];
 	}
 
 	public getCommitContextMenuActions(target: DialogTarget & CommitTarget): ContextMenuActions {
 		const hash = target.hash, visibility = this.view.config.contextMenuActionsVisibility.commit;
 		const commit = this.view.commits[this.view.commitLookup[hash]];
+		const isHead = hash === this.view.getCommitHead(), rebasable = this.view.graph.dropCommitPossible(this.view.commitLookup[hash]);
+		const bisect = this.view.getBisectState();
 		return [[
 			{
 				title: t('Add Tag') + ELLIPSIS,
@@ -209,10 +219,43 @@ class ViewActions {
 				}
 			}, {
 				title: t('Drop') + ELLIPSIS,
-				visible: visibility.drop && this.view.graph.dropCommitPossible(this.view.commitLookup[hash]),
+				visible: visibility.drop && rebasable,
 				onClick: () => {
 					dialog.asDangerous().showConfirmation(t('Are you sure you want to permanently drop commit <b><i>{0}</i></b>?{1}', abbrevCommit(hash), (this.view.onlyFollowFirstParent ? t('<br/><i>Note: By enabling "Only follow the first parent of commits", some commits may have been hidden from the Git Map View that could affect the outcome of performing this action.</i>') : '')), t('Yes, drop'), () => {
 						runAction({ command: 'dropCommit', repo: this.view.currentRepo, commitHash: hash }, t('Dropping Commit'));
+					}, target);
+				}
+			}
+		], [
+			{
+				title: t('Edit Commit Message') + ELLIPSIS,
+				visible: visibility.editMessage && commit.parents.length < 2 && (isHead || rebasable),
+				onClick: () => {
+					this.editMessageTarget = target;
+					sendMessage({ command: 'loadCommitMessage', repo: this.view.currentRepo, commitHash: hash });
+				}
+			}, {
+				title: t('Undo Commit') + ELLIPSIS,
+				visible: visibility.undoCommit && isHead && commit.parents.length === 1,
+				onClick: () => {
+					dialog.showForm(t('Undo commit <b><i>{0}</i></b>? The current branch moves back to its parent, and the changes of the commit are kept:', abbrevCommit(hash)), [{
+						type: DialogInputType.Radio,
+						name: t('Keep the changes'),
+						options: [
+							{ name: t('Staged (soft)'), value: 'soft' },
+							{ name: t('In the working tree, not staged (mixed)'), value: 'mixed' }
+						],
+						default: 'soft'
+					}], t('Undo Commit'), (values) => {
+						runAction({ command: 'undoCommit', repo: this.view.currentRepo, mode: <'soft' | 'mixed'>values[0] }, t('Undoing Commit'));
+					}, target);
+				}
+			}, {
+				title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS,
+				visible: visibility.fixup && commit.parents.length < 2 && (isHead || rebasable),
+				onClick: () => {
+					dialog.showConfirmation(t('Add the staged changes to commit <b><i>{0}</i></b>?', abbrevCommit(hash)) + '<br/><i>' + (isHead ? t('Unstaged changes are kept.') : t('The later commits are rebased onto the changed commit (they get new hashes). Unstaged changes are kept.')) + '</i>', t('Fix Up'), () => {
+						runAction({ command: 'fixupCommit', repo: this.view.currentRepo, commitHash: hash }, t('Fixing Up Commit'));
 					}, target);
 				}
 			}
@@ -240,6 +283,28 @@ class ViewActions {
 			}
 		], [
 			{
+				title: t('Start Bisecting: This Commit is Bad') + ELLIPSIS,
+				visible: visibility.bisect && bisect === null,
+				onClick: () => this.startBisectAction(hash, true, target)
+			}, {
+				title: t('Start Bisecting: This Commit is Good') + ELLIPSIS,
+				visible: visibility.bisect && bisect === null,
+				onClick: () => this.startBisectAction(hash, false, target)
+			}, {
+				title: t('Mark as Good'),
+				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
+				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'good', commitHash: hash, goodRef: null }, t('Bisecting'))
+			}, {
+				title: t('Mark as Bad'),
+				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
+				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'bad', commitHash: hash, goodRef: null }, t('Bisecting'))
+			}, {
+				title: t('Skip (Can\'t Be Tested)'),
+				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
+				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'skip', commitHash: hash, goodRef: null }, t('Bisecting'))
+			}
+		], [
+			{
 				id: 'copyHash',
 				title: t('Copy Commit Hash to Clipboard'),
 				visible: visibility.copyHash,
@@ -254,6 +319,16 @@ class ViewActions {
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Commit Subject'), data: commit.message });
 				}
+			},
+			{
+				title: t('Save as Patch') + ELLIPSIS,
+				visible: visibility.savePatch,
+				onClick: () => this.savePatchAction('commits', [hash], getPatchName(hash, commit.message), false)
+			},
+			{
+				title: t('Copy as Patch'),
+				visible: visibility.savePatch,
+				onClick: () => this.savePatchAction('commits', [hash], '', true)
 			}
 		]];
 	}
@@ -282,6 +357,11 @@ class ViewActions {
 				title: t('Copy {0} Commit Subjects to Clipboard', commits.length),
 				visible: visibility.copySubject,
 				onClick: () => this.copyCommitsToClipboard(commits, true)
+			},
+			{
+				title: t('Save {0} Commits as Patch', commits.length) + ELLIPSIS,
+				visible: visibility.savePatch && commits.every((commit) => commit.parents.length < 2),
+				onClick: () => this.savePatchAction('commits', commits.map((commit) => commit.hash), commits.length + '-commits.patch', false)
 			}
 		], [
 			{
@@ -380,6 +460,12 @@ class ViewActions {
 					sendMessage({ command: 'copyToClipboard', type: t('Branch Name'), data: refName });
 				}
 			}
+		], [
+			{
+				title: t('Compare with Branch') + ELLIPSIS,
+				visible: visibility.compare && branchName !== 'HEAD',
+				onClick: () => this.view.branchCompare.chooseAndCompare(refName, target)
+			}
 		]];
 	}
 
@@ -420,6 +506,10 @@ class ViewActions {
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Stash Hash'), data: hash });
 				}
+			}, {
+				title: t('Save as Patch') + ELLIPSIS,
+				visible: visibility.savePatch,
+				onClick: () => this.savePatchAction('stash', [hash], selector.substring(5).replace(/[@{}]/g, '') + '.patch', false)
 			}
 		]];
 	}
@@ -507,6 +597,14 @@ class ViewActions {
 				title: t('Stash uncommitted changes') + ELLIPSIS,
 				visible: visibility.stash,
 				onClick: () => this.stashUncommittedChangesAction(target)
+			}, {
+				title: t('Save Changes as Patch') + ELLIPSIS,
+				visible: visibility.savePatch,
+				onClick: () => this.savePatchAction('uncommitted', [], 'uncommitted-changes.patch', false)
+			}, {
+				title: t('Apply Patch') + ELLIPSIS,
+				visible: visibility.applyPatch,
+				onClick: () => sendMessage({ command: 'checkPatch', repo: this.view.currentRepo })
 			}
 		], [
 			{
@@ -842,12 +940,133 @@ class ViewActions {
 	 * Show the dialog to stash the uncommitted changes.
 	 * @param target The target of the dialog (NULL if the dialog isn't for an element in the view).
 	 */
-	public stashUncommittedChangesAction(target: DialogTarget | null) {
-		dialog.showForm(t('Are you sure you want to stash the <b>uncommitted changes</b>?'), [
-			{ type: DialogInputType.Text, name: t('Message'), default: '', placeholder: t('Optional') },
-			{ type: DialogInputType.Checkbox, name: t('Include Untracked'), value: this.view.config.dialogDefaults.stashUncommittedChanges.includeUntracked, info: t('Include all untracked files in the stash, and then clean them from the working directory.') }
-		], t('Yes, stash'), (values) => {
-			runAction({ command: 'pushStash', repo: this.view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[1] }, t('Stashing uncommitted changes'));
+	public stashUncommittedChangesAction(target: DialogTarget | null, filePath: string | null = null) {
+		this.stashTarget = target;
+		sendMessage({ command: 'loadStashableFiles', repo: this.view.currentRepo, filePath: filePath });
+	}
+
+	/**
+	 * Show the dialog to stash the uncommitted changes (all of them, or the files chosen), once the files with changes are loaded.
+	 * @param msg The message containing the files.
+	 */
+	public processLoadStashableFilesResponse(msg: GG.ResponseLoadStashableFiles) {
+		const target = this.stashTarget;
+		this.stashTarget = null;
+		if (msg.error !== null) {
+			dialog.showError(t('Unable to Stash Uncommitted Changes'), msg.error, null, null);
+			return;
+		}
+		const files = msg.files, selectable = files.length > 1 && files.length <= 30;
+		const inputs: DialogInput[] = [{ type: DialogInputType.Text, name: t('Message'), default: '', placeholder: t('Optional') }];
+		if (selectable) {
+			files.forEach((file) => inputs.push({
+				type: DialogInputType.Checkbox,
+				name: escapeHtml(file.path) + ' <span class="dialogFileStatus">' + (file.untracked ? t('untracked') : file.staged && file.unstaged ? t('staged & modified') : file.staged ? t('staged') : t('modified')) + '</span>',
+				value: msg.filePath === null || file.path === msg.filePath
+			}));
+		}
+		const hasStaged = files.some((file) => file.staged);
+		if (msg.stagedSupported && hasStaged) inputs.push({ type: DialogInputType.Checkbox, name: t('Only the staged changes'), value: false, info: t('Stash only the changes that are staged, keeping the other changes in the working tree.') });
+		inputs.push({ type: DialogInputType.Checkbox, name: t('Include Untracked'), value: this.view.config.dialogDefaults.stashUncommittedChanges.includeUntracked || (msg.filePath !== null && files.some((file) => file.path === msg.filePath && file.untracked)), info: t('Include all untracked files in the stash, and then clean them from the working directory.') });
+		const message = msg.filePath !== null && !selectable ? t('Are you sure you want to stash the changes to <b><i>{0}</i></b>?', escapeHtml(msg.filePath)) : t('Are you sure you want to stash the <b>uncommitted changes</b>?');
+		dialog.showForm(message, inputs, t('Yes, stash'), (values) => {
+			let index = 1;
+			let paths: string[] | null = null;
+			if (selectable) {
+				paths = files.filter((_, i) => <boolean>values[index + i]).map((file) => file.path);
+				index += files.length;
+				if (paths.length === 0) {
+					dialog.showError(t('Unable to Stash Uncommitted Changes'), t('No files were selected.'), null, null);
+					return;
+				}
+				if (paths.length === files.length) paths = null;
+			} else if (msg.filePath !== null) {
+				paths = [msg.filePath];
+			}
+			const onlyStaged = msg.stagedSupported && hasStaged ? <boolean>values[index++] : false;
+			runAction({ command: 'pushStash', repo: this.view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[index], paths: paths, onlyStaged: onlyStaged }, t('Stashing uncommitted changes'));
+		}, target);
+	}
+
+	/**
+	 * Show the dialog to edit the message of a commit, once its message is loaded.
+	 * @param msg The message containing the message of the commit.
+	 */
+	public processLoadCommitMessageResponse(msg: GG.ResponseLoadCommitMessage) {
+		const target = this.editMessageTarget;
+		this.editMessageTarget = null;
+		if (msg.error !== null) {
+			dialog.showError(t('Unable to Edit Commit Message'), msg.error, null, null);
+			return;
+		}
+		const isHead = msg.commitHash === this.view.getCommitHead();
+		dialog.showForm(t('Edit the message of commit <b><i>{0}</i></b>:', abbrevCommit(msg.commitHash)) + '<br/><i>' + (isHead
+			? t('If the commit has been pushed, the branch must be force pushed afterwards.')
+			: t('The later commits are rebased onto the changed commit (they get new hashes). If they have been pushed, the branch must be force pushed afterwards.')) + '</i>', [
+			{ type: DialogInputType.TextArea, name: t('Message'), default: msg.message, placeholder: null }
+		], t('Save Message'), (values) => {
+			const message = (<string>values[0]).trim();
+			if (message === '') {
+				dialog.showError(t('Unable to Edit Commit Message'), t('The message can\'t be empty.'), null, null);
+				return;
+			}
+			runAction({ command: 'editCommitMessage', repo: this.view.currentRepo, commitHash: msg.commitHash, message: message }, t('Saving Commit Message'));
+		}, target);
+	}
+
+	/**
+	 * Show the dialog to apply a patch, once the patch file has been chosen and checked.
+	 * @param msg The message describing the patch.
+	 */
+	public processCheckPatchResponse(msg: GG.ResponseCheckPatch) {
+		if (msg.error !== null) {
+			dialog.showError(t('Unable to Apply Patch'), msg.error, null, null);
+			return;
+		}
+		const patch = msg.patch;
+		if (patch === null) return; // No file was chosen
+		const stats = (patch.commits > 0 ? (patch.commits !== 1 ? t('{0} commits', patch.commits) : t('1 commit')) + ' · ' : '') + (patch.files !== 1 ? t('{0} files', patch.files) : t('{0} file', patch.files)) +
+			' <span class="fileTreeFileAdd">+' + patch.additions + '</span> <span class="fileTreeFileDel">−' + patch.deletions + '</span>';
+		const check = patch.appliesCleanly
+			? '<span class="dialogNote ok">' + SVG_ICONS.check + t('It applies cleanly.') + '</span>'
+			: '<span class="dialogNote warning">' + SVG_ICONS.alert + t('It doesn\'t apply cleanly: {0}', escapeHtml(patch.checkError !== null ? patch.checkError : '')) + '</span>';
+		const message = t('Apply the patch <b><i>{0}</i></b>?', escapeHtml(patch.name)) + '<br/>' + stats + '<br/>' + check;
+		const apply = (asCommits: boolean) => runAction({ command: 'applyPatch', repo: this.view.currentRepo, file: patch.file, asCommits: asCommits }, t('Applying Patch'));
+		if (patch.commits > 0) {
+			dialog.showForm(message, [{
+				type: DialogInputType.Radio,
+				name: t('How'),
+				options: [
+					{ name: t('As commits on the current branch (keeping their authors & messages)'), value: 'commits' },
+					{ name: t('As uncommitted changes'), value: 'changes' }
+				],
+				default: 'commits'
+			}], t('Apply'), (values) => apply(values[0] === 'commits'), null);
+		} else {
+			dialog.showConfirmation(message, t('Apply'), () => apply(false), null);
+		}
+	}
+
+	/**
+	 * Save a patch to a file, or copy it to the clipboard.
+	 */
+	private savePatchAction(kind: 'commits' | 'stash' | 'uncommitted', hashes: string[], name: string, copy: boolean) {
+		runAction({ command: 'savePatch', repo: this.view.currentRepo, kind: kind, hashes: hashes, name: name, copy: copy }, copy ? t('Copying Patch') : t('Saving Patch'));
+	}
+
+	/**
+	 * Show the dialog to start bisecting from a commit (asking for the other end).
+	 * @param hash The commit.
+	 * @param isBad Is the commit the bad end (otherwise, it's the good end).
+	 * @param target The target of the dialog.
+	 */
+	private startBisectAction(hash: string, isBad: boolean, target: DialogTarget & CommitTarget) {
+		dialog.showForm(t('Start bisecting to find the commit that introduced a bug:') + '<br/><i>' + (isBad ? t('Bad: {0}', abbrevCommit(hash)) : t('Good: {0}', abbrevCommit(hash))) + '</i>', [
+			{ type: DialogInputType.Text, name: isBad ? t('A commit that was good (hash, tag or branch)') : t('A commit that is bad (hash, tag or branch)'), default: isBad ? '' : 'HEAD', placeholder: isBad ? t('e.g. v1.0.0') : null }
+		], t('Start Bisecting'), (values) => {
+			const other = (<string>values[0]).trim();
+			if (other === '') return;
+			runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'start', commitHash: isBad ? hash : other, goodRef: isBad ? other : hash }, t('Starting to Bisect'));
 		}, target);
 	}
 
@@ -877,4 +1096,14 @@ class ViewActions {
 			}
 		}, target);
 	}
+}
+
+/**
+ * Get the name of the file a commit's patch is saved to (its abbreviated hash, and its subject).
+ * @param hash The hash of the commit.
+ * @param subject The subject of the commit.
+ */
+function getPatchName(hash: string, subject: string) {
+	const slug = subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 50);
+	return abbrevCommit(hash) + (slug !== '' ? '-' + slug : '') + '.patch';
 }

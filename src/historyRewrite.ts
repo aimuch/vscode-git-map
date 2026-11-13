@@ -507,33 +507,47 @@ export class HistoryRewriter {
 	 * @returns The exit code (-1 if it couldn't be run or was killed), and the output of the command.
 	 */
 	private run(repo: string, args: string[], input: string | null = null, cancellation: CancellationRequest | null = null) {
-		return new Promise<{ code: number, stdout: Buffer, stderr: string }>((resolve, reject) => {
-			let child: cp.ChildProcess;
-			try {
-				child = this.git.spawnGitProcess(args, repo);
-			} catch (error) {
-				return reject(error);
-			}
-			const stdout: Buffer[] = [];
-			let stderr = '', settled = false;
-			const cancelListener = cancellation !== null ? cancellation.onCancellationRequested(() => child.kill()) : null;
-			const finish = (code: number) => {
-				if (settled) return;
-				settled = true;
-				if (cancelListener !== null) cancelListener.dispose();
-				resolve({ code: code, stdout: Buffer.concat(stdout), stderr: stderr.trim() });
-			};
-			child.stdout!.on('data', (data: Buffer) => stdout.push(data));
-			child.stderr!.on('data', (data) => stderr += data);
-			child.on('error', (error) => {
-				stderr += error.message;
-				finish(-1);
-			});
-			child.on('close', (code) => finish(code !== null ? code : -1));
-			child.stdin!.on('error', () => { });
-			child.stdin!.end(input !== null ? input : undefined);
-		});
+		return runGit(this.git, repo, args, input, cancellation);
 	}
+}
+
+/**
+ * Run a Git command, resolving with its output once it has exited (also when it fails).
+ * @param git Runs Git.
+ * @param repo The repository to run the command in.
+ * @param args The arguments to pass to Git.
+ * @param input Text written to the standard input of the command.
+ * @param cancellation Kills the command.
+ * @param env Additional environment variables.
+ * @returns The exit code (-1 if it couldn't be run or was killed), and the output of the command.
+ */
+export function runGit(git: GitProcessRunner, repo: string, args: string[], input: string | null = null, cancellation: CancellationRequest | null = null, env?: { [name: string]: string }) {
+	return new Promise<{ code: number, stdout: Buffer, stderr: string }>((resolve, reject) => {
+		let child: cp.ChildProcess;
+		try {
+			child = git.spawnGitProcess(args, repo, env);
+		} catch (error) {
+			return reject(error);
+		}
+		const stdout: Buffer[] = [];
+		let stderr = '', settled = false;
+		const cancelListener = cancellation !== null ? cancellation.onCancellationRequested(() => child.kill()) : null;
+		const finish = (code: number) => {
+			if (settled) return;
+			settled = true;
+			if (cancelListener !== null) cancelListener.dispose();
+			resolve({ code: code, stdout: Buffer.concat(stdout), stderr: stderr.trim() });
+		};
+		child.stdout!.on('data', (data: Buffer) => stdout.push(data));
+		child.stderr!.on('data', (data) => stderr += data);
+		child.on('error', (error) => {
+			stderr += error.message;
+			finish(-1);
+		});
+		child.on('close', (code) => finish(code !== null ? code : -1));
+		child.stdin!.on('error', () => { });
+		child.stdin!.end(input !== null ? input : undefined);
+	});
 }
 
 /**

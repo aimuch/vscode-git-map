@@ -307,7 +307,8 @@ describe('Config', () => {
 					createWorktree: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				commit: {
 					addTag: true,
@@ -321,7 +322,12 @@ describe('Config', () => {
 					rebase: true,
 					reset: true,
 					copyHash: true,
-					copySubject: true
+					copySubject: true,
+					editMessage: true,
+					undoCommit: true,
+					fixup: true,
+					bisect: true,
+					savePatch: true
 				},
 				commitDetailsViewFile: {
 					viewDiff: true,
@@ -333,7 +339,10 @@ describe('Config', () => {
 					resetFileToThisRevision: true,
 					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
-					copyRelativeFilePath: true
+					copyRelativeFilePath: true,
+					stashFile: true,
+					restoreFromStash: true,
+					visualFileHistory: true
 				},
 				remoteBranch: {
 					checkout: true,
@@ -346,7 +355,8 @@ describe('Config', () => {
 					createArchive: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				stash: {
 					apply: true,
@@ -354,7 +364,8 @@ describe('Config', () => {
 					pop: true,
 					drop: true,
 					copyName: true,
-					copyHash: true
+					copyHash: true,
+					savePatch: true
 				},
 				tag: {
 					viewDetails: true,
@@ -367,7 +378,9 @@ describe('Config', () => {
 					stash: true,
 					reset: true,
 					clean: true,
-					openSourceControlView: true
+					openSourceControlView: true,
+					savePatch: true,
+					applyPatch: true
 				}
 			});
 		});
@@ -392,7 +405,8 @@ describe('Config', () => {
 					createWorktree: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				commit: {
 					addTag: true,
@@ -406,7 +420,12 @@ describe('Config', () => {
 					rebase: true,
 					reset: true,
 					copyHash: true,
-					copySubject: true
+					copySubject: true,
+					editMessage: true,
+					undoCommit: true,
+					fixup: true,
+					bisect: true,
+					savePatch: true
 				},
 				commitDetailsViewFile: {
 					viewDiff: true,
@@ -418,7 +437,10 @@ describe('Config', () => {
 					resetFileToThisRevision: true,
 					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
-					copyRelativeFilePath: true
+					copyRelativeFilePath: true,
+					stashFile: true,
+					restoreFromStash: true,
+					visualFileHistory: true
 				},
 				remoteBranch: {
 					checkout: true,
@@ -431,7 +453,8 @@ describe('Config', () => {
 					createArchive: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				stash: {
 					apply: true,
@@ -439,7 +462,8 @@ describe('Config', () => {
 					pop: true,
 					drop: true,
 					copyName: true,
-					copyHash: true
+					copyHash: true,
+					savePatch: true
 				},
 				tag: {
 					viewDetails: true,
@@ -452,7 +476,9 @@ describe('Config', () => {
 					stash: true,
 					reset: true,
 					clean: true,
-					openSourceControlView: true
+					openSourceControlView: true,
+					savePatch: true,
+					applyPatch: true
 				}
 			});
 		});
@@ -495,7 +521,8 @@ describe('Config', () => {
 					createWorktree: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				commit: {
 					addTag: true,
@@ -509,7 +536,12 @@ describe('Config', () => {
 					rebase: true,
 					reset: true,
 					copyHash: true,
-					copySubject: true
+					copySubject: true,
+					editMessage: true,
+					undoCommit: true,
+					fixup: true,
+					bisect: true,
+					savePatch: true
 				},
 				commitDetailsViewFile: {
 					viewDiff: true,
@@ -521,7 +553,10 @@ describe('Config', () => {
 					resetFileToThisRevision: false,
 					removeFromHistory: true,
 					copyAbsoluteFilePath: true,
-					copyRelativeFilePath: true
+					copyRelativeFilePath: true,
+					stashFile: true,
+					restoreFromStash: true,
+					visualFileHistory: true
 				},
 				remoteBranch: {
 					checkout: true,
@@ -534,7 +569,8 @@ describe('Config', () => {
 					createArchive: true,
 					selectInBranchesDropdown: true,
 					unselectInBranchesDropdown: true,
-					copyName: true
+					copyName: true,
+					compare: true
 				},
 				stash: {
 					apply: true,
@@ -542,7 +578,8 @@ describe('Config', () => {
 					pop: true,
 					drop: true,
 					copyName: true,
-					copyHash: true
+					copyHash: true,
+					savePatch: true
 				},
 				tag: {
 					viewDetails: true,
@@ -555,7 +592,9 @@ describe('Config', () => {
 					stash: true,
 					reset: true,
 					clean: true,
-					openSourceControlView: true
+					openSourceControlView: true,
+					savePatch: true,
+					applyPatch: true
 				}
 			});
 		});

@@ -3032,12 +3032,14 @@ describe('GitGraphView', () => {
 					command: 'pushStash',
 					repo: '/path/to/repo',
 					message: 'stash message',
-					includeUntracked: true
+					includeUntracked: true,
+					paths: null,
+					onlyStaged: false
 				});
 
 				// Assert
 				await waitForExpect(() => {
-					expect(spyOnPushStash).toHaveBeenCalledWith('/path/to/repo', 'stash message', true);
+					expect(spyOnPushStash).toHaveBeenCalledWith('/path/to/repo', 'stash message', true, null, false);
 					expect(messages).toStrictEqual([
 						{
 							command: 'pushStash',

@@ -201,3 +201,22 @@ body.vscode-high-contrast .dropdownOption:hover{
 	user-select:none;
 	font-style:italic;
 }
+
+/* An action at the bottom of a dropdown (e.g. "Clean Up Branches…") */
+.dropdownFooterAction{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	padding:7px 10px;
+	border-top:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	cursor:pointer;
+}
+.dropdownFooterAction:hover{
+	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.15));
+}
+.dropdownFooterAction svg{
+	flex:0 0 auto;
+	width:14px;
+	height:14px;
+	fill:currentColor;
+}

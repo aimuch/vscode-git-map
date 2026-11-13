@@ -718,6 +718,293 @@ async function run() {
 		return 'Restored ' + git(repo, 'stash', 'list');
 	});
 
+	// The features added after the redesign (comparing & cleaning up branches, rewriting the latest commits, bisecting, patches, stashing
+	// parts of the changes, the Visual File History, the blame in the Status Bar, and explaining commits)
+	await check('compare-branches', '[GitLens] Two branches are compared: the commits only on each (and their merge base), and the files changed on the first since they diverged, which can all be opened in one editor', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('compare-branches', { 'a.txt': 'a\n' });
+		const { respond } = undoHelpers(view, repo);
+		const base = git(repo, 'rev-parse', 'HEAD');
+		git(repo, 'checkout', '-q', '-b', 'feature');
+		const f1 = commitFile(repo, 'f.txt', 'f\n', 'Add f'), f2 = commitFile(repo, 'a.txt', 'a (feature)\n', 'Change a');
+		git(repo, 'checkout', '-q', 'main');
+		const m1 = commitFile(repo, 'm.txt', 'm\n', 'Add m');
+
+		const response = await respond({ command: 'compareBranches', repo: repo, left: 'feature', right: 'main' }, 'compareBranches');
+		const comparison = response.comparison;
+		assert(response.error === null && comparison !== null, 'The comparison failed: ' + response.error);
+		assert(comparison.mergeBase === base && JSON.stringify(comparison.leftOnly) === JSON.stringify([f2, f1]) && JSON.stringify(comparison.rightOnly) === JSON.stringify([m1]), 'Unexpected comparison: ' + JSON.stringify(comparison));
+		const files = response.fileChanges.map((file) => file.type + ' ' + file.newFilePath).sort();
+		assert(JSON.stringify(files) === JSON.stringify(['A f.txt', 'M a.txt']), 'Unexpected files (m.txt is only on main, so it isn\'t a change of feature): ' + JSON.stringify(files));
+
+		const opened = await respond({ command: 'openAllChanges', repo: repo, title: 'feature ↔ main', fromHash: comparison.mergeBase, toHash: comparison.leftHash, fileChanges: response.fileChanges }, 'openAllChanges');
+		try {
+			assert(opened.error === null, 'The changes couldn\'t be opened together: ' + opened.error);
+			await waitFor('the multi-file diff editor', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label.includes('feature ↔ main')));
+		} finally {
+			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		}
+		return 'feature: ' + comparison.leftOnly.length + ' commits, main: ' + comparison.rightOnly.length + '; files: ' + files.join(', ') + '; opened in one editor';
+	});
+
+	await check('branch-cleanup', '[GitLens] "Clean Up Branches" lists the branches merged into the default branch (never the current one or one checked out in a worktree), and deletes the selected ones together (also on the remote), which can be undone', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('branch-cleanup', { 'a.txt': 'a\n' });
+		const origin = path.join(path.dirname(repo), 'branch-cleanup-origin.git');
+		fs.rmSync(origin, { recursive: true, force: true });
+		git(path.dirname(repo), 'init', '-q', '--bare', origin);
+		git(repo, 'remote', 'add', 'origin', origin);
+		const { respond, undoInfo, undo } = undoHelpers(view, repo);
+		git(repo, 'branch', 'merged-1');
+		git(repo, 'branch', 'merged-2');
+		git(repo, 'push', '-q', 'origin', 'main', 'merged-1');
+		git(repo, 'checkout', '-q', '-b', 'unmerged');
+		commitFile(repo, 'u.txt', 'u\n', 'Not merged');
+		git(repo, 'checkout', '-q', 'main');
+		const mergedHash = git(repo, 'rev-parse', 'merged-1');
+
+		const loaded = await respond({ command: 'loadBranchCleanup', repo: repo }, 'loadBranchCleanup');
+		const names = loaded.candidates.map((candidate) => candidate.name + (candidate.remotes.length > 0 ? ' (' + candidate.remotes.join(', ') + ')' : '')).sort();
+		assert(loaded.error === null && loaded.defaultBranch === 'main' && JSON.stringify(names) === JSON.stringify(['merged-1 (origin)', 'merged-2']), 'Unexpected branches: ' + JSON.stringify(loaded));
+
+		const deleted = await respond({ command: 'deleteBranches', repo: repo, branches: ['merged-1', 'merged-2'], remoteBranches: [{ remote: 'origin', branch: 'merged-1' }] }, 'deleteBranches');
+		assert(deleted.deleted === 2 && deleted.errors.length === 0, 'Deleting failed: ' + JSON.stringify(deleted));
+		assert(git(repo, 'branch', '--list', 'merged-*') === '' && git(origin, 'branch', '--list', 'merged-1') === '', 'The branches weren\'t deleted');
+		const info = await undoInfo();
+		assert(info && info.description === 'Delete 2 Branches', 'Deleting the branches can\'t be undone: ' + JSON.stringify(info));
+		assert(await undo() === null && git(repo, 'rev-parse', 'merged-1') === mergedHash && git(repo, 'rev-parse', 'merged-2') === mergedHash, 'The branches weren\'t restored');
+		return 'Listed ' + names.join(', ') + '; deleted them (and merged-1 on origin), and restored them with Undo';
+	});
+
+	await check('rewrite-commits', '[GitLens] The message of the latest or an older commit can be edited, the latest commit undone (keeping its changes), and staged changes fixed up into a commit (keeping unstaged changes), each of which can be undone', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('rewrite-commits', { 'a.txt': 'a\n' });
+		const { respond, undoInfo, undo } = undoHelpers(view, repo);
+		const older = commitFile(repo, 'b.txt', 'b\n', 'Add b');
+		const latest = commitFile(repo, 'c.txt', 'c\n', 'Add c');
+		const results = [];
+
+		const loaded = await respond({ command: 'loadCommitMessage', repo: repo, commitHash: older }, 'loadCommitMessage');
+		assert(loaded.error === null && loaded.message === 'Add b', 'Unexpected message: ' + JSON.stringify(loaded));
+
+		// The latest commit (amended)
+		let edited = await respond({ command: 'editCommitMessage', repo: repo, commitHash: latest, message: 'Add c\n\nWith a body' }, 'editCommitMessage');
+		assert(edited.error === null && git(repo, 'log', '-1', '--format=%B') === 'Add c\n\nWith a body', 'The latest message wasn\'t changed: ' + edited.error);
+		assert((await undoInfo()).description.startsWith('Edit Message of') && await undo() === null && git(repo, 'rev-parse', 'HEAD') === latest, 'Editing the message couldn\'t be undone');
+		results.push('latest message edited & undone');
+
+		// An older commit (reworded by an interactive rebase)
+		edited = await respond({ command: 'editCommitMessage', repo: repo, commitHash: older, message: 'Add the b file' }, 'editCommitMessage');
+		assert(edited.error === null && git(repo, 'log', '--format=%s', '-3').split('\n').join(' | ') === 'Add c | Add the b file | Initial commit', 'The older message wasn\'t changed: ' + edited.error + ', ' + git(repo, 'log', '--oneline', '-3'));
+		assert(await undo() === null && git(repo, 'rev-parse', 'HEAD') === latest, 'Rewording couldn\'t be undone');
+		results.push('older message reworded & undone');
+
+		// Undo the latest commit, keeping its changes staged
+		const undone = await respond({ command: 'undoCommit', repo: repo, mode: 'soft' }, 'undoCommit');
+		assert(undone.error === null && git(repo, 'rev-parse', 'HEAD') === older && git(repo, 'diff', '--cached', '--name-only') === 'c.txt', 'The commit wasn\'t undone: ' + undone.error);
+		assert((await undoInfo()).description === 'Undo Commit' && await undo() === null && git(repo, 'rev-parse', 'HEAD') === latest && git(repo, 'status', '--porcelain') === '', 'Undoing the commit couldn\'t be undone');
+		results.push('commit undone (changes staged) & restored');
+
+		// Fix up the older commit with a staged change, keeping an unstaged change
+		fs.writeFileSync(path.join(repo, 'b.txt'), 'b (fixed)\n');
+		git(repo, 'add', 'b.txt');
+		fs.writeFileSync(path.join(repo, 'c.txt'), 'c (unstaged)\n');
+		const fixed = await respond({ command: 'fixupCommit', repo: repo, commitHash: older }, 'fixupCommit');
+		assert(fixed.error === null && git(repo, 'show', 'HEAD~1:b.txt') === 'b (fixed)' && git(repo, 'log', '--format=%s', '-3').split('\n').join(' | ') === 'Add c | Add b | Initial commit', 'The fix up failed: ' + fixed.error + ', ' + git(repo, 'log', '--oneline', '-4'));
+		assert(fs.readFileSync(path.join(repo, 'c.txt'), 'utf8') === 'c (unstaged)\n', 'The unstaged change was lost');
+		assert((await undoInfo()).description.startsWith('Fix Up') && await undo() === null && git(repo, 'rev-parse', 'HEAD') === latest, 'The fix up couldn\'t be undone');
+		results.push('staged change fixed up into "Add b" (unstaged change kept) & undone');
+		return results.join('; ');
+	});
+
+	await check('bisect', '[GitLens] Bisecting from a bad & a good commit finds the first bad commit as commits are marked good or bad, and stopping returns to the branch', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('bisect', { 'value.txt': 'ok 0\n' });
+		const { respond } = undoHelpers(view, repo);
+		git(repo, 'tag', 'v1');
+		const hashes = [];
+		for (let i = 1; i <= 8; i++) hashes.push(commitFile(repo, 'value.txt', (i >= 6 ? 'bug ' : 'ok ') + i + '\n', 'Commit ' + i));
+
+		const started = await respond({ command: 'bisect', repo: repo, action: 'start', commitHash: 'HEAD', goodRef: 'v1' }, 'bisect');
+		assert(started.error === null, 'Bisecting didn\'t start: ' + started.error);
+		let state = (await respond({ command: 'loadBisectState', repo: repo }, 'loadBisectState', (msg) => msg.repo === repo)).state, steps = 0;
+		assert(state !== null && state.bad === hashes[7] && state.remaining !== null, 'Unexpected state: ' + JSON.stringify(state));
+		while (state !== null && state.firstBad === null && steps < 10) {
+			const action = fs.readFileSync(path.join(repo, 'value.txt'), 'utf8').startsWith('bug') ? 'bad' : 'good';
+			const marked = await respond({ command: 'bisect', repo: repo, action: action, commitHash: null, goodRef: null }, 'bisect');
+			assert(marked.error === null, 'Marking failed: ' + marked.error);
+			state = (await respond({ command: 'loadBisectState', repo: repo }, 'loadBisectState', (msg) => msg.repo === repo)).state;
+			steps++;
+		}
+		assert(state !== null && state.firstBad === hashes[5], 'The first bad commit wasn\'t found: ' + JSON.stringify(state));
+		const stopped = await respond({ command: 'bisect', repo: repo, action: 'reset', commitHash: null, goodRef: null }, 'bisect');
+		const after = (await respond({ command: 'loadBisectState', repo: repo }, 'loadBisectState', (msg) => msg.repo === repo)).state;
+		assert(stopped.error === null && after === null && git(repo, 'symbolic-ref', '--short', 'HEAD') === 'main', 'Bisecting didn\'t stop: ' + stopped.error);
+		return 'Found "Commit 6" in ' + steps + ' steps, then stopped bisecting (back on main)';
+	});
+
+	await check('patches', '[GitLens] Commits, a stash & the uncommitted changes can be copied as a patch, and a patch can be checked and applied as commits (which can be undone) or as uncommitted changes', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('patches', { 'a.txt': 'a\n' });
+		const { respond, undoInfo, undo } = undoHelpers(view, repo);
+		const base = git(repo, 'rev-parse', 'HEAD');
+		const commit = commitFile(repo, 'a.txt', 'a\nb\n', 'Add a line');
+		const previousClipboard = await vscode.env.clipboard.readText();
+		const file = path.join(path.dirname(repo), 'patches.patch');
+		try {
+			// Commits
+			const copied = await respond({ command: 'savePatch', repo: repo, kind: 'commits', hashes: [commit], name: 'add-a-line.patch', copy: true }, 'savePatch');
+			const patch = await vscode.env.clipboard.readText();
+			assert(copied.error === null && patch.includes('Subject: [PATCH] Add a line') && patch.includes('+b'), 'Unexpected patch: ' + copied.error + ', ' + patch.substring(0, 200));
+			fs.writeFileSync(file, patch);
+			git(repo, 'reset', '-q', '--hard', base);
+			const checked = await view.gitFeatures.checkPatch(repo, file);
+			assert(checked.error === null && checked.patch.commits === 1 && checked.patch.files === 1 && checked.patch.additions === 1 && checked.patch.appliesCleanly, 'Unexpected check: ' + JSON.stringify(checked));
+			const applied = await respond({ command: 'applyPatch', repo: repo, file: file, asCommits: true }, 'applyPatch');
+			assert(applied.error === null && git(repo, 'log', '-1', '--format=%s %an') === 'Add a line E2E Author', 'The patch wasn\'t applied as a commit: ' + applied.error);
+			assert((await undoInfo()).description === 'Apply Patch' && await undo() === null && git(repo, 'rev-parse', 'HEAD') === base, 'Applying the patch couldn\'t be undone');
+			const asChanges = await respond({ command: 'applyPatch', repo: repo, file: file, asCommits: false }, 'applyPatch');
+			assert(asChanges.error === null && git(repo, 'rev-parse', 'HEAD') === base && fs.readFileSync(path.join(repo, 'a.txt'), 'utf8') === 'a\nb\n', 'The patch wasn\'t applied as uncommitted changes: ' + asChanges.error);
+
+			// The uncommitted changes & a stash
+			const uncommitted = await respond({ command: 'savePatch', repo: repo, kind: 'uncommitted', hashes: [], name: 'changes.patch', copy: true }, 'savePatch');
+			assert(uncommitted.error === null && (await vscode.env.clipboard.readText()).includes('+b'), 'The uncommitted changes weren\'t copied: ' + uncommitted.error);
+			fs.writeFileSync(path.join(repo, 'new.txt'), 'untracked\n');
+			git(repo, 'stash', 'push', '-q', '--include-untracked');
+			const stashed = await respond({ command: 'savePatch', repo: repo, kind: 'stash', hashes: [git(repo, 'rev-parse', 'stash@{0}')], name: 'stash.patch', copy: true }, 'savePatch');
+			const stashPatch = await vscode.env.clipboard.readText();
+			assert(stashed.error === null && stashPatch.includes('+b') && stashPatch.includes('diff --git a/new.txt b/new.txt'), 'The stash wasn\'t copied with its untracked file: ' + stashed.error);
+			const empty = await respond({ command: 'savePatch', repo: repo, kind: 'uncommitted', hashes: [], name: 'changes.patch', copy: true }, 'savePatch');
+			assert(empty.error === 'There are no changes to save as a patch.', 'Unexpected result without changes: ' + empty.error);
+		} finally {
+			await vscode.env.clipboard.writeText(previousClipboard);
+		}
+		return 'Copied commits (format-patch), the uncommitted changes & a stash (with its untracked file); applied as a commit (undone) and as changes';
+	});
+
+	await check('stash-files', '[GitLens] Some of the changed files, or only the staged changes, can be stashed, and a file can be restored from a stash (asking first if it has changes)', async () => {
+		const view = await getView();
+		const repo = createScratchRepo('stash-files', { 'a.txt': 'a\n', 'b.txt': 'b\n', 'c.txt': 'c\n' });
+		const { respond } = undoHelpers(view, repo);
+		fs.writeFileSync(path.join(repo, 'a.txt'), 'a (changed)\n');
+		fs.writeFileSync(path.join(repo, 'b.txt'), 'b (changed)\n');
+		const results = [];
+
+		const files = await respond({ command: 'loadStashableFiles', repo: repo, filePath: null }, 'loadStashableFiles');
+		assert(files.error === null && files.files.map((file) => file.path).sort().join(',') === 'a.txt,b.txt', 'Unexpected files: ' + JSON.stringify(files));
+		const pushed = await respond({ command: 'pushStash', repo: repo, message: 'Only a', includeUntracked: false, paths: ['a.txt'], onlyStaged: false }, 'pushStash');
+		assert(pushed.error === null && git(repo, 'stash', 'show', '--name-only', 'stash@{0}') === 'a.txt' && git(repo, 'status', '--porcelain') === 'M b.txt', 'Only a.txt should be stashed: ' + pushed.error + ', ' + git(repo, 'status', '--porcelain'));
+		results.push('stashed a.txt only');
+
+		if (files.stagedSupported) {
+			git(repo, 'add', 'b.txt');
+			fs.writeFileSync(path.join(repo, 'c.txt'), 'c (unstaged)\n');
+			const staged = await respond({ command: 'pushStash', repo: repo, message: 'Only staged', includeUntracked: false, paths: null, onlyStaged: true }, 'pushStash');
+			assert(staged.error === null && git(repo, 'stash', 'show', '--name-only', 'stash@{0}') === 'b.txt' && git(repo, 'status', '--porcelain') === 'M c.txt', 'Only the staged change should be stashed: ' + staged.error + ', ' + git(repo, 'status', '--porcelain'));
+			results.push('stashed the staged b.txt only');
+			git(repo, 'checkout', '--', 'c.txt');
+		}
+
+		// Restore a.txt from the stash of it
+		const stash = git(repo, 'rev-parse', 'stash@{' + (files.stagedSupported ? 1 : 0) + '}');
+		fs.writeFileSync(path.join(repo, 'a.txt'), 'a (other changes)\n');
+		const asked = await respond({ command: 'restoreFileFromStash', repo: repo, stashHash: stash, selector: 'refs/stash@{0}', filePath: 'a.txt', untracked: false, force: false }, 'restoreFileFromStash');
+		assert(asked.error === null && asked.hasChanges && fs.readFileSync(path.join(repo, 'a.txt'), 'utf8') === 'a (other changes)\n', 'A file with changes was replaced without asking: ' + JSON.stringify(asked));
+		const restored = await respond({ command: 'restoreFileFromStash', repo: repo, stashHash: stash, selector: 'refs/stash@{0}', filePath: 'a.txt', untracked: false, force: true }, 'restoreFileFromStash');
+		assert(restored.error === null && !restored.hasChanges && fs.readFileSync(path.join(repo, 'a.txt'), 'utf8') === 'a (changed)\n' && git(repo, 'rev-parse', 'stash@{' + (files.stagedSupported ? 1 : 0) + '}') === stash, 'The file wasn\'t restored (or the stash changed): ' + JSON.stringify(restored));
+		results.push('restored a.txt from its stash (after asking), keeping the stash');
+		return results.join('; ');
+	});
+
+	await check('visual-file-history', '[GitLens] "Visual File History" shows the commits that changed a file (following renames) on a timeline by author, from the Explorer / an editor (a URI) or the Git Map View (a repository & path)', async () => {
+		const view = await getView();
+		const { VisualFileHistory } = require(path.join(extension.extensionPath, 'out', 'visualFileHistory.js'));
+		const repo = createScratchRepo('visual-file-history', { 'old.txt': '1\n' });
+		await view.repoManager.registerRepo(repo, false);
+		commitFile(repo, 'old.txt', '1\n2\n', 'Add a line');
+		git(repo, 'mv', 'old.txt', 'new.txt');
+		git(repo, 'commit', '-q', '-m', 'Rename');
+		commitFile(repo, 'new.txt', '1\n2\n3\n', 'Add another line');
+		try {
+			await vscode.commands.executeCommand('git-map.visualFileHistory', vscode.Uri.file(path.join(repo, 'new.txt')));
+			const shown = await waitFor('the Visual File History', () => VisualFileHistory.getInstance().getShown());
+			assert(shown.repo === repo && shown.filePath === 'new.txt' && shown.commits === 4, 'Unexpected history: ' + JSON.stringify({ repo: shown.repo, filePath: shown.filePath, commits: shown.commits }));
+			assert(shown.html.includes('Content-Security-Policy') && shown.html.includes('Add another line') && shown.html.includes('E2E Author'), 'The page doesn\'t show the commits');
+			await waitFor('the tab of the Visual File History', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label === 'History: new.txt'));
+
+			// From the Git Map View
+			await view.respondToMessage({ command: 'viewVisualFileHistory', repo: repo, filePath: 'new.txt' });
+			await waitFor('the history to be shown again', () => { const again = VisualFileHistory.getInstance().getShown(); return again !== null && again.commits === 4; });
+			return 'Showed 4 commits of new.txt (including those before it was renamed), from a URI and from the Git Map View';
+		} finally {
+			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		}
+	});
+
+	await check('blame-options', '[GitLens] The blame of the current line is shown in the Status Bar (git-map.blame.statusBar), and blame can ignore whitespace changes (git-map.blame.ignoreWhitespace) and the commits listed in .git-blame-ignore-revs', async () => {
+		const view = await getView(), dataSource = view.dataSource;
+		const { LineBlame } = require(path.join(extension.extensionPath, 'out', 'lineBlame.js'));
+		const repo = createScratchRepo('blame-options', { 'code.txt': 'one\ntwo\n' });
+		const first = git(repo, 'rev-parse', 'HEAD');
+		const reindent = commitFile(repo, 'code.txt', '    one\ntwo\n', 'Reindent');
+		await view.repoManager.registerRepo(repo, false);
+		const config = () => vscode.workspace.getConfiguration('git-map');
+		const lineBlame = LineBlame.getInstance(), contents = '    one\ntwo\n';
+		const results = [];
+		try {
+			// The Status Bar
+			await vscode.window.showTextDocument(vscode.Uri.file(path.join(repo, 'code.txt')), { selection: new vscode.Selection(1, 0, 1, 0) });
+			await waitFor('the blame in the Status Bar', () => /^\$\(git-commit\) E2E Author, /.test(lineBlame.getStatusBarText() || ''));
+			results.push('Status Bar: ' + lineBlame.getStatusBarText());
+			await config().update('blame.statusBar', false, vscode.ConfigurationTarget.Global);
+			await waitFor('the blame to be removed from the Status Bar', () => lineBlame.getStatusBarText() === null);
+			results.push('hidden by git-map.blame.statusBar');
+
+			// Whitespace changes
+			let blame = await dataSource.getLineBlame(repo, 'code.txt', 1, contents);
+			assert(blame.hash === reindent, 'The whitespace change wasn\'t blamed by default: ' + blame.hash);
+			await config().update('blame.ignoreWhitespace', true, vscode.ConfigurationTarget.Global);
+			blame = await dataSource.getLineBlame(repo, 'code.txt', 1, contents);
+			assert(blame.hash === first, 'The whitespace change wasn\'t ignored: ' + blame.hash);
+			await config().update('blame.ignoreWhitespace', undefined, vscode.ConfigurationTarget.Global);
+			results.push('whitespace change ignored');
+
+			// The commits listed in .git-blame-ignore-revs (when it exists)
+			fs.writeFileSync(path.join(repo, '.git-blame-ignore-revs'), '# Formatting\n' + reindent + '\n');
+			blame = await dataSource.getLineBlame(repo, 'code.txt', 1, contents);
+			assert(blame.hash === first, 'The commit in .git-blame-ignore-revs wasn\'t ignored: ' + blame.hash);
+			await config().update('blame.ignoreRevsFile', '', vscode.ConfigurationTarget.Global);
+			blame = await dataSource.getLineBlame(repo, 'code.txt', 1, contents);
+			assert(blame.hash === reindent, 'The commit was still ignored without git-map.blame.ignoreRevsFile: ' + blame.hash);
+			results.push('.git-blame-ignore-revs used (and not when the setting is empty)');
+			return results.join('; ');
+		} finally {
+			for (const setting of ['blame.statusBar', 'blame.ignoreWhitespace', 'blame.ignoreRevsFile']) await config().update(setting, undefined, vscode.ConfigurationTarget.Global);
+			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		}
+	});
+
+	await check('explain-commit', '[AI] Explaining a commit is refused unless git-map.ai.explainCommit.enabled is on, and otherwise uses a language model provided in Visual Studio Code (an error explains what\'s needed when there isn\'t one)', async () => {
+		const view = await getView();
+		const { respond } = undoHelpers(view, main);
+		const config = () => vscode.workspace.getConfiguration('git-map');
+		const refused = await respond({ command: 'explainCommit', repo: main, commitHash: fixtures.firstCommit, modelId: null }, 'explainCommit', (msg) => msg.done);
+		assert(refused.text === '' && refused.error !== null && refused.error.includes('git-map.ai.explainCommit.enabled'), 'Explaining wasn\'t refused while it\'s turned off: ' + JSON.stringify(refused));
+		const models = await respond({ command: 'loadLanguageModels' }, 'loadLanguageModels');
+		try {
+			await config().update('ai.explainCommit.enabled', true, vscode.ConfigurationTarget.Global);
+			const explained = await respond({ command: 'explainCommit', repo: main, commitHash: fixtures.firstCommit, modelId: null }, 'explainCommit', (msg) => msg.done);
+			if (models.models.length === 0) {
+				assert(models.error !== null && models.error.includes('language model') && explained.error === models.error, 'Unexpected result without a language model: ' + JSON.stringify({ models: models, explained: explained }));
+				return 'Refused while turned off; without a language model: "' + explained.error + '"';
+			}
+			assert(explained.error === null && explained.text !== '', 'The commit wasn\'t explained: ' + JSON.stringify(explained));
+			return 'Refused while turned off; explained by ' + explained.model;
+		} finally {
+			await config().update('ai.explainCommit.enabled', undefined, vscode.ConfigurationTarget.Global);
+		}
+	});
+
 	await check('worktrees', '[GitLens] The worktrees of a repository are listed, and can be added (for a branch, or at a commit), removed (only forced if they have changes) & pruned', async () => {
 		const view = await getView();
 		// The response to a message (the view also loads the worktrees of its repository itself, e.g. when it's refreshed after an action)
@@ -796,12 +1083,13 @@ async function run() {
 		const document = await vscode.workspace.openTextDocument(path.join(main, 'file.txt'));
 		const editor = await vscode.window.showTextDocument(document);
 		editor.selection = new vscode.Selection(0, 0, 0, 2);
-		const since = record.requests.length;
+		const since = record.requests.length, sinceResponses = record.responses.length;
 		await vscode.commands.executeCommand('git-map.viewLineHistoryInGitMap');
 		const request = await waitFor('the Webview to request the line history', () => record.requests.slice(since).find((msg) => msg.command === 'loadCommits' && msg.filePath === 'file.txt' && msg.lineRange))
 			.catch((err) => { throw new Error(err.message + ' (requests: ' + record.requests.slice(since).map((msg) => msg.command + (msg.command === 'loadCommits' ? ' ' + msg.repo + ' ' + msg.filePath + ' ' + JSON.stringify(msg.lineRange) : '')).join(', ') + '; HTML loadViewTo: ' + (record.html.length > 0 ? (record.html[record.html.length - 1].match(/"loadViewTo":(\{[^}]*\}[^,]*)/) || [])[1] : '') + ')'); });
 		assert(request.repo === main && request.lineRange.start === 1 && request.lineRange.end === 1, 'Unexpected request: ' + JSON.stringify(request));
-		const response = await waitFor('the line history', () => record.responses.find((msg) => msg.command === 'loadCommits' && msg.refreshId === request.refreshId));
+		// (only the responses since, as the view may have been reloaded since an earlier check, restarting its refresh ids)
+		const response = await waitFor('the line history', () => record.responses.slice(sinceResponses).find((msg) => msg.command === 'loadCommits' && msg.refreshId === request.refreshId));
 		const shown = response.commits.map((commit) => commit.hash);
 		assert(shown.includes(fixtures.firstCommit) && shown.includes(fixtures.secondAuthorCommit) && !shown.includes(fixtures.headCommit), 'Unexpected line history: ' + response.commits.map((commit) => commit.message).join(', '));
 		await vscode.commands.executeCommand('workbench.action.closeActiveEditor');
@@ -1247,7 +1535,7 @@ async function run() {
 			const inSubmenu = submenuItems.find((item) => item.command === 'git-map.' + action), direct = contextItems.find((item) => item.command === 'git-map.' + action);
 			return !inSubmenu || !direct || !inSubmenu.when.includes("editorContextMenu." + action + " == 'Submenu'") || !direct.when.includes("editorContextMenu." + action + " == 'Context Menu'") || !submenuEntry.when.includes("editorContextMenu." + action + " == 'Submenu'");
 		});
-		assert(actions.length === 8 && problems.length === 0, 'Unexpected menus for: ' + problems.join(', '));
+		assert(actions.length === 9 && problems.length === 0, 'Unexpected menus for: ' + problems.join(', '));
 		const config = vscode.workspace.getConfiguration('git-map');
 		await config.update('editorContextMenu', { viewLineHistory: 'Context Menu', openLinesOnRemote: 'Hidden' }, vscode.ConfigurationTarget.Global);
 		try {

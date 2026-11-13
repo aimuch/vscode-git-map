@@ -1421,17 +1421,29 @@ export class DataSource extends Disposable {
 	 * @param includeUntracked Is `--include-untracked` enabled.
 	 * @returns The ErrorInfo from the executed command.
 	 */
-	public pushStash(repo: string, message: string, includeUntracked: boolean): Promise<ErrorInfo> {
+	public pushStash(repo: string, message: string, includeUntracked: boolean, paths: ReadonlyArray<string> | null = null, onlyStaged: boolean = false): Promise<ErrorInfo> {
 		if (this.gitExecutable === null) {
 			return Promise.resolve(UNABLE_TO_FIND_GIT_MSG);
 		} else if (!doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.PushStash)) {
 			return Promise.resolve(constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.PushStash));
+		} else if (onlyStaged && !doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.StashStaged)) {
+			return Promise.resolve(constructIncompatibleGitVersionMessage(this.gitExecutable, GitVersionRequirement.StashStaged, t('stashing only the staged changes')));
 		}
 
 		let args = ['stash', 'push'];
-		if (includeUntracked) args.push('--include-untracked');
+		if (onlyStaged) args.push('--staged');
+		else if (includeUntracked) args.push('--include-untracked');
 		if (message !== '') args.push('--message', message);
+		// Only the files given are stashed (each path is literal)
+		if (paths !== null && paths.length > 0) args.push('--', ...paths.map((filePath) => ':(literal)' + filePath));
 		return this.runGitCommand(args, repo);
+	}
+
+	/**
+	 * Does the Git executable support stashing only the staged changes (Git 2.35 or later).
+	 */
+	public isStashStagedSupported() {
+		return this.gitExecutable !== null && doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.StashStaged);
 	}
 
 
@@ -1896,7 +1908,7 @@ export class DataSource extends Disposable {
 	 * @returns The blame of the line, or NULL if it couldn't be determined (e.g. the file isn't tracked).
 	 */
 	public getLineBlame(repo: string, filePath: string, line: number, contents: string): Promise<GitLineBlame | null> {
-		return this._spawnGit(['blame', '--porcelain', '-L', line + ',' + line, '--contents', '-', '--', filePath], repo, (stdout) => {
+		return this._spawnGit(['blame', '--porcelain', ...this.getBlameOptions(repo), '-L', line + ',' + line, '--contents', '-', '--', filePath], repo, (stdout) => {
 			const lines = stdout.toString().split(LF_REGEX), header = lines.length > 0 ? lines[0].match(/^([0-9a-f]{40,64}) (\d+) /) : null;
 			if (header === null) return null;
 			const field = (name: string) => {
@@ -1925,7 +1937,7 @@ export class DataSource extends Disposable {
 	 * @returns The blame of the file, or NULL if it couldn't be determined (e.g. the file isn't tracked).
 	 */
 	public getFileBlame(repo: string, filePath: string, contents: string): Promise<GitFileBlame | null> {
-		return this._spawnGit(['blame', '--porcelain', '--contents', '-', '--', filePath], repo, (stdout) => {
+		return this._spawnGit(['blame', '--porcelain', ...this.getBlameOptions(repo), '--contents', '-', '--', filePath], repo, (stdout) => {
 			const lines: { hash: string, originalLine: number }[] = [], commits: { [hash: string]: Writeable<GitBlameCommit> } = {};
 			let commit: Writeable<GitBlameCommit> | null = null, hash = '', match: RegExpMatchArray | null;
 			stdout.toString().split(LF_REGEX).forEach((line) => {
@@ -1944,6 +1956,23 @@ export class DataSource extends Disposable {
 			});
 			return lines.length > 0 ? { lines: lines, commits: commits } : null;
 		}, false, contents).catch(() => null);
+	}
+
+	/**
+	 * Get the options of `git blame` set by the Extension Settings: ignoring changes to whitespace (`git-map.blame.ignoreWhitespace`),
+	 * and the file listing the commits to ignore (`git-map.blame.ignoreRevsFile`, used if it exists in the repository).
+	 * @param repo The path of the repository.
+	 * @returns The options.
+	 */
+	private getBlameOptions(repo: string) {
+		const config = getConfig(repo), options: string[] = [];
+		if (config.blameIgnoreWhitespace) options.push('-w');
+		const ignoreRevsFile = config.blameIgnoreRevsFile;
+		if (ignoreRevsFile !== '' && this.gitExecutable !== null && doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.IgnoreRevsFile)) {
+			const absolutePath = path.isAbsolute(ignoreRevsFile) ? ignoreRevsFile : path.join(repo, ignoreRevsFile);
+			if (fs.existsSync(absolutePath)) options.push('--ignore-revs-file', absolutePath);
+		}
+		return options;
 	}
 
 	/**
@@ -2470,7 +2499,8 @@ export class DataSource extends Disposable {
 	 * @returns The operation, or NULL if no operation is in progress.
 	 */
 	public async getOperationInProgress(repo: string): Promise<GitOperation | null> {
-		const operations: [string, GitOperation][] = [['rebase-merge', 'rebase'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'], ['REVERT_HEAD', 'revert']];
+		// A patch applied with "git am" also uses the rebase-apply directory (with an "applying" file in it)
+		const operations: [string, GitOperation][] = [['rebase-merge', 'rebase'], ['rebase-apply/applying', 'am'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'], ['REVERT_HEAD', 'revert']];
 		for (const [file, operation] of operations) {
 			const gitPath = await this.spawnGit(['rev-parse', '--git-path', file], repo, (stdout) => stdout.trim()).catch(() => '');
 			if (gitPath !== '' && fs.existsSync(path.resolve(repo, gitPath))) return operation;

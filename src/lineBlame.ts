@@ -32,7 +32,10 @@ export class LineBlame extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly logger: Logger;
 	private readonly decorationType: vscode.TextEditorDecorationType;
-	private enabled: boolean;
+	private readonly statusBarItem: vscode.StatusBarItem;
+	private enabled: boolean; // Is the blame of the current line shown (at the end of the line, or in the Status Bar)
+	private inline: boolean; // Is it shown at the end of the line (git-map.blame.currentLine)
+	private statusBar: boolean; // Is it shown in the Status Bar (git-map.blame.statusBar)
 	private timeout: NodeJS.Timeout | null = null;
 	private requestId: number = 0;
 	private decoratedEditor: vscode.TextEditor | null = null;
@@ -51,7 +54,12 @@ export class LineBlame extends Disposable {
 		this.dataSource = dataSource;
 		this.repoManager = repoManager;
 		this.logger = logger;
-		this.enabled = getConfig().blameCurrentLine;
+		const config = getConfig();
+		this.inline = config.blameCurrentLine;
+		this.statusBar = config.blameStatusBar;
+		this.enabled = this.inline || this.statusBar;
+		this.statusBarItem = vscode.window.createStatusBarItem('git-map.blame', vscode.StatusBarAlignment.Left, 0);
+		this.statusBarItem.name = t('Git Map: Blame of the Current Line');
 		this.decorationType = vscode.window.createTextEditorDecorationType({
 			after: {
 				margin: '0 0 0 3em',
@@ -64,6 +72,7 @@ export class LineBlame extends Disposable {
 		LineBlame.instance = this;
 		this.registerDisposables(
 			this.decorationType,
+			this.statusBarItem,
 			vscode.window.onDidChangeTextEditorSelection((event) => this.schedule(event.textEditor)),
 			vscode.window.onDidChangeActiveTextEditor((editor) => {
 				this.clear();
@@ -74,8 +83,11 @@ export class LineBlame extends Disposable {
 				if (this.decoratedEditor !== null && this.decoratedEditor.document === event.document) this.schedule(this.decoratedEditor);
 			}),
 			onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.blame.currentLine')) {
-					this.enabled = getConfig().blameCurrentLine;
+				if (event.affectsConfiguration('git-map.blame.currentLine') || event.affectsConfiguration('git-map.blame.statusBar') || event.affectsConfiguration('git-map.blame.ignoreWhitespace') || event.affectsConfiguration('git-map.blame.ignoreRevsFile')) {
+					const config = getConfig();
+					this.inline = config.blameCurrentLine;
+					this.statusBar = config.blameStatusBar;
+					this.enabled = this.inline || this.statusBar;
 					this.clear();
 					if (this.enabled && vscode.window.activeTextEditor) this.schedule(vscode.window.activeTextEditor);
 				}
@@ -140,10 +152,32 @@ export class LineBlame extends Disposable {
 	 */
 	private clear() {
 		this.lastBlamed = null;
+		this.statusBarItem.hide();
+		this.statusBarVisible = false;
 		if (this.decoratedEditor !== null) {
 			this.decoratedEditor.setDecorations(this.decorationType, []);
 			this.decoratedEditor = null;
 		}
+	}
+
+	/**
+	 * Get the text shown in the Status Bar (used by the end-to-end tests).
+	 * @returns The text, or NULL if the Status Bar item is hidden.
+	 */
+	public getStatusBarText() {
+		return this.statusBarVisible ? this.statusBarItem.text : null;
+	}
+	private statusBarVisible: boolean = false;
+
+	/**
+	 * Show the blame of a line in the Status Bar.
+	 */
+	private showInStatusBar(blame: GitLineBlame, uri: vscode.Uri, line: number) {
+		this.statusBarItem.text = '$(git-commit) ' + (blame.committed ? t('{0}, {1}', blame.author, getRelativeTimeDiff(blame.authorDate)) : t('You, Uncommitted changes'));
+		this.statusBarItem.tooltip = blame.committed ? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary : t('This line has uncommitted changes.');
+		this.statusBarItem.command = { title: t('View Line History'), command: 'git-map.viewLineHistory', arguments: [{ uri: uri.toString(), start: line, end: line }] };
+		this.statusBarItem.show();
+		this.statusBarVisible = true;
 	}
 
 	/**
@@ -172,6 +206,13 @@ export class LineBlame extends Disposable {
 			return;
 		}
 
+		if (this.statusBar) this.showInStatusBar(blame, document.uri, line + 1);
+		this.decoratedEditor = editor;
+		this.decoratedLine = line;
+		if (!this.inline) {
+			blamed();
+			return;
+		}
 		const end = document.lineAt(line).range.end;
 		const decorate = (change: ReadonlyArray<string> | null) => editor.setDecorations(this.decorationType, [{
 			range: new vscode.Range(end, end),
@@ -179,8 +220,6 @@ export class LineBlame extends Disposable {
 			renderOptions: { after: { contentText: getBlameText(blame) } }
 		}]);
 		decorate(null);
-		this.decoratedEditor = editor;
-		this.decoratedLine = line;
 
 		// The hover also shows how the commit changed the line, once it has been loaded
 		if (!blame.committed) {

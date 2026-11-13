@@ -2956,3 +2956,529 @@ label > input[type=radio]:checked ~ .customRadio:after{
 	-webkit-user-select:none;
 	user-select:none;
 }
+
+/* Branch Comparison: the bar below the control bar, the commits of each branch, and the panel of the changed files */
+#compareBar{
+	display:none;
+	flex:1 0 100%;
+	flex-wrap:wrap;
+	align-items:center;
+	gap:8px 10px;
+	box-sizing:border-box;
+	min-height:40px;
+	margin:0 -12px;
+	padding:6px 12px;
+	border-top:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	background:linear-gradient(90deg, color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent), transparent 60%);
+	box-shadow:inset 3px 0 0 var(--vscode-focusBorder);
+	font-size:12.5px;
+}
+#compareBar.active{
+	display:flex;
+}
+#compareBar > svg{
+	flex:0 0 auto;
+	width:16px;
+	height:16px;
+	fill:var(--vscode-focusBorder);
+}
+.compareTitle{
+	font-size:13px;
+}
+.compareBranch{
+	display:inline-flex;
+	align-items:center;
+	gap:6px;
+	max-width:220px;
+	height:24px;
+	padding:0 8px;
+	box-sizing:border-box;
+	border-radius:4px;
+	font-family:var(--vscode-editor-font-family);
+	font-size:12px;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.compareBranch i{
+	flex:0 0 auto;
+	width:8px;
+	height:8px;
+	border-radius:50%;
+}
+.compareBranch.left{
+	border:1px solid color-mix(in srgb, var(--git-graph-color0) 60%, transparent);
+	background-color:color-mix(in srgb, var(--git-graph-color0) 18%, transparent);
+}
+.compareBranch.left i{
+	background-color:var(--git-graph-color0);
+}
+.compareBranch.right{
+	border:1px solid color-mix(in srgb, var(--git-graph-color3) 60%, transparent);
+	background-color:color-mix(in srgb, var(--git-graph-color3) 18%, transparent);
+}
+.compareBranch.right i{
+	background-color:var(--git-graph-color3);
+}
+.compareMuted{
+	display:inline-flex;
+	align-items:center;
+	gap:6px;
+	color:var(--vscode-descriptionForeground);
+}
+.compareMuted svg{
+	width:14px;
+	height:14px;
+	fill:currentColor;
+}
+.compareHash, .bisectHash{
+	font-family:var(--vscode-editor-font-family);
+	color:var(--vscode-foreground);
+}
+.compareSegments{
+	display:inline-flex;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.45));
+	border-radius:6px;
+	overflow:hidden;
+}
+.compareSegment{
+	height:26px;
+	padding:0 10px;
+	border:0;
+	border-right:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.45));
+	background:transparent;
+	color:inherit;
+	font:inherit;
+	cursor:pointer;
+}
+.compareSegment:last-child{
+	border-right:0;
+}
+.compareSegment[aria-pressed="true"]{
+	background-color:var(--vscode-button-background);
+	color:var(--vscode-button-foreground);
+}
+.compareSpacer{
+	flex:1 1 auto;
+}
+.compareBtn, .compareIconBtn{
+	display:inline-flex;
+	align-items:center;
+	gap:6px;
+	height:26px;
+	padding:0 10px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.45));
+	border-radius:6px;
+	background-color:var(--vscode-dropdown-background, rgba(128,128,128,0.1));
+	color:inherit;
+	font:inherit;
+	cursor:pointer;
+}
+.compareIconBtn{
+	justify-content:center;
+	width:24px;
+	height:24px;
+	padding:0;
+}
+.compareBtn:hover, .compareIconBtn:hover, .compareBtn.active{
+	border-color:var(--vscode-focusBorder);
+}
+.compareBtn svg, .compareIconBtn svg{
+	width:12px;
+	height:12px;
+	fill:currentColor;
+}
+.compareIconBtn svg[fill="none"]{
+	fill:none;
+}
+.compareSegment:focus-visible, .compareBtn:focus-visible, .compareIconBtn:focus-visible{
+	outline:2px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+#commitTable tr.commit.compareLeft > td:first-child{
+	box-shadow:inset 3px 0 0 var(--git-graph-color0);
+}
+#commitTable tr.commit.compareRight > td:first-child{
+	box-shadow:inset 3px 0 0 var(--git-graph-color3);
+}
+#commitTable tr.commit.compareBase{
+	opacity:0.75;
+}
+.compareBaseLabel, .bisectLabel{
+	display:inline-block;
+	margin-right:6px;
+	padding:0 6px;
+	border-radius:4px;
+	line-height:18px;
+	font-size:11.5px;
+	font-weight:600;
+	vertical-align:baseline;
+}
+.compareBaseLabel{
+	background-color:rgba(128,128,128,0.25);
+}
+#comparePanel{
+	position:fixed;
+	top:0;
+	right:0;
+	bottom:0;
+	z-index:15;
+	box-sizing:border-box;
+	padding:14px 16px;
+	border-left:1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
+	background-color:var(--vscode-sideBar-background, var(--vscode-editor-background));
+	overflow-y:auto;
+	display:flex;
+	flex-direction:column;
+	gap:12px;
+	font-size:13px;
+}
+.comparePanelHeader{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	font-size:14px;
+}
+.comparePanelHeader b{
+	flex:1 1 auto;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.comparePanelText{
+	margin:0;
+	color:var(--vscode-descriptionForeground);
+	font-size:12px;
+	line-height:18px;
+}
+.comparePanelText b{
+	color:var(--vscode-foreground);
+}
+.comparePanelChips{
+	display:flex;
+	flex-wrap:wrap;
+	gap:6px;
+}
+.comparePanelChips > span{
+	padding:2px 8px;
+	border-radius:10px;
+	background-color:rgba(128,128,128,0.18);
+	font-size:12px;
+}
+.comparePanelFiles{
+	border:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	border-radius:6px;
+	overflow:hidden;
+}
+.comparePanelFile{
+	display:grid;
+	grid-template-columns:20px minmax(0, 1fr) auto;
+	column-gap:8px;
+	align-items:center;
+	width:100%;
+	padding:6px 10px;
+	border:0;
+	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.2));
+	background:transparent;
+	color:inherit;
+	font:inherit;
+	text-align:left;
+	cursor:pointer;
+}
+.comparePanelFile:last-child{
+	border-bottom:0;
+}
+.comparePanelFile:hover, .comparePanelFile:focus-visible{
+	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.15));
+	outline:none;
+}
+.comparePanelStatus{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:18px;
+	height:18px;
+	border-radius:4px;
+	font-size:11px;
+	font-weight:700;
+	background-color:rgba(128,128,128,0.2);
+}
+.comparePanelStatus.statusA{
+	color:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.comparePanelStatus.statusM{
+	color:var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+}
+.comparePanelStatus.statusD{
+	color:var(--vscode-gitDecoration-deletedResourceForeground, #f85149);
+}
+.comparePanelStatus.statusR{
+	color:var(--vscode-gitDecoration-renamedResourceForeground, #4daafc);
+}
+.comparePanelFileName{
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+}
+.comparePanelFileName > span{
+	color:var(--vscode-descriptionForeground);
+	font-size:12px;
+}
+.comparePanelStats{
+	font-size:12px;
+	white-space:nowrap;
+}
+.comparePanelEmpty{
+	padding:10px;
+	color:var(--vscode-descriptionForeground);
+}
+.comparePanelActions{
+	display:flex;
+	flex-wrap:wrap;
+	gap:8px;
+}
+
+/* Clean Up Branches */
+#branchCleanup{
+	position:fixed;
+	z-index:20;
+	width:min(600px, calc(100vw - 16px));
+	box-sizing:border-box;
+	border:1px solid var(--vscode-menu-border, var(--vscode-widget-border, rgba(128,128,128,0.35)));
+	border-radius:8px;
+	background-color:var(--vscode-editorWidget-background, var(--vscode-menu-background));
+	color:var(--vscode-editorWidget-foreground, var(--vscode-foreground));
+	box-shadow:0 10px 28px var(--vscode-widget-shadow, rgba(0,0,0,0.5));
+	font-size:13px;
+	overflow:hidden;
+}
+.branchCleanupMessage{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	padding:16px 12px;
+	color:var(--vscode-descriptionForeground);
+}
+.branchCleanupMessage svg{
+	width:14px;
+	height:14px;
+	fill:currentColor;
+}
+.branchCleanupGroup{
+	padding:10px 12px 4px;
+	font-size:11.5px;
+	font-weight:600;
+	letter-spacing:0.04em;
+	text-transform:uppercase;
+	color:var(--vscode-descriptionForeground);
+}
+.branchCleanupItem{
+	display:grid;
+	grid-template-columns:20px minmax(0, 1fr) auto;
+	column-gap:10px;
+	align-items:center;
+	padding:8px 12px;
+	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.15));
+	cursor:pointer;
+}
+.branchCleanupItem:hover{
+	background-color:var(--vscode-list-hoverBackground, rgba(128,128,128,0.12));
+}
+.branchCleanupItem input{
+	margin:0;
+	accent-color:var(--vscode-focusBorder);
+}
+.branchCleanupText{
+	min-width:0;
+}
+.branchCleanupName{
+	font-family:var(--vscode-editor-font-family);
+	font-size:12.5px;
+}
+.branchCleanupWarning{
+	color:var(--vscode-editorWarning-foreground, #cca700);
+}
+.branchCleanupDate{
+	font-size:11.5px;
+	color:var(--vscode-descriptionForeground);
+}
+.branchCleanupFooter{
+	display:flex;
+	flex-wrap:wrap;
+	align-items:center;
+	gap:10px;
+	padding:12px;
+	border-top:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+}
+.branchCleanupRemote{
+	display:inline-flex;
+	align-items:center;
+	gap:8px;
+	font-size:12.5px;
+}
+.branchCleanupFooter .roundedBtn{
+	display:inline-block;
+	height:30px;
+	padding:0 14px;
+	border-radius:6px;
+	font-family:inherit;
+}
+.branchCleanupFooter .branchCleanupDelete{
+	border-color:transparent;
+	background-color:var(--vscode-statusBarItem-errorBackground, #c72e0f);
+	color:var(--vscode-statusBarItem-errorForeground, #ffffff);
+	font-weight:600;
+}
+.branchCleanupFooter .branchCleanupDelete.disabled{
+	opacity:0.5;
+	cursor:default;
+}
+
+/* Bisect: the operation bar while bisecting, and the labels of the marked commits */
+#operationBar.bisect{
+	border-color:var(--vscode-focusBorder);
+	background-color:color-mix(in srgb, var(--vscode-focusBorder) 12%, transparent);
+}
+#operationBar.bisect > svg{
+	fill:var(--vscode-focusBorder);
+}
+#operationBar.bisectDone{
+	border-color:var(--vscode-errorForeground, #f85149);
+	background-color:color-mix(in srgb, var(--vscode-errorForeground, #f85149) 12%, transparent);
+}
+#operationBar.bisectDone > svg{
+	fill:var(--vscode-errorForeground, #f85149);
+}
+button.operationBarBtn{
+	display:inline-flex;
+	align-items:center;
+	gap:6px;
+	border:1px solid transparent;
+	font:inherit;
+}
+button.operationBarBtn svg{
+	width:12px;
+	height:12px;
+	fill:currentColor;
+}
+.operationBarBtn.good{
+	border-color:var(--vscode-gitDecoration-addedResourceForeground, #2ea043);
+}
+.operationBarBtn.bad{
+	border-color:var(--vscode-gitDecoration-deletedResourceForeground, #da3633);
+}
+.operationBarMuted{
+	color:var(--vscode-descriptionForeground);
+}
+.bisectLabel.good{
+	background-color:color-mix(in srgb, var(--vscode-gitDecoration-addedResourceForeground, #3fb950) 25%, transparent);
+}
+.bisectLabel.bad{
+	background-color:color-mix(in srgb, var(--vscode-gitDecoration-deletedResourceForeground, #f85149) 25%, transparent);
+}
+.bisectLabel.testing{
+	background-color:color-mix(in srgb, var(--vscode-focusBorder) 25%, transparent);
+}
+.bisectLabel.skipped{
+	background-color:rgba(128,128,128,0.25);
+}
+
+/* The Explain tab of the Commit Details View */
+.cdvTab .explainIcon{
+	margin-right:4px;
+	vertical-align:-2px;
+}
+#cdvExplainView{
+	padding:12px 10px 16px 0;
+	line-height:19px;
+}
+#cdvExplainView.hidden{
+	display:none;
+}
+.explainConsent{
+	padding:12px 14px;
+	border:1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
+	border-radius:8px;
+}
+.explainConsent p{
+	margin:6px 0 0;
+	font-size:12.5px;
+}
+.explainConsentTitle{
+	font-weight:600;
+}
+.explainLabel{
+	display:block;
+	margin-top:12px;
+	font-size:12px;
+	color:var(--vscode-descriptionForeground);
+}
+#explainModel{
+	margin-top:6px;
+	min-width:220px;
+	height:28px;
+	padding:0 8px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.45));
+	border-radius:4px;
+	background-color:var(--vscode-dropdown-background);
+	color:var(--vscode-dropdown-foreground);
+	font:inherit;
+}
+.explainDontAsk{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	margin-top:10px;
+	font-size:12.5px;
+}
+.explainButtons{
+	display:flex;
+	gap:8px;
+	margin-top:14px;
+}
+.explainText p{
+	margin:0 0 8px;
+}
+.explainText ul, .explainText ol{
+	margin:0 0 8px;
+	padding-left:18px;
+}
+.explainText code{
+	font-family:var(--vscode-editor-font-family);
+	font-size:12px;
+}
+.explainHeading{
+	margin:10px 0 4px;
+	font-weight:600;
+}
+.explainLoading, .explainError{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	margin-top:8px;
+	color:var(--vscode-descriptionForeground);
+}
+.explainError{
+	color:var(--vscode-errorForeground);
+}
+.explainLoading svg, .explainError svg{
+	flex:0 0 auto;
+	width:14px;
+	height:14px;
+	fill:currentColor;
+}
+.explainFooter{
+	display:flex;
+	flex-wrap:wrap;
+	align-items:center;
+	gap:8px;
+	margin-top:10px;
+	padding-top:10px;
+	border-top:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	font-size:12px;
+	color:var(--vscode-descriptionForeground);
+}
+.explainSpacer{
+	flex:1 1 auto;
+}

@@ -32,6 +32,7 @@ class GitGraphView {
 	public commits: GG.GitCommit[] = [];
 	public loadedCommits: GG.GitCommit[] = []; // All of the loaded commits (when only the matches of the Find Widget are shown, this.commits only contains them)
 	private commitFilter: ReadonlySet<string> | null = null;
+	private compareFilter: ReadonlySet<string> | null = null; // The commits shown while branches are compared
 	public fileHistory: string | null = null; // The path of the file whose history is shown (NULL => all commits are shown)
 	private fileHistoryLines: GG.GitLineRange | null = null; // The lines of the file whose history is shown (NULL => the whole file)
 	private fileHistoryData: GG.GitFileHistory | null = null;
@@ -92,6 +93,9 @@ class GitGraphView {
 	public readonly stashList: StashList;
 	public readonly worktreeList: WorktreeList;
 	public readonly rebaseEditor: RebaseEditor;
+	public readonly branchCompare: BranchCompare;
+	public readonly branchCleanup: BranchCleanup;
+	public readonly commitExplainer: CommitExplainer;
 	private readonly operationBar: OperationBar;
 	private readonly rowActions: RowActions;
 	private readonly findWidget: FindWidget;
@@ -130,6 +134,9 @@ class GitGraphView {
 		this.cdvFileView = new CdvFileView(this);
 		this.tableColumns = new TableColumns(this);
 		this.stashList = new StashList(this);
+		this.branchCompare = new BranchCompare(this);
+		this.branchCleanup = new BranchCleanup(this);
+		this.commitExplainer = new CommitExplainer(this);
 		this.currentRepoRefreshState = {
 			inProgress: false,
 			hard: true,
@@ -164,12 +171,15 @@ class GitGraphView {
 		});
 
 		this.branchDropdown = new Dropdown('branchDropdown', false, true, 'Branches', (values) => {
+			if (this.branchCompare.isActive()) this.branchCompare.reset(); // Choosing the branches shown ends the comparison
+			this.compareFilter = null;
 			this.currentBranches = values;
 			this.maxCommits = this.config.initialLoadCommits;
 			this.saveState();
 			this.clearCommits();
 			this.requestLoadRepoInfoAndCommits(true, true);
 		});
+		this.branchDropdown.setFooterAction(SVG_ICONS.branches + '<span>' + t('Clean Up Branches') + ELLIPSIS + '</span>', () => this.branchCleanup.show());
 
 		this.authorDropdown = new Dropdown('authorDropdown', false, true, 'Authors', (values) => {
 			this.currentAuthors = values;
@@ -356,6 +366,13 @@ class GitGraphView {
 		this.worktreeList.clear();
 		this.rebaseEditor.close();
 		this.operationBar.render(null);
+		if (repo !== this.currentRepo && this.branchCompare.isActive()) {
+			// The comparison of the branches of another repository ends (showing the branches that were shown before it)
+			this.currentBranches = <string[] | null>null;
+			this.compareFilter = null;
+			this.branchCompare.reset();
+		}
+		this.branchCleanup.close();
 		this.lastUndoId = -1;
 		this.hideUndoToast();
 		this.selectedCommits = new Set();
@@ -533,7 +550,9 @@ class GitGraphView {
 	 * @returns The avatars that need to be requested for the commits.
 	 */
 	private showCommits() {
-		this.commits = this.commitFilter !== null ? filterCommits(this.loadedCommits, this.commitFilter) : this.loadedCommits;
+		const commitFilter = this.commitFilter, compareFilter = this.compareFilter;
+		const filter = commitFilter !== null && compareFilter !== null ? new Set(Array.from(commitFilter).filter((hash) => compareFilter.has(hash))) : commitFilter !== null ? commitFilter : compareFilter;
+		this.commits = filter !== null ? filterCommits(this.loadedCommits, filter) : this.loadedCommits;
 		this.commitLookup = {};
 
 		let i: number, expandedCommitVisible = false, expandedCompareWithCommitVisible = false, avatarsNeeded: { [email: string]: string[] } = {}, commit;
@@ -578,6 +597,50 @@ class GitGraphView {
 		if (filter === null ? current === null : current !== null && filter.size === current.size && Array.from(filter).every((hash) => current.has(hash))) return;
 		this.commitFilter = filter;
 		this.showCommits();
+	}
+
+	/**
+	 * Set the commits that are shown while branches are compared (combined with the filter of the Find Widget).
+	 * @param filter The hashes of the commits to show, or NULL to show all of the loaded commits.
+	 */
+	public setCompareFilter(filter: ReadonlySet<string> | null) {
+		if (filter === null && this.compareFilter === null) return;
+		this.compareFilter = filter;
+		this.showCommits();
+	}
+
+	/**
+	 * Get the branches shown (as selected in the Branches dropdown).
+	 * @returns The branches, or NULL if all branches are shown.
+	 */
+	public getShownBranches() {
+		return this.currentBranches !== null ? this.currentBranches.slice() : null;
+	}
+
+	/**
+	 * Show only some of the branches (as if they were selected in the Branches dropdown), and load their commits.
+	 * @param branches The branches (remote branches are prefixed by "remotes/"), or NULL to show all branches.
+	 */
+	public setShownBranches(branches: string[] | null) {
+		this.currentBranches = branches;
+		this.maxCommits = this.config.initialLoadCommits;
+		this.saveState();
+		this.clearCommits();
+		this.requestLoadRepoInfoAndCommits(true, true);
+	}
+
+	/**
+	 * Get the commit that HEAD refers to.
+	 */
+	public getCommitHead() {
+		return this.commitHead;
+	}
+
+	/**
+	 * Get the state of the bisect in progress in the current repository (NULL if no bisect is in progress).
+	 */
+	public getBisectState() {
+		return this.operationBar.getBisectState();
 	}
 
 	/**
@@ -670,6 +733,9 @@ class GitGraphView {
 				switch (this.loadViewTo.runCommandOnLoad) {
 					case 'fetch':
 						this.actions.fetchFromRemotesAction();
+						break;
+					case 'cleanUpBranches':
+						this.branchCleanup.show();
 						break;
 				}
 			}
@@ -1561,7 +1627,8 @@ class GitGraphView {
 			) + '."></span>'
 			: '';
 
-		return '<tr class="commit' + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + (this.selectedCommits.has(commit.hash) ? ' multiSelected' : '') + (this.expandedCommit !== null && (this.expandedCommit.commitHash === commit.hash || this.expandedCommit.compareWithHash === commit.hash) ? ' ' + CLASS_COMMIT_DETAILS_OPEN : '') + (commit.hash === this.flashingHash ? ' flash' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
+		message = this.branchCompare.getRowLabelHtml(commit.hash) + this.operationBar.getBisectLabelHtml(commit.hash) + message;
+		return '<tr class="commit' + this.branchCompare.getRowClass(commit.hash) + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + (this.selectedCommits.has(commit.hash) ? ' multiSelected' : '') + (this.expandedCommit !== null && (this.expandedCommit.commitHash === commit.hash || this.expandedCommit.compareWithHash === commit.hash) ? ' ' + CLASS_COMMIT_DETAILS_OPEN : '') + (commit.hash === this.flashingHash ? ' flash' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
 			(refsInColumn
 				? '<td class="refsCol">' + (refBranches !== '' || refTags !== '' ? '<span class="refsColLabels" style="--git-graph-refs:' + (branchLabels.heads.length + branchLabels.remotes.length + commit.tags.length + (commit.stash !== null ? 1 : 0)) + '">' + refBranches + refTags + '</span>' : '') + '</td><td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + message
 				: this.config.referenceLabels.branchLabelsAlignedToGraph
@@ -1618,6 +1685,10 @@ class GitGraphView {
 	 */
 	public processLoadOperationInProgressResponse(msg: GG.ResponseLoadOperationInProgress) {
 		this.operationBar.processLoadOperationInProgressResponse(msg);
+	}
+
+	public processLoadBisectStateResponse(msg: GG.ResponseLoadBisectState) {
+		this.operationBar.processLoadBisectStateResponse(msg);
 	}
 
 
@@ -2114,8 +2185,9 @@ class GitGraphView {
 				if (e.key === 'Escape') {
 					dialog.close();
 					handledEvent(e);
-				} else if (e.keyCode ? e.keyCode === 13 : e.key === 'Enter') {
-					// Use keyCode === 13 to detect 'Enter' events if available (for compatibility with IME Keyboards used by Chinese / Japanese / Korean users)
+				} else if ((e.keyCode ? e.keyCode === 13 : e.key === 'Enter') && (!(e.target instanceof HTMLTextAreaElement) || e.ctrlKey || e.metaKey)) {
+					// Use keyCode === 13 to detect 'Enter' events if available (for compatibility with IME Keyboards used by Chinese / Japanese / Korean users).
+					// In a multi-line input, Enter adds a line, and Ctrl / Cmd + Enter submits the dialog.
 					dialog.submit();
 					handledEvent(e);
 				}
@@ -2703,12 +2775,14 @@ class GitGraphView {
 		const commitOrder = this.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		const codeReviewPossible = !expandedCommit.loading && commitOrder.to !== UNCOMMITTED;
 		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || this.commits[this.commitLookup[expandedCommit.commitHash]].parents.length > 0);
+		const explainPossible = this.config.explainCommit && isRight && expandedCommit.compareWithHash === null && expandedCommit.commitHash !== UNCOMMITTED && this.commits[this.commitLookup[expandedCommit.commitHash]].stash === null;
 
 		if (elem === null) {
 			if (!isDocked && this.renderedRows !== null) {
 				// All of the rows are rendered while the Commit Details View is inline, as it's in the table
 				this.renderRows();
 			}
+			if (isDocked) this.branchCompare.closePanel(); // The panel of a comparison of branches is docked in the same place
 			elem = document.createElement(isDocked ? 'div' : 'tr');
 			elem.id = 'cdv';
 			elem.className = isDocked ? (this.isCdvDockedRight() ? 'docked right' : 'docked') : 'inline';
@@ -2775,9 +2849,9 @@ class GitGraphView {
 			}
 			const fileViewHtml = generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, this.cdvFileView.getFileViewType(), commitOrder.to === UNCOMMITTED);
 			html += '</div><div id="cdvFiles">' + (isRight
-				? '<div id="cdvTabs"><span class="cdvTab active" data-tab="files">' + t('Changed Files') + ' · ' + expandedCommit.fileChanges!.length + '</span>' + (messageHtml !== '' ? '<span class="cdvTab" data-tab="message">' + t('Commit Message') + '</span>' : '') + '<span class="cdvTabsSpacer"></span>' +
+				? '<div id="cdvTabs"><span class="cdvTab active" data-tab="files">' + t('Changed Files') + ' · ' + expandedCommit.fileChanges!.length + '</span>' + (messageHtml !== '' ? '<span class="cdvTab" data-tab="message">' + t('Commit Message') + '</span>' : '') + (explainPossible ? '<span class="cdvTab" data-tab="explain">' + CommitExplainer.ICON + t('Explain') + '</span>' : '') + '<span class="cdvTabsSpacer"></span>' +
 					'<div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div></div>' +
-					'<div id="cdvFileView">' + fileViewHtml + '</div>' + (messageHtml !== '' ? '<div id="cdvMessageView" class="hidden">' + messageHtml + '</div>' : '')
+					'<div id="cdvFileView">' + fileViewHtml + '</div>' + (messageHtml !== '' ? '<div id="cdvMessageView" class="hidden">' + messageHtml + '</div>' : '') + (explainPossible ? '<div id="cdvExplainView" class="hidden"></div>' : '')
 				: fileViewHtml) + '</div><div id="cdvDivider"></div>';
 		}
 		if (isRight) {
@@ -3201,9 +3275,13 @@ class GitGraphView {
 		addListenerToClass('cdvTab', 'click', (e) => {
 			const tab = (<HTMLElement>(<Element>e.target).closest('.cdvTab')!).dataset.tab;
 			document.querySelectorAll<HTMLElement>('.cdvTab').forEach((elem) => alterClass(elem, CLASS_ACTIVE, elem.dataset.tab === tab));
-			const fileViewElem = document.getElementById('cdvFileView'), messageViewElem = document.getElementById('cdvMessageView');
+			const fileViewElem = document.getElementById('cdvFileView'), messageViewElem = document.getElementById('cdvMessageView'), explainViewElem = document.getElementById('cdvExplainView');
 			if (fileViewElem !== null) alterClass(fileViewElem, 'hidden', tab !== 'files');
 			if (messageViewElem !== null) alterClass(messageViewElem, 'hidden', tab !== 'message');
+			if (explainViewElem !== null) {
+				alterClass(explainViewElem, 'hidden', tab !== 'explain');
+				if (tab === 'explain' && this.expandedCommit !== null) this.commitExplainer.show(this.expandedCommit.commitHash);
+			}
 		});
 	}
 

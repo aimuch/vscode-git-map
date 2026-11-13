@@ -82,6 +82,15 @@ View a graph of your repository's Git history, and easily perform Git actions fr
 * Remote Links: "Copy Remote Link to Lines" & "Open Lines on Remote" link to the selected lines on the remote's web page (GitHub, GitLab, Bitbucket, Gitea / Forgejo / Codeberg & Azure DevOps), at a commit.
 * Remove Files from History ("Git Map: Remove Files from History..." in the Command Palette, and in the context menus of files in the Explorer & the Commit Details View): removes files or folders from every branch & tag, as if they had never been committed (e.g. large files, or files containing passwords & keys), including files that have since been deleted. Only the history is changed: by default the files themselves stay in the working directory as untracked files (they can also be added to .gitignore, or deleted from it as well). It only uses Git itself (`git fast-export` & `git fast-import`), on Linux, macOS & Windows: no other tool (e.g. git-filter-repo, Python or Java) is required, and nothing is run by a shell. Before anything changes, it shows what will be rewritten, and the name of the repository must be typed to confirm it. A backup (a Git bundle) is created first, which "Git Map: Restore History from Backup" restores. Nothing is ever pushed: a document lists the steps that follow (force-pushing the rewritten branches & tags, and "Git Map: Clean Up after Removing Files from History", which deletes the previous history from the repository and reports what still contains the files).
 * Git CodeLens (`git-map.codeLens.enabled`, off by default): who changed each function, method & class most recently, and how many authors changed it.
+* Branch Comparison ("Compare with Branch…" in the context menu of a branch): a bar shows the two branches, their merge base, and the commits only on each (the graph shows only those commits, marked in the colour of their branch), and a panel lists the files changed on the first branch since it diverged from the second (what merging it would bring in), which open their changes, all together, or a Pull Request.
+* Clean Up Branches ("Clean Up Branches…" at the bottom of the Branches dropdown, or "Git Map: Clean Up Branches..."): lists the local branches merged into the default branch and those whose remote branch was deleted, and deletes the selected ones together (also on the remote, if chosen). Branches that aren't merged are listed unselected, with how many commits would be lost. Deleting them can be undone.
+* Rewriting the latest commits (in the context menu of a commit of the current branch): "Edit Commit Message…" (the latest commit is amended, an older one reworded), "Undo Commit…" (keeping its changes, staged or not) and "Fix Up Staged Changes into this Commit…" (keeping the unstaged changes). Each can be undone.
+* Bisect ("Start Bisecting: This Commit is Bad / Good…" in the context menu of a commit): the operation bar shows how many commits are left to test with Good / Bad / Skip buttons, the commits are labelled, and the first bad commit is shown when it's found.
+* Patches: commits, a stash and the uncommitted changes can be saved as a patch file or copied as a patch, and "Apply Patch…" (in the context menu of the uncommitted changes) checks a patch and applies it as commits (`git am`, which can be undone) or as uncommitted changes.
+* Stashes: "Stash uncommitted changes…" can stash only some of the changed files, or only the staged changes (Git 2.35 or later), and "Stash this File…" stashes one file. "Restore File from this Stash…" (in the context menu of a file of a stash) restores a file without applying the whole stash.
+* Visual File History (in the context menus of files in the Explorer, editors & the Commit Details View): the commits that changed a file on a timeline, a row for each author, sized by the number of lines changed, with the lines added & deleted by each commit.
+* Blame options: the blame of the current line can also be shown in the Status Bar (`git-map.blame.statusBar`), and blame can ignore whitespace changes (`git-map.blame.ignoreWhitespace`) and the commits listed in `.git-blame-ignore-revs` (`git-map.blame.ignoreRevsFile`).
+* Explain Commit (`git-map.ai.explainCommit.enabled`, off by default): an "Explain" tab in the Commit Details View, where a language model provided in Visual Studio Code (e.g. by GitHub Copilot) explains the commit. Nothing is sent until you ask for an explanation, and the first time you choose the model it's sent to.
 * The editor's context menu has a "Git Map" submenu with these actions (each can be moved directly into the context menu, or hidden, with `git-map.editorContextMenu`). Escape closes the drawer, inline window or File Blame that was shown most recently. No other extension is required: everything uses Visual Studio Code's API and Git.
 * A broad range of configurable settings (e.g. graph style, branch colours, and more...). See the 'Extension Settings' section below for more information.
 * "Git Map" launch button in the Status Bar
@@ -92,8 +101,13 @@ View a graph of your repository's Git history, and easily perform Git actions fr
 Every setting is described in the Visual Studio Code Settings Editor (search for `@ext:aimdev.git-map`), and the settings that need more explanation are documented in [Extension Settings](https://github.com/aimuch/vscode-git-map/blob/main/docs/extension-settings.md).
 
 A summary of the Git Map extension settings are:
+* **AI**:
+    * **Explain Commit**: Show an "Explain" tab in the Commit Details View, where a language model provided in Visual Studio Code explains the commit (default: disabled).
 * **Blame**:
     * **Current Line**: Show who last changed the line the cursor is on, and when & why (the author, date & subject of the commit), at the end of the line in the editor (default: enabled).
+    * **Ignore Revs File**: The file listing the commits that blame ignores, e.g. commits that only reformat code (default: `.git-blame-ignore-revs`, used when it exists).
+    * **Ignore Whitespace**: Ignore changes to whitespace when finding who last changed a line (default: disabled).
+    * **Status Bar**: Show who last changed the line the cursor is on, and when, in the Status Bar (default: enabled).
 * **Commit Details View**:
     * **Auto Center**: Automatically center the Commit Details View when it is opened.
     * **File View**:
@@ -185,6 +199,7 @@ This extension contributes the following commands:
 * `git-map.view`: Git Map: View Git Map
 * `git-map.addGitRepository`: Git Map: Add Git Repository... _(used to add sub-repos to Git Map)_
 * `git-map.clearAvatarCache`: Git Map: Clear Avatar Cache
+* `git-map.cleanUpBranches`: Git Map: Clean Up Branches... _(opens the Git Map View with the list of the local branches that can be deleted)_
 * `git-map.cleanUpRemovedFiles`: Git Map: Clean Up after Removing Files from History... _(deletes the previous history from the repository once its files have been removed, and reports what still contains them)_
 * `git-map.endAllWorkspaceCodeReviews`: Git Map: End All Code Reviews in Workspace
 * `git-map.endSpecificWorkspaceCodeReview`: Git Map: End a specific Code Review in Workspace... _(used to end a specific Code Review without having to first open it in the Git Map View)_
@@ -200,6 +215,7 @@ This extension contributes the following commands:
 * `git-map.viewFileHistory`: Git Map: View File History in Git Map
 * `git-map.viewLineHistory`: Git Map: View Line History _(in the drawer or an inline window)_
 * `git-map.viewLineHistoryInGitMap`: Git Map: View Line History in Git Map
+* `git-map.visualFileHistory`: Git Map: Visual File History
 * `git-map.openPreviousRevision` / `git-map.openNextRevision`: Git Map: Show Previous / Next Revision
 * `git-map.copyRemoteLinkToLines` / `git-map.openLinesOnRemote`: Git Map: Copy Remote Link to Lines / Open Lines on Remote
 

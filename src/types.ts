@@ -323,6 +323,95 @@ export interface GitTagDetails {
 
 /* Git Repo State */
 
+/**
+ * A comparison of two branches: the commits on each that aren't on the other, and their merge base.
+ */
+export interface GitBranchComparison {
+	readonly left: string;
+	readonly right: string;
+	readonly leftHash: string;
+	readonly rightHash: string;
+	readonly mergeBase: string | null; // NULL => The branches don't have a common ancestor
+	readonly leftOnly: ReadonlyArray<string>; // The commits on the left branch that aren't on the right branch (newest first)
+	readonly rightOnly: ReadonlyArray<string>; // The commits on the right branch that aren't on the left branch (newest first)
+}
+
+/**
+ * A local branch that can be deleted: it's merged into the default branch, or its upstream branch has been deleted on the remote.
+ */
+export interface GitBranchCleanupCandidate {
+	readonly name: string;
+	readonly hash: string;
+	readonly upstream: string | null;
+	readonly upstreamGone: boolean;
+	readonly merged: boolean; // Is it merged into the default branch
+	readonly unmergedCommits: number; // The number of commits that only this branch contains (which are lost if it's deleted)
+	readonly date: number;
+	readonly author: string;
+	readonly remotes: ReadonlyArray<string>; // The remotes that have a branch with the same name
+}
+
+/**
+ * The state of a bisect in progress.
+ */
+export interface GitBisectState {
+	readonly bad: string | null;
+	readonly good: ReadonlyArray<string>;
+	readonly skipped: ReadonlyArray<string>;
+	readonly current: string | null; // The commit that's checked out (being tested)
+	readonly remaining: number | null; // The number of commits left to test
+	readonly steps: number | null; // The number of steps left (roughly)
+	readonly firstBad: string | null; // The first bad commit (once it has been found)
+}
+
+/**
+ * A patch file that can be applied.
+ */
+export interface GitPatchInfo {
+	readonly file: string;
+	readonly name: string;
+	readonly commits: number; // The number of commits in it (0 => it's a diff without commits)
+	readonly files: number;
+	readonly additions: number;
+	readonly deletions: number;
+	readonly appliesCleanly: boolean;
+	readonly checkError: string | null;
+}
+
+/**
+ * A file with uncommitted changes.
+ */
+export interface GitStashableFile {
+	readonly path: string;
+	readonly staged: boolean;
+	readonly unstaged: boolean;
+	readonly untracked: boolean;
+}
+
+/**
+ * A commit in the visual history of a file.
+ */
+export interface GitFileTimelineCommit {
+	readonly hash: string;
+	readonly author: string;
+	readonly email: string;
+	readonly date: number;
+	readonly subject: string;
+	readonly additions: number;
+	readonly deletions: number;
+	readonly filePath: string; // The path of the file in the commit
+	readonly added: boolean; // Did the commit add the file
+}
+
+/**
+ * A language model that can explain commits.
+ */
+export interface LanguageModelInfo {
+	readonly id: string;
+	readonly name: string;
+	readonly vendor: string;
+}
+
 export interface CodeReview {
 	id: string;
 	lastActive: number;
@@ -433,6 +522,7 @@ export interface GitGraphViewConfig {
 	readonly defaultColumnVisibility: DefaultColumnVisibility;
 	readonly dialogDefaults: DialogDefaults;
 	readonly enhancedAccessibility: boolean;
+	readonly explainCommit: boolean;
 	readonly fetchAndPrune: boolean;
 	readonly fetchAndPruneTags: boolean;
 	readonly fetchAvatars: boolean;
@@ -458,6 +548,8 @@ export interface GitGraphViewGlobalState {
 	issueLinkingConfig: IssueLinkingConfig | null;
 	minimapHeight?: number;
 	pushTagSkipRemoteCheck: boolean;
+	explainCommitAccepted?: boolean; // Has the person agreed to send the changes of commits to a language model
+	explainCommitModel?: string | null; // The id of the language model chosen to explain commits
 }
 
 export interface GitGraphViewWorkspaceState {
@@ -498,7 +590,7 @@ export type LoadGitGraphViewTo = {
 		readonly commitHash: string,
 		readonly compareWithHash: string | null
 	},
-	readonly runCommandOnLoad?: 'fetch',
+	readonly runCommandOnLoad?: 'fetch' | 'cleanUpBranches',
 	readonly fileHistory?: string | null, // The path of a file whose history is shown (NULL => all commits are shown)
 	readonly lineRange?: GitLineRange | null // The lines of the file whose history is shown (NULL => the whole file)
 } | null;
@@ -557,6 +649,7 @@ export interface ContextMenuActionsVisibility {
 		readonly selectInBranchesDropdown: boolean;
 		readonly unselectInBranchesDropdown: boolean;
 		readonly copyName: boolean;
+		readonly compare: boolean;
 	};
 	readonly commit: {
 		readonly addTag: boolean;
@@ -571,6 +664,11 @@ export interface ContextMenuActionsVisibility {
 		readonly reset: boolean;
 		readonly copyHash: boolean;
 		readonly copySubject: boolean;
+		readonly editMessage: boolean;
+		readonly undoCommit: boolean;
+		readonly fixup: boolean;
+		readonly bisect: boolean;
+		readonly savePatch: boolean;
 	};
 	readonly commitDetailsViewFile: {
 		readonly viewDiff: boolean;
@@ -583,6 +681,9 @@ export interface ContextMenuActionsVisibility {
 		readonly removeFromHistory: boolean;
 		readonly copyAbsoluteFilePath: boolean;
 		readonly copyRelativeFilePath: boolean;
+		readonly stashFile: boolean;
+		readonly restoreFromStash: boolean;
+		readonly visualFileHistory: boolean;
 	};
 	readonly remoteBranch: {
 		readonly checkout: boolean;
@@ -596,6 +697,7 @@ export interface ContextMenuActionsVisibility {
 		readonly selectInBranchesDropdown: boolean;
 		readonly unselectInBranchesDropdown: boolean;
 		readonly copyName: boolean;
+		readonly compare: boolean;
 	};
 	readonly stash: {
 		readonly apply: boolean;
@@ -604,6 +706,7 @@ export interface ContextMenuActionsVisibility {
 		readonly drop: boolean;
 		readonly copyName: boolean;
 		readonly copyHash: boolean;
+		readonly savePatch: boolean;
 	};
 	readonly tag: {
 		readonly viewDetails: boolean;
@@ -617,6 +720,8 @@ export interface ContextMenuActionsVisibility {
 		readonly reset: boolean;
 		readonly clean: boolean;
 		readonly openSourceControlView: boolean;
+		readonly savePatch: boolean;
+		readonly applyPatch: boolean;
 	};
 }
 
@@ -1266,7 +1371,7 @@ export interface GitRebaseTodoItem {
 /**
  * An operation that's in progress in a repository (e.g. a rebase that stopped because of conflicts).
  */
-export type GitOperation = 'rebase' | 'merge' | 'cherry-pick' | 'revert';
+export type GitOperation = 'rebase' | 'merge' | 'cherry-pick' | 'revert' | 'am';
 
 export interface RequestLoadRebaseCommits extends RepoRequest {
 	readonly command: 'loadRebaseCommits';
@@ -1498,6 +1603,8 @@ export interface RequestPushStash extends RepoRequest {
 	readonly command: 'pushStash';
 	readonly message: string;
 	readonly includeUntracked: boolean;
+	readonly paths: ReadonlyArray<string> | null; // The files to stash (NULL => all of the uncommitted changes)
+	readonly onlyStaged: boolean;
 }
 export interface ResponsePushStash extends ResponseWithErrorInfo {
 	readonly command: 'pushStash';
@@ -1685,6 +1792,188 @@ export interface ResponseViewScm extends ResponseWithErrorInfo {
 	readonly command: 'viewScm';
 }
 
+/* Branch Comparison, Branch Clean Up, Rewriting Commits, Bisect, Patches, Stashes, Visual File History & Explain Commit */
+
+export interface RequestCompareBranches extends RepoRequest {
+	readonly command: 'compareBranches';
+	readonly left: string;
+	readonly right: string;
+}
+export interface ResponseCompareBranches extends ResponseWithErrorInfo {
+	readonly command: 'compareBranches';
+	readonly comparison: GitBranchComparison | null;
+	readonly fileChanges: GitFileChange[];
+}
+
+export interface RequestOpenAllChanges extends RepoRequest {
+	readonly command: 'openAllChanges';
+	readonly title: string;
+	readonly fromHash: string;
+	readonly toHash: string;
+	readonly fileChanges: ReadonlyArray<GitFileChange>;
+}
+export interface ResponseOpenAllChanges extends ResponseWithErrorInfo {
+	readonly command: 'openAllChanges';
+}
+
+export interface RequestLoadBranchCleanup extends RepoRequest {
+	readonly command: 'loadBranchCleanup';
+}
+export interface ResponseLoadBranchCleanup extends ResponseWithErrorInfo {
+	readonly command: 'loadBranchCleanup';
+	readonly repo: string;
+	readonly defaultBranch: string | null;
+	readonly candidates: ReadonlyArray<GitBranchCleanupCandidate>;
+}
+
+export interface RequestDeleteBranches extends RepoRequest {
+	readonly command: 'deleteBranches';
+	readonly branches: ReadonlyArray<string>;
+	readonly remoteBranches: ReadonlyArray<{ readonly remote: string, readonly branch: string }>;
+}
+export interface ResponseDeleteBranches extends ResponseWithMultiErrorInfo {
+	readonly command: 'deleteBranches';
+	readonly deleted: number;
+}
+
+export interface RequestEditCommitMessage extends RepoRequest {
+	readonly command: 'editCommitMessage';
+	readonly commitHash: string;
+	readonly message: string;
+}
+export interface ResponseEditCommitMessage extends ResponseWithErrorInfo {
+	readonly command: 'editCommitMessage';
+}
+
+export interface RequestLoadCommitMessage extends RepoRequest {
+	readonly command: 'loadCommitMessage';
+	readonly commitHash: string;
+}
+export interface ResponseLoadCommitMessage extends ResponseWithErrorInfo {
+	readonly command: 'loadCommitMessage';
+	readonly commitHash: string;
+	readonly message: string;
+}
+
+export interface RequestUndoCommit extends RepoRequest {
+	readonly command: 'undoCommit';
+	readonly mode: 'soft' | 'mixed';
+}
+export interface ResponseUndoCommit extends ResponseWithErrorInfo {
+	readonly command: 'undoCommit';
+}
+
+export interface RequestFixupCommit extends RepoRequest {
+	readonly command: 'fixupCommit';
+	readonly commitHash: string;
+}
+export interface ResponseFixupCommit extends ResponseWithErrorInfo {
+	readonly command: 'fixupCommit';
+}
+
+export interface RequestBisect extends RepoRequest {
+	readonly command: 'bisect';
+	readonly action: 'start' | 'good' | 'bad' | 'skip' | 'reset';
+	readonly commitHash: string | null;
+	readonly goodRef: string | null;
+}
+export interface ResponseBisect extends ResponseWithErrorInfo {
+	readonly command: 'bisect';
+	readonly action: 'start' | 'good' | 'bad' | 'skip' | 'reset';
+}
+
+export interface RequestLoadBisectState extends RepoRequest {
+	readonly command: 'loadBisectState';
+}
+export interface ResponseLoadBisectState extends BaseMessage {
+	readonly command: 'loadBisectState';
+	readonly repo: string;
+	readonly state: GitBisectState | null;
+}
+
+export interface RequestSavePatch extends RepoRequest {
+	readonly command: 'savePatch';
+	readonly kind: 'commits' | 'stash' | 'uncommitted';
+	readonly hashes: ReadonlyArray<string>; // The commits (oldest first), or the stash
+	readonly name: string; // The name of the file that's suggested
+	readonly copy: boolean; // Copy the patch to the clipboard (instead of saving it to a file)
+}
+export interface ResponseSavePatch extends ResponseWithErrorInfo {
+	readonly command: 'savePatch';
+}
+
+export interface RequestCheckPatch extends RepoRequest {
+	readonly command: 'checkPatch';
+}
+export interface ResponseCheckPatch extends ResponseWithErrorInfo {
+	readonly command: 'checkPatch';
+	readonly patch: GitPatchInfo | null; // NULL => No file was chosen
+}
+
+export interface RequestApplyPatch extends RepoRequest {
+	readonly command: 'applyPatch';
+	readonly file: string;
+	readonly asCommits: boolean;
+}
+export interface ResponseApplyPatch extends ResponseWithErrorInfo {
+	readonly command: 'applyPatch';
+}
+
+export interface RequestLoadStashableFiles extends RepoRequest {
+	readonly command: 'loadStashableFiles';
+	readonly filePath: string | null; // The only file that's initially selected (NULL => all of them are)
+}
+export interface ResponseLoadStashableFiles extends ResponseWithErrorInfo {
+	readonly command: 'loadStashableFiles';
+	readonly files: ReadonlyArray<GitStashableFile>;
+	readonly filePath: string | null;
+	readonly stagedSupported: boolean;
+}
+
+export interface RequestRestoreFileFromStash extends RepoRequest {
+	readonly command: 'restoreFileFromStash';
+	readonly stashHash: string;
+	readonly selector: string;
+	readonly filePath: string;
+	readonly untracked: boolean;
+	readonly force: boolean;
+}
+export interface ResponseRestoreFileFromStash extends ResponseWithErrorInfo {
+	readonly command: 'restoreFileFromStash';
+	readonly stashHash: string;
+	readonly selector: string;
+	readonly filePath: string;
+	readonly untracked: boolean;
+	readonly hasChanges: boolean; // The file wasn't restored, as it has uncommitted changes
+}
+
+export interface RequestViewVisualFileHistory extends RepoRequest {
+	readonly command: 'viewVisualFileHistory';
+	readonly filePath: string;
+}
+
+export interface RequestLoadLanguageModels extends BaseMessage {
+	readonly command: 'loadLanguageModels';
+}
+export interface ResponseLoadLanguageModels extends ResponseWithErrorInfo {
+	readonly command: 'loadLanguageModels';
+	readonly models: ReadonlyArray<LanguageModelInfo>;
+}
+
+export interface RequestExplainCommit extends RepoRequest {
+	readonly command: 'explainCommit';
+	readonly commitHash: string;
+	readonly modelId: string | null;
+}
+export interface ResponseExplainCommit extends ResponseWithErrorInfo {
+	readonly command: 'explainCommit';
+	readonly commitHash: string;
+	readonly text: string;
+	readonly done: boolean;
+	readonly model: string | null;
+	readonly truncated: boolean;
+}
+
 export type RequestMessage =
 	RequestAddRemote
 	| RequestAddTag
@@ -1766,7 +2055,25 @@ export type RequestMessage =
 	| RequestViewDiff
 	| RequestViewDiffWithWorkingFile
 	| RequestViewFileAtRevision
-	| RequestViewScm;
+	| RequestViewScm
+	| RequestCompareBranches
+	| RequestOpenAllChanges
+	| RequestLoadBranchCleanup
+	| RequestDeleteBranches
+	| RequestEditCommitMessage
+	| RequestLoadCommitMessage
+	| RequestUndoCommit
+	| RequestFixupCommit
+	| RequestBisect
+	| RequestLoadBisectState
+	| RequestSavePatch
+	| RequestCheckPatch
+	| RequestApplyPatch
+	| RequestLoadStashableFiles
+	| RequestRestoreFileFromStash
+	| RequestViewVisualFileHistory
+	| RequestLoadLanguageModels
+	| RequestExplainCommit;
 
 export type ResponseMessage =
 	ResponseAddRemote
@@ -1844,7 +2151,24 @@ export type ResponseMessage =
 	| ResponseViewDiff
 	| ResponseViewDiffWithWorkingFile
 	| ResponseViewFileAtRevision
-	| ResponseViewScm;
+	| ResponseViewScm
+	| ResponseCompareBranches
+	| ResponseOpenAllChanges
+	| ResponseLoadBranchCleanup
+	| ResponseDeleteBranches
+	| ResponseEditCommitMessage
+	| ResponseLoadCommitMessage
+	| ResponseUndoCommit
+	| ResponseFixupCommit
+	| ResponseBisect
+	| ResponseLoadBisectState
+	| ResponseSavePatch
+	| ResponseCheckPatch
+	| ResponseApplyPatch
+	| ResponseLoadStashableFiles
+	| ResponseRestoreFileFromStash
+	| ResponseLoadLanguageModels
+	| ResponseExplainCommit;
 
 
 /** Helper Types */

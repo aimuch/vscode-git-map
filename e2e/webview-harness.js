@@ -43,6 +43,7 @@
 	let worktreesFixture = []; // The worktrees of the repository
 	let operationFixture = null; // The operation in progress in the repository
 	let commitCountFixture = null; // The number of commits loaded (instead of 10 or 25)
+	let bisectFixture = null; // The state of the bisect in progress in the repository
 	const respond = (msg) => {
 		switch (msg.command) {
 			case 'loadRepoInfo':
@@ -152,6 +153,34 @@
 				return { command: 'searchCommits', id: msg.id, error: null, hashes: msg.files.some((file) => 'readme.md'.includes(file.toLowerCase())) ? makeCommits(25).filter((_, i) => i % 2 === 0).map((commit) => commit.hash) : [] };
 			case 'cherrypickCommits':
 				return { command: 'cherrypickCommits', errors: [null] };
+			case 'compareBranches':
+				// feature has the first 4 commits that main doesn't, and their merge base is the 5th commit
+				return {
+					command: 'compareBranches', error: null,
+					comparison: { left: msg.left, right: msg.right, leftHash: hash(1), rightHash: hash(HEAD_INDEX + 1), mergeBase: hash(5), leftOnly: [hash(1), hash(2), hash(3), hash(4)], rightOnly: [] },
+					fileChanges: [
+						{ oldFilePath: 'src/app.ts', newFilePath: 'src/app.ts', type: 'M', additions: 12, deletions: 3 },
+						{ oldFilePath: 'docs/old.md', newFilePath: 'docs/new.md', type: 'R', additions: 1, deletions: 1 }
+					]
+				};
+			case 'loadBranchCleanup':
+				return {
+					command: 'loadBranchCleanup', repo: msg.repo, defaultBranch: 'main', error: null,
+					candidates: [
+						{ name: 'old-feature', hash: hash(7), upstream: 'origin/old-feature', upstreamGone: false, merged: true, unmergedCommits: 0, date: NOW - 86400 * 30, author: 'E2E Author', remotes: ['origin'] },
+						{ name: 'spike', hash: hash(8), upstream: 'origin/spike', upstreamGone: true, merged: false, unmergedCommits: 2, date: NOW - 86400 * 60, author: 'E2E Author', remotes: [] }
+					]
+				};
+			case 'deleteBranches':
+				return { command: 'deleteBranches', deleted: msg.branches.length, errors: [] };
+			case 'loadCommitMessage':
+				return { command: 'loadCommitMessage', commitHash: msg.commitHash, message: 'Commit ' + HEAD_INDEX + '\n\nThe body', error: null };
+			case 'editCommitMessage':
+				return { command: 'editCommitMessage', error: null };
+			case 'loadBisectState':
+				return { command: 'loadBisectState', repo: msg.repo, state: bisectFixture };
+			case 'bisect':
+				return { command: 'bisect', action: msg.action, error: null };
 			case 'openExternalUrl':
 			case 'setGlobalViewState':
 			case 'setWorkspaceViewState':
@@ -1083,7 +1112,7 @@
 			mouse(commitRow(3), 'contextmenu', { button: 2 });
 			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
 			const items = Array.from(menu.querySelectorAll('.contextMenuItem')).map((item) => item.textContent);
-			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
+			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent.startsWith('Copy 3 Commit Hashes')), 'click');
 			const copied = await waitFor('the hashes to be copied', () => requestsOf('copyToClipboard').slice(-1)[0]);
 			assert(copied.data === [hash(6), hash(4), hash(3)].join('\n'), 'The hashes weren\'t copied oldest first: ' + JSON.stringify(copied.data));
@@ -1472,6 +1501,112 @@
 				commitCountFixture = null;
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('the commits to be loaded again', () => spacers() === 0 && rendered() > 0 && rendered() <= 25, 15000);
+			}
+		});
+
+		await check('ui-branch-compare', '[GitLens] "Compare with Branch…" shows a bar with the two branches, their merge base & the commits only on each (only those commits are shown, marked), and a panel of the files changed, which open their changes', async () => {
+			const rows = () => document.querySelectorAll('#commitTable tr.commit'), total = rows().length;
+			mouse(commitRow(0).querySelector('.gitRef.head'), 'contextmenu', { button: 2 });
+			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
+			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Compare with Branch…'), 'click');
+			const dialogElem = await waitFor('the dialog to open', () => document.querySelector('.dialog'));
+			assert(dialogElem.textContent.includes('Compare feature with the branch:'), 'Unexpected dialog: ' + dialogElem.textContent);
+			mouse(document.getElementById('dialogAction'), 'click');
+			const request = await waitFor('the branches to be compared', () => requestsOf('compareBranches').slice(-1)[0]);
+			assert(request.left === 'feature' && request.right === 'main', 'Unexpected request: ' + JSON.stringify(request));
+			try {
+				const bar = await waitFor('the comparison bar', () => document.querySelector('#compareBar.active .compareSegments') ? document.getElementById('compareBar') : null);
+				const segments = Array.from(bar.querySelectorAll('.compareSegment')).map((segment) => segment.textContent);
+				assert(JSON.stringify(segments) === JSON.stringify(['Only in feature 4', 'Only in main 0', 'Both 4']) && bar.textContent.includes('Merge base 00000000'), 'Unexpected bar: ' + bar.textContent);
+				await waitFor('only the commits of the comparison to be shown', () => rows().length === 5 && document.querySelectorAll('#commitTable tr.commit.compareLeft').length === 4);
+				assert(document.querySelector('#commitTable tr.commit.compareBase .compareBaseLabel') !== null, 'The merge base isn\'t labelled');
+				const panel = await waitFor('the panel of the changed files', () => document.getElementById('comparePanel'));
+				const files = Array.from(panel.querySelectorAll('.comparePanelFile')).map((file) => file.textContent.replace(/\s+/g, ' ').trim());
+				assert(files.length === 2 && files[1].includes('docs/ (from docs/old.md)') && document.getElementById('view').style.right === '380px', 'Unexpected panel: ' + JSON.stringify(files));
+				mouse(panel.querySelector('.comparePanelFile'), 'click');
+				const diff = await waitFor('the changes of the file to be opened', () => requestsOf('viewDiff').slice(-1)[0]);
+				assert(diff.fromHash === hash(5) && diff.toHash === hash(1) && diff.newFilePath === 'src/app.ts', 'Unexpected diff: ' + JSON.stringify(diff));
+				mouse(panel.querySelector('[data-panel="openAll"]'), 'click');
+				const openAll = await waitFor('all of the changes to be opened', () => requestsOf('openAllChanges').slice(-1)[0]);
+				assert(openAll.fileChanges.length === 2 && openAll.title === 'feature ↔ main', 'Unexpected request: ' + JSON.stringify(openAll));
+				mouse(bar.querySelector('[data-compare="right"]'), 'click');
+				await waitFor('only the merge base to be shown (main has no other commits)', () => rows().length === 1);
+				return 'Bar: ' + segments.join(' / ') + '; ' + files.length + ' files in the panel; opened the changes of ' + diff.newFilePath + ' and all of them';
+			} finally {
+				const exit = document.querySelector('#compareBar [data-compare="exit"]');
+				if (exit !== null) mouse(exit, 'click');
+				await waitFor('the comparison to end', () => !document.getElementById('compareBar').classList.contains('active') && document.getElementById('comparePanel') === null && rows().length === total);
+			}
+		});
+
+		await check('ui-branch-cleanup', '[GitLens] "Clean Up Branches…" (at the bottom of the Branches dropdown) lists the branches that can be deleted (those that aren\'t merged unselected, with a warning), and deletes the selected ones (also on the remote, if chosen)', async () => {
+			const footer = document.querySelector('#branchControl .dropdownFooterAction');
+			assert(footer !== null && footer.textContent === 'Clean Up Branches…', 'The action isn\'t at the bottom of the Branches dropdown');
+			mouse(document.querySelector('#branchControl .dropdownCurrentValue'), 'click');
+			mouse(footer, 'click');
+			const list = await waitFor('the branches that can be deleted', () => document.querySelectorAll('#branchCleanup .branchCleanupItem').length === 2 ? document.getElementById('branchCleanup') : null);
+			const items = Array.from(list.querySelectorAll('.branchCleanupItem')), checked = items.map((item) => item.querySelector('input').checked);
+			assert(JSON.stringify(checked) === JSON.stringify([true, false]) && items[1].textContent.includes('Not merged: deleting it loses 2 commits') && items[1].textContent.includes('origin/spike is gone'), 'Unexpected branches: ' + list.textContent);
+			const remote = list.querySelector('[data-action="deleteOnRemote"]');
+			remote.checked = true;
+			remote.dispatchEvent(new Event('change', { bubbles: true }));
+			const deleteBtn = document.querySelector('#branchCleanup [data-action="delete"]');
+			assert(deleteBtn.textContent === 'Delete 1 Branch (+1 on origin)', 'Unexpected button: ' + deleteBtn.textContent);
+			mouse(deleteBtn, 'click');
+			const request = await waitFor('the branches to be deleted', () => requestsOf('deleteBranches').slice(-1)[0]);
+			assert(JSON.stringify(request.branches) === '["old-feature"]' && JSON.stringify(request.remoteBranches) === '[{"remote":"origin","branch":"old-feature"}]' && document.getElementById('branchCleanup') === null, 'Unexpected request: ' + JSON.stringify(request));
+			await waitFor('the dialog to close', () => document.querySelector('.dialog') === null || document.querySelector('.dialog.actionRunning') === null);
+			if (document.querySelector('.dialog') !== null) key(document.body, 'Escape');
+			return 'Listed old-feature (selected) & spike (not merged, unselected); deleted ' + request.branches.join(', ') + ' (and on origin)';
+		});
+
+		await check('ui-edit-message', '[GitLens] "Edit Commit Message…" opens a dialog with the full message in a multi-line input (Enter adds a line, Ctrl / Cmd + Enter saves it)', async () => {
+			if (commitRow(HEAD_INDEX) === null) key(document.body, keybindings.scrollToHead, ctrl); // Load the commits until HEAD
+			const row = await waitFor('the row of HEAD', () => commitRow(HEAD_INDEX));
+			mouse(row, 'contextmenu', { button: 2 });
+			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
+			const titles = Array.from(menu.querySelectorAll('.contextMenuItem')).map((item) => item.textContent);
+			assert(titles.includes('Undo Commit…') && titles.includes('Fix Up Staged Changes into this Commit…') && titles.includes('Copy as Patch'), 'Unexpected context menu: ' + JSON.stringify(titles));
+			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Edit Commit Message…'), 'click');
+			const input = await waitFor('the dialog to open', () => document.querySelector('.dialog textarea.dialogTextArea'));
+			assert(input.value === 'Commit ' + HEAD_INDEX + '\n\nThe body' && document.activeElement === input, 'Unexpected input: ' + JSON.stringify(input.value));
+			const before = requestsOf('editCommitMessage').length;
+			key(input, 'Enter');
+			await sleep(100);
+			assert(requestsOf('editCommitMessage').length === before && document.querySelector('.dialog') !== null, 'Enter saved the message');
+			input.value = 'New subject\n\nNew body';
+			key(input, 'Enter', ctrl);
+			const request = await waitFor('the message to be saved', () => requestsOf('editCommitMessage').length > before ? requestsOf('editCommitMessage').slice(-1)[0] : null);
+			assert(request.commitHash === hash(HEAD_INDEX + 1) && request.message === 'New subject\n\nNew body', 'Unexpected request: ' + JSON.stringify(request));
+			await waitFor('the dialog to close', () => document.querySelector('.dialog') === null || document.querySelector('.dialog.actionRunning') === null);
+			if (document.querySelector('.dialog') !== null) key(document.body, 'Escape');
+			return 'Saved ' + JSON.stringify(request.message) + ' with ' + (isMac ? 'Cmd' : 'Ctrl') + ' + Enter';
+		});
+
+		await check('ui-bisect', '[GitLens] While bisecting, the operation bar shows how many commits are left (with Good / Bad / Skip buttons) and the commits are labelled; when the first bad commit is found, it\'s shown', async () => {
+			const bar = document.getElementById('operationBar');
+			bisectFixture = { bad: hash(1), good: [hash(9)], skipped: [hash(3)], current: hash(5), remaining: 4, steps: 2, firstBad: null };
+			try {
+				mouse(document.getElementById('refreshBtn'), 'click');
+				await waitFor('the bisect bar', () => bar.classList.contains('active') && bar.classList.contains('bisect'));
+				const buttons = Array.from(bar.querySelectorAll('.operationBarBtn')).map((button) => button.textContent);
+				assert(bar.textContent.includes('Bisecting — 4 commits left to test (about 2 steps).') && bar.textContent.includes('Checked out 00000000') && JSON.stringify(buttons) === JSON.stringify(['Good', 'Bad', 'Skip', 'Stop Bisecting']), 'Unexpected bar: ' + bar.textContent + ' ' + JSON.stringify(buttons));
+				const labels = await waitFor('the commits to be labelled', () => commitRow(4) !== null && commitRow(4).querySelector('.bisectLabel.testing') ? [0, 2, 4, 8].map((i) => (commitRow(i).querySelector('.bisectLabel') || { textContent: '' }).textContent) : null);
+				assert(JSON.stringify(labels) === JSON.stringify(['bad', 'skipped', 'testing', 'good']), 'Unexpected labels: ' + JSON.stringify(labels));
+				mouse(bar.querySelector('[data-bisect="good"]'), 'click');
+				const marked = await waitFor('the commit to be marked', () => requestsOf('bisect').slice(-1)[0]);
+				assert(marked.action === 'good' && marked.commitHash === null, 'Unexpected request: ' + JSON.stringify(marked));
+				await waitFor('the dialog to close', () => document.querySelector('.dialog') === null || document.querySelector('.dialog.actionRunning') === null);
+				if (document.querySelector('.dialog') !== null) key(document.body, 'Escape');
+
+				bisectFixture = Object.assign({}, bisectFixture, { firstBad: hash(3) });
+				mouse(document.getElementById('refreshBtn'), 'click');
+				await waitFor('the first bad commit to be shown', () => bar.classList.contains('bisectDone') && bar.textContent.includes('Found the first bad commit: 00000000'));
+				return 'Bar: ' + buttons.join(' / ') + '; labels: ' + labels.join(', ') + '; first bad commit shown';
+			} finally {
+				bisectFixture = null;
+				mouse(document.getElementById('refreshBtn'), 'click');
+				await waitFor('the bisect bar to be hidden', () => !bar.classList.contains('active'));
 			}
 		});
 	};

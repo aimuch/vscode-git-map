@@ -91,6 +91,11 @@
 			},
 			{
 				"category": "Git Map",
+				"command": "git-map.cleanUpBranches",
+				"title": "%command.cleanUpBranches.title%"
+			},
+			{
+				"category": "Git Map",
 				"command": "git-map.removeGitRepository",
 				"title": "%command.removeGitRepository.title%"
 			},
@@ -127,6 +132,12 @@
 				"command": "git-map.viewLineHistory",
 				"title": "%command.viewLineHistory.title%",
 				"icon": "$(history)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.visualFileHistory",
+				"title": "%command.visualFileHistory.title%",
+				"icon": "$(graph)"
 			},
 			{
 				"category": "Git Map",
@@ -277,10 +288,30 @@
 			"type": "object",
 			"title": "Git Map",
 			"properties": {
+				"git-map.ai.explainCommit.enabled": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.ai.explainCommit.enabled.description%"
+				},
 				"git-map.blame.currentLine": {
 					"type": "boolean",
 					"default": true,
 					"description": "%config.blame.currentLine.description%"
+				},
+				"git-map.blame.ignoreRevsFile": {
+					"type": "string",
+					"default": ".git-blame-ignore-revs",
+					"description": "%config.blame.ignoreRevsFile.description%"
+				},
+				"git-map.blame.ignoreWhitespace": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.blame.ignoreWhitespace.description%"
+				},
+				"git-map.blame.statusBar": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.blame.statusBar.description%"
 				},
 				"git-map.codeLens.enabled": {
 					"type": "boolean",
@@ -383,6 +414,10 @@
 								"copyName": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.branch.copyName.title%"
+								},
+								"compare": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.branch.compare.title%"
 								}
 							}
 						},
@@ -436,6 +471,26 @@
 								"copySubject": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.commit.copySubject.title%"
+								},
+								"editMessage": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commit.editMessage.title%"
+								},
+								"undoCommit": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commit.undoCommit.title%"
+								},
+								"fixup": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commit.fixup.title%"
+								},
+								"bisect": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commit.bisect.title%"
+								},
+								"savePatch": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commit.savePatch.title%"
 								}
 							}
 						},
@@ -481,6 +536,18 @@
 								"copyRelativeFilePath": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.copyRelativeFilePath.title%"
+								},
+								"visualFileHistory": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.visualFileHistory.title%"
+								},
+								"stashFile": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.stashFile.title%"
+								},
+								"restoreFromStash": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.commitDetailsViewFile.restoreFromStash.title%"
 								}
 							}
 						},
@@ -530,6 +597,10 @@
 								"copyName": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.remoteBranch.copyName.title%"
+								},
+								"compare": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.remoteBranch.compare.title%"
 								}
 							}
 						},
@@ -559,6 +630,10 @@
 								"copyHash": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.stash.copyHash.title%"
+								},
+								"savePatch": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.stash.savePatch.title%"
 								}
 							}
 						},
@@ -605,6 +680,14 @@
 								"openSourceControlView": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.uncommittedChanges.openSourceControlView.title%"
+								},
+								"savePatch": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.uncommittedChanges.savePatch.title%"
+								},
+								"applyPatch": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title%"
 								}
 							}
 						}
@@ -915,6 +998,7 @@
 						"viewLineHistory": "Submenu",
 						"viewLineHistoryInGitMap": "Submenu",
 						"viewFileHistory": "Submenu",
+						"visualFileHistory": "Submenu",
 						"toggleFileBlame": "Submenu",
 						"toggleLineBlame": "Submenu",
 						"openPreviousRevision": "Submenu",
@@ -963,6 +1047,20 @@
 								"%config.editorContextMenu.hidden%"
 							],
 							"description": "%config.editorContextMenu.viewFileHistory%"
+						},
+						"visualFileHistory": {
+							"type": "string",
+							"enum": [
+								"Submenu",
+								"Context Menu",
+								"Hidden"
+							],
+							"enumDescriptions": [
+								"%config.editorContextMenu.submenu%",
+								"%config.editorContextMenu.contextMenu%",
+								"%config.editorContextMenu.hidden%"
+							],
+							"description": "%config.editorContextMenu.visualFileHistory%"
 						},
 						"toggleFileBlame": {
 							"type": "string",
@@ -1938,6 +2036,10 @@
 					"when": "editorIsOpen && resourceScheme == file"
 				},
 				{
+					"command": "git-map.visualFileHistory",
+					"when": "resourceScheme == file"
+				},
+				{
 					"command": "git-map.viewCommitInGitMap",
 					"when": "false"
 				},
@@ -2002,7 +2104,7 @@
 				{
 					"submenu": "git-map.editorContext",
 					"group": "gitMap@1",
-					"when": "resourceScheme == file && (config.git-map.editorContextMenu.viewLineHistory == 'Submenu' || config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Submenu' || config.git-map.editorContextMenu.viewFileHistory == 'Submenu' || config.git-map.editorContextMenu.toggleFileBlame == 'Submenu' || config.git-map.editorContextMenu.toggleLineBlame == 'Submenu' || config.git-map.editorContextMenu.openPreviousRevision == 'Submenu' || config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Submenu' || config.git-map.editorContextMenu.openLinesOnRemote == 'Submenu')"
+					"when": "resourceScheme == file && (config.git-map.editorContextMenu.viewLineHistory == 'Submenu' || config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Submenu' || config.git-map.editorContextMenu.viewFileHistory == 'Submenu' || config.git-map.editorContextMenu.visualFileHistory == 'Submenu' || config.git-map.editorContextMenu.toggleFileBlame == 'Submenu' || config.git-map.editorContextMenu.toggleLineBlame == 'Submenu' || config.git-map.editorContextMenu.openPreviousRevision == 'Submenu' || config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Submenu' || config.git-map.editorContextMenu.openLinesOnRemote == 'Submenu')"
 				},
 				{
 					"command": "git-map.viewLineHistory",
@@ -2020,28 +2122,33 @@
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.viewFileHistory == 'Context Menu'"
 				},
 				{
+					"command": "git-map.visualFileHistory",
+					"when": "resourceScheme == file && config.git-map.editorContextMenu.visualFileHistory == 'Context Menu'",
+					"group": "gitMap@5"
+				},
+				{
 					"command": "git-map.toggleFileBlame",
-					"group": "gitMap@5",
+					"group": "gitMap@6",
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.toggleFileBlame == 'Context Menu'"
 				},
 				{
 					"command": "git-map.toggleLineBlame",
-					"group": "gitMap@6",
+					"group": "gitMap@7",
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.toggleLineBlame == 'Context Menu'"
 				},
 				{
 					"command": "git-map.openPreviousRevision",
-					"group": "gitMap@7",
+					"group": "gitMap@8",
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.openPreviousRevision == 'Context Menu'"
 				},
 				{
 					"command": "git-map.copyRemoteLinkToLines",
-					"group": "gitMap@8",
+					"group": "gitMap@9",
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Context Menu'"
 				},
 				{
 					"command": "git-map.openLinesOnRemote",
-					"group": "gitMap@9",
+					"group": "gitMap@10",
 					"when": "resourceScheme == file && config.git-map.editorContextMenu.openLinesOnRemote == 'Context Menu'"
 				}
 			],
@@ -2052,8 +2159,13 @@
 					"when": "resourceScheme == file && !explorerResourceIsFolder"
 				},
 				{
+					"command": "git-map.visualFileHistory",
+					"when": "resourceScheme == file && !explorerResourceIsFolder",
+					"group": "gitMap@2"
+				},
+				{
 					"command": "git-map.removeFilesFromHistory",
-					"group": "gitMap@2",
+					"group": "gitMap@3",
 					"when": "resourceScheme == file"
 				}
 			],
@@ -2062,6 +2174,11 @@
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@1",
 					"when": "resourceScheme == file"
+				},
+				{
+					"command": "git-map.visualFileHistory",
+					"when": "resourceScheme == file",
+					"group": "gitMap@2"
 				}
 			],
 			"editor/title": [
@@ -2171,6 +2288,11 @@
 					"command": "git-map.viewFileHistory",
 					"group": "1_history@3",
 					"when": "config.git-map.editorContextMenu.viewFileHistory == 'Submenu'"
+				},
+				{
+					"command": "git-map.visualFileHistory",
+					"when": "config.git-map.editorContextMenu.visualFileHistory == 'Submenu'",
+					"group": "1_history@4"
 				},
 				{
 					"command": "git-map.toggleFileBlame",

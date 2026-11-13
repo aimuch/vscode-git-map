@@ -39,6 +39,65 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'undo':
 				refreshOrDisplayError(msg.error, t('Unable to Undo'));
 				break;
+			case 'compareBranches':
+				gitGraph.branchCompare.processCompareBranchesResponse(msg);
+				break;
+			case 'openAllChanges':
+				finishOrDisplayError(msg.error, t('Unable to Open All Changes'));
+				break;
+			case 'loadBranchCleanup':
+				gitGraph.branchCleanup.processLoadBranchCleanupResponse(msg);
+				break;
+			case 'deleteBranches':
+				refreshAndDisplayErrors(msg.errors.length > 0 || msg.deleted === 0 ? msg.errors.concat(msg.deleted > 0 ? [null] : []) : [null], t('Unable to Delete Branches'));
+				break;
+			case 'loadCommitMessage':
+				gitGraph.actions.processLoadCommitMessageResponse(msg);
+				break;
+			case 'editCommitMessage':
+				refreshOrDisplayError(msg.error, t('Unable to Edit Commit Message'));
+				break;
+			case 'undoCommit':
+				refreshOrDisplayError(msg.error, t('Unable to Undo Commit'));
+				break;
+			case 'fixupCommit':
+				refreshOrDisplayError(msg.error, t('Unable to Fix Up Commit'));
+				break;
+			case 'bisect':
+				refreshOrDisplayError(msg.error, msg.action === 'start' ? t('Unable to Start Bisecting') : msg.action === 'reset' ? t('Unable to Stop Bisecting') : t('Unable to Bisect'));
+				break;
+			case 'loadBisectState':
+				gitGraph.processLoadBisectStateResponse(msg);
+				break;
+			case 'savePatch':
+				finishOrDisplayError(msg.error, t('Unable to Save Patch'), true);
+				break;
+			case 'checkPatch':
+				gitGraph.actions.processCheckPatchResponse(msg);
+				break;
+			case 'applyPatch':
+				refreshOrDisplayError(msg.error, t('Unable to Apply Patch'));
+				break;
+			case 'loadStashableFiles':
+				gitGraph.actions.processLoadStashableFilesResponse(msg);
+				break;
+			case 'restoreFileFromStash':
+				if (msg.error !== null) {
+					dialog.showError(t('Unable to Restore File from Stash'), msg.error, null, null);
+				} else if (msg.hasChanges) {
+					dialog.asDangerous().showConfirmation(t('Restore <b><i>{0}</i></b> from <b><i>{1}</i></b>? It has uncommitted changes, which are replaced by the stashed version. The stash is kept.', escapeHtml(msg.filePath), escapeHtml(msg.selector.substring(5))), t('Restore File'), () => {
+						runAction({ command: 'restoreFileFromStash', repo: gitGraph.currentRepo, stashHash: msg.stashHash, selector: msg.selector, filePath: msg.filePath, untracked: msg.untracked, force: true }, t('Restoring File'));
+					}, null);
+				} else {
+					gitGraph.refresh(false);
+				}
+				break;
+			case 'loadLanguageModels':
+				gitGraph.commitExplainer.processLoadLanguageModelsResponse(msg);
+				break;
+			case 'explainCommit':
+				gitGraph.commitExplainer.processExplainCommitResponse(msg);
+				break;
 			case 'loadRebaseCommits':
 				gitGraph.rebaseEditor.processLoadRebaseCommitsResponse(msg);
 				break;

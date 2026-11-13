@@ -17,6 +17,7 @@ type UndoRecord = {
 	readonly kind: 'head'; // The action moved HEAD (or the current branch), which is moved back
 	readonly before: HeadState;
 	readonly after: HeadState;
+	readonly soft: boolean; // Move the current branch back with "git reset --soft" (keeping the changes it made staged), instead of "--keep"
 } | {
 	readonly kind: 'createRef'; // The action created a branch or tag (and may have checked out the branch), which is deleted
 	readonly ref: string;
@@ -32,6 +33,9 @@ type UndoRecord = {
 	readonly oldName: string;
 	readonly newName: string;
 	readonly value: string;
+} | {
+	readonly kind: 'deleteRefs'; // The action deleted several branches, which are restored (with their upstreams)
+	readonly refs: ReadonlyArray<{ readonly ref: string, readonly value: string, readonly upstream: { readonly remote: string, readonly merge: string } | null }>;
 } | {
 	readonly kind: 'dropStash'; // The action dropped a stash, which is stored again
 	readonly hash: string;
@@ -84,19 +88,47 @@ export class UndoManager {
 	 * @param description The description of the action.
 	 * @param action The action.
 	 * @param succeeded Did the action succeed (with the value it resolved to).
+	 * @param soft Move the current branch back with "git reset --soft" when undoing the action, keeping the changes it made staged (e.g.
+	 * when the action committed changes that were staged, or undid a commit).
 	 * @returns The value the action resolved to.
 	 */
-	public async trackHead<T>(repo: string, description: string, action: () => Promise<T>, succeeded: (value: T) => boolean): Promise<T> {
+	public async trackHead<T>(repo: string, description: string, action: () => Promise<T>, succeeded: (value: T) => boolean, soft: boolean = false): Promise<T> {
 		delete this.records[repo];
 		const before = await this.getHeadState(repo);
 		const value = await action();
 		if (before !== null && succeeded(value)) {
 			const after = await this.getHeadState(repo);
 			if (after !== null && (after.hash !== before.hash || after.branch !== before.branch)) {
-				this.record(repo, description, { kind: 'head', before: before, after: after });
+				this.record(repo, description, { kind: 'head', before: before, after: after, soft: soft });
 			}
 		}
 		return value;
+	}
+
+	/**
+	 * Run an action that deletes several branches, so that it can be undone (only the local branches are restored).
+	 * @param repo The path of the repository.
+	 * @param description The description of the action.
+	 * @param branches The names of the branches that are deleted.
+	 * @param action The action.
+	 * @returns The value the action resolved to.
+	 */
+	public async trackDeleteBranches<T>(repo: string, description: string, branches: ReadonlyArray<string>, action: () => Promise<T>): Promise<T> {
+		delete this.records[repo];
+		const refs: { ref: string, value: string, upstream: { remote: string, merge: string } | null }[] = [];
+		for (const branch of branches) {
+			const ref = 'refs/heads/' + branch, value = await this.getRefValue(repo, ref);
+			if (value === null) continue;
+			const remote = await this.getConfigValue(repo, 'branch.' + branch + '.remote'), merge = await this.getConfigValue(repo, 'branch.' + branch + '.merge');
+			refs.push({ ref: ref, value: value, upstream: remote !== null && merge !== null ? { remote: remote, merge: merge } : null });
+		}
+		const result = await action();
+		const deleted: typeof refs = [];
+		for (const ref of refs) {
+			if (await this.getRefValue(repo, ref.ref) === null) deleted.push(ref);
+		}
+		if (deleted.length > 0) this.record(repo, description, { kind: 'deleteRefs', refs: deleted });
+		return result;
 	}
 
 	/**
@@ -203,7 +235,7 @@ export class UndoManager {
 				const head = await this.getHeadState(repo);
 				if (head === null || head.hash !== record.after.hash || head.branch !== record.after.branch) return changed;
 				error = record.after.branch === record.before.branch
-					? await this.run(repo, ['reset', '--keep', record.before.hash]) // Moves the current branch back, keeping uncommitted changes
+					? await this.run(repo, ['reset', record.soft ? '--soft' : '--keep', record.before.hash]) // Moves the current branch back, keeping uncommitted changes
 					: await this.run(repo, record.before.branch !== null ? ['checkout', record.before.branch] : ['checkout', '--detach', record.before.hash]);
 				break;
 			}
@@ -226,6 +258,21 @@ export class UndoManager {
 					const branch = record.ref.substring(11);
 					error = await this.run(repo, ['config', 'branch.' + branch + '.remote', record.upstream.remote]);
 					if (error === null) error = await this.run(repo, ['config', 'branch.' + branch + '.merge', record.upstream.merge]);
+				}
+				break;
+			case 'deleteRefs':
+				for (const ref of record.refs) {
+					if (await this.getRefValue(repo, ref.ref) !== null) return changed;
+				}
+				error = null;
+				for (const ref of record.refs) {
+					error = await this.run(repo, ['update-ref', ref.ref, ref.value, '']);
+					if (error === null && ref.upstream !== null) {
+						const branch = ref.ref.substring(11);
+						error = await this.run(repo, ['config', 'branch.' + branch + '.remote', ref.upstream.remote]);
+						if (error === null) error = await this.run(repo, ['config', 'branch.' + branch + '.merge', ref.upstream.merge]);
+					}
+					if (error !== null) break;
 				}
 				break;
 			case 'renameBranch':
@@ -290,6 +337,8 @@ export class UndoManager {
 				return t('a cherry pick');
 			case 'revert':
 				return t('a revert');
+			case 'am':
+				return t('applying a patch');
 			case 'rebase':
 				return t('a rebase');
 			default:

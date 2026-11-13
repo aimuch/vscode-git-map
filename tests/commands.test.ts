@@ -73,7 +73,7 @@ describe('CommandManager', () => {
 
 	it('Should construct a CommandManager, and be disposed', () => {
 		// Assert
-		expect(commandManager['disposables']).toHaveLength(16);
+		expect(commandManager['disposables']).toHaveLength(17);
 		expect(commandManager['gitExecutable']).toStrictEqual({
 			path: '/path/to/git',
 			version: '2.25.0'
@@ -570,6 +570,61 @@ describe('CommandManager', () => {
 				expect(spyOnLog).toHaveBeenCalledWith('Command Invoked: git-map.clearAvatarCache');
 				expect(spyOnClearCache).toHaveBeenCalledTimes(1);
 				expect(vscode.window.showErrorMessage).toHaveBeenCalledWith('An unexpected error occurred while running the command "Clear Avatar Cache".');
+			});
+		});
+	});
+
+	describe('git-map.cleanUpBranches', () => {
+		it('Should display a quick pick to select a repository whose branches are cleaned up', async () => {
+			// Setup
+			spyOnGetRepos.mockReturnValueOnce({
+				'/path/to/repo1': mockRepoState({ name: null, workspaceFolderIndex: 0 }),
+				'/path/to/repo2': mockRepoState({ name: null, workspaceFolderIndex: 1 })
+			});
+			jest.spyOn(extensionState, 'getLastActiveRepo').mockReturnValueOnce(null);
+			vscode.window.showQuickPick.mockResolvedValueOnce({
+				label: 'repo2',
+				description: '/path/to/repo2'
+			});
+
+			// Run
+			vscode.commands.executeCommand('git-map.cleanUpBranches');
+
+			// Assert
+			await waitForExpect(() => {
+				expect(spyOnLog).toHaveBeenCalledWith('Command Invoked: git-map.cleanUpBranches');
+				expect(vscode.window.showQuickPick).toHaveBeenCalledWith(
+					[
+						{
+							label: 'repo1',
+							description: '/path/to/repo1'
+						},
+						{
+							label: 'repo2',
+							description: '/path/to/repo2'
+						}
+					],
+					{
+						placeHolder: 'Select the repository whose branches you want to clean up:',
+						canPickMany: false
+					}
+				);
+				expect(spyOnGitGraphViewCreateOrShow).toHaveBeenCalledWith('/path/to/extension', dataSource, extensionState, avatarManager, repoManager, logger, { repo: '/path/to/repo2', runCommandOnLoad: 'cleanUpBranches' });
+			});
+		});
+
+		it('Should open the Git Map View immediately when there is only one repository', async () => {
+			// Setup
+			spyOnGetRepos.mockReturnValueOnce({
+				'/path/to/repo1': mockRepoState({ name: null, workspaceFolderIndex: 0 })
+			});
+
+			// Run
+			vscode.commands.executeCommand('git-map.cleanUpBranches');
+
+			// Assert
+			await waitForExpect(() => {
+				expect(spyOnGitGraphViewCreateOrShow).toHaveBeenCalledWith('/path/to/extension', dataSource, extensionState, avatarManager, repoManager, logger, { repo: '/path/to/repo1', runCommandOnLoad: 'cleanUpBranches' });
 			});
 		});
 	});

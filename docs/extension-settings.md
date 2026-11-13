@@ -35,6 +35,7 @@ The context menus, and the key of each of their actions:
 | | `selectInBranchesDropdown` | Select in Branches Dropdown |
 | | `unselectInBranchesDropdown` | Unselect in Branches Dropdown |
 | | `copyName` | Copy Branch Name to Clipboard |
+| | `compare` | Compare with Branch... |
 | `commit` (a commit row) | `addTag` | Add Tag... |
 | | `createBranch` | Create Branch... |
 | | `checkout` | Checkout... |
@@ -46,6 +47,11 @@ The context menus, and the key of each of their actions:
 | | `reset` | Reset current branch to this Commit... |
 | | `copyHash` | Copy Commit Hash to Clipboard |
 | | `copySubject` | Copy Commit Subject to Clipboard |
+| | `editMessage` | Edit Commit Message... |
+| | `undoCommit` | Undo Commit... |
+| | `fixup` | Fix Up Staged Changes into this Commit... |
+| | `bisect` | Start Bisecting: This Commit is Bad / Good..., Mark as Good / Bad, Skip |
+| | `savePatch` | Save as Patch... & Copy as Patch (and Save Commits as Patch... for selected commits) |
 | `commitDetailsViewFile` (a file in the Commit Details View) | `viewDiff` | View Diff |
 | | `viewFileAtThisRevision` | View File at this Revision |
 | | `viewDiffWithWorkingFile` | View Diff with Working File |
@@ -56,6 +62,9 @@ The context menus, and the key of each of their actions:
 | | `removeFromHistory` | Remove File from History... |
 | | `copyAbsoluteFilePath` | Copy Absolute File Path to Clipboard |
 | | `copyRelativeFilePath` | Copy Relative File Path to Clipboard |
+| | `visualFileHistory` | Visual File History |
+| | `stashFile` | Stash this File... (the Uncommitted Changes) |
+| | `restoreFromStash` | Restore File from this Stash... (a stash) |
 | `remoteBranch` (a remote branch label) | `checkout` | Checkout Branch... |
 | | `delete` | Delete Remote Branch... |
 | | `fetch` | Fetch into local branch... |
@@ -67,12 +76,14 @@ The context menus, and the key of each of their actions:
 | | `selectInBranchesDropdown` | Select in Branches Dropdown |
 | | `unselectInBranchesDropdown` | Unselect in Branches Dropdown |
 | | `copyName` | Copy Branch Name to Clipboard |
+| | `compare` | Compare with Branch... |
 | `stash` (a stash label) | `apply` | Apply Stash... |
 | | `createBranch` | Create Branch from Stash... |
 | | `pop` | Pop Stash... |
 | | `drop` | Drop Stash... |
 | | `copyName` | Copy Stash Name to Clipboard |
 | | `copyHash` | Copy Stash Hash to Clipboard |
+| | `savePatch` | Save as Patch... |
 | `tag` (a tag label) | `viewDetails` | View Details |
 | | `delete` | Delete Tag... |
 | | `push` | Push Tag... |
@@ -82,6 +93,22 @@ The context menus, and the key of each of their actions:
 | | `reset` | Reset uncommitted changes... |
 | | `clean` | Clean untracked files... |
 | | `openSourceControlView` | Open Source Control View |
+| | `savePatch` | Save Changes as Patch... |
+| | `applyPatch` | Apply Patch... |
+
+## Blame
+
+* `git-map.blame.currentLine` (default: `true`) shows the blame of the line the cursor is on at its end, and `git-map.blame.statusBar` (default: `true`) in the Status Bar (clicking it shows the history of the line).
+* `git-map.blame.ignoreWhitespace` (default: `false`) ignores changes to whitespace (`git blame -w`), in the blame of the current line, the Status Bar and the File Blame.
+* `git-map.blame.ignoreRevsFile` (default: `.git-blame-ignore-revs`) is the file, relative to the root of the repository, listing the commits that blame ignores (`git blame --ignore-revs-file`, Git 2.23 or later), e.g. commits that only reformat code. It's only used when it exists, so repositories without it are blamed as usual. An empty value doesn't ignore any commits. The file has a commit hash on each line (lines starting with `#` are comments), the same format as GitHub's.
+
+## Explain Commit
+
+`git-map.ai.explainCommit.enabled` (default: `false`) shows an "Explain" tab in the Commit Details View. A language model provided in Visual Studio Code (by an extension such as GitHub Copilot Chat, Visual Studio Code 1.90 or later) explains the commit: a summary, its main changes, and what's worth checking.
+
+* Nothing is sent until you open the tab and choose "Explain". The first time, it says what's sent and lets you choose the model (unless you choose not to be asked again).
+* The message of the commit and its changes (up to 3,000 lines; the rest isn't sent) are sent to the model you chose, through Visual Studio Code. Git Map doesn't send them anywhere else.
+* The explanation is written in the language Git Map is displayed in (`git-map.language`), and may be inaccurate.
 
 ## Max Depth of Repo Search
 

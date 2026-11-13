@@ -847,6 +847,8 @@ export const enum GitVersionRequirement {
 	FetchAndPruneTags = '2.17.0',
 	GpgInfo = '2.4.0',
 	PushStash = '2.13.2',
+	StashStaged = '2.35.0',
+	IgnoreRevsFile = '2.23.0',
 	TagDetails = '1.7.8'
 }
 
