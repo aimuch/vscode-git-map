@@ -15,6 +15,12 @@ import { Event } from './utils/event';
 const BLAME_DELAY = 150;
 
 /**
+ * The time (in milliseconds) the blame of a line is kept while the cursor stays on the line and its document isn't changed, so that moving
+ * the cursor within the line doesn't run Git again. It's short, as the blame of a line changes when it's committed.
+ */
+const BLAME_CACHE_DURATION = 5000;
+
+/**
  * Shows who last changed the line the cursor is on, and when & why (the author, date & subject of the commit), at the end of the line
  * in the editor (the `git-map.blame.currentLine` Extension Setting). Hovering over it shows the commit, with a link that opens it in the
  * Git Map View.
@@ -31,6 +37,7 @@ export class LineBlame extends Disposable {
 	private requestId: number = 0;
 	private decoratedEditor: vscode.TextEditor | null = null;
 	private decoratedLine: number = -1;
+	private lastBlamed: { readonly editor: vscode.TextEditor, readonly line: number, readonly version: number, readonly time: number } | null = null; // The line whose blame was loaded last
 
 	/**
 	 * Creates the Line Blame.
@@ -104,6 +111,11 @@ export class LineBlame extends Disposable {
 	 */
 	private schedule(editor: vscode.TextEditor) {
 		if (!this.enabled) return;
+		const last = this.lastBlamed;
+		if (last !== null && last.editor === editor && editor.selections.length === 1 && last.line === editor.selection.active.line && last.version === editor.document.version && Date.now() - last.time < BLAME_CACHE_DURATION) {
+			// The cursor moved within the line that was just blamed
+			return;
+		}
 		this.cancel();
 		if (this.decoratedEditor !== null && this.decoratedEditor.selection.active.line !== editor.selection.active.line) this.clear();
 		this.timeout = setTimeout(() => {
@@ -127,6 +139,7 @@ export class LineBlame extends Disposable {
 	 * Remove the blame from the editor it's shown in.
 	 */
 	private clear() {
+		this.lastBlamed = null;
 		if (this.decoratedEditor !== null) {
 			this.decoratedEditor.setDecorations(this.decorationType, []);
 			this.decoratedEditor = null;
@@ -148,11 +161,16 @@ export class LineBlame extends Disposable {
 			this.clear();
 			return;
 		}
-		const line = editor.selection.active.line, requestId = ++this.requestId;
+		const line = editor.selection.active.line, version = document.version, requestId = ++this.requestId;
+		const blamed = () => this.lastBlamed = { editor: editor, line: line, version: version, time: Date.now() };
 		const blame = await this.dataSource.getLineBlame(repo, filePath.substring(repo.length + 1), line + 1, document.getText());
 		if (requestId !== this.requestId || editor !== vscode.window.activeTextEditor || editor.selection.active.line !== line) return;
 		this.clear();
-		if (blame === null) return;
+		if (blame === null) {
+			// The line can't be blamed (e.g. the file isn't tracked), which is also remembered
+			blamed();
+			return;
+		}
 
 		const end = document.lineAt(line).range.end;
 		const decorate = (change: ReadonlyArray<string> | null) => editor.setDecorations(this.decorationType, [{
@@ -165,10 +183,14 @@ export class LineBlame extends Disposable {
 		this.decoratedLine = line;
 
 		// The hover also shows how the commit changed the line, once it has been loaded
-		if (!blame.committed) return;
+		if (!blame.committed) {
+			blamed();
+			return;
+		}
 		const change = await this.dataSource.getLineChange(repo, blame.hash, blame.originalFilePath, blame.originalLine);
-		if (change === null || requestId !== this.requestId || editor !== vscode.window.activeTextEditor || editor.selection.active.line !== line || this.decoratedEditor !== editor) return;
-		decorate(change.diff);
+		if (requestId !== this.requestId || editor !== vscode.window.activeTextEditor || editor.selection.active.line !== line || this.decoratedEditor !== editor) return;
+		if (change !== null) decorate(change.diff);
+		blamed();
 	}
 }
 

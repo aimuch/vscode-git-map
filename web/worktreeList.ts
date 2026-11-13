@@ -166,7 +166,7 @@ class WorktreeList {
 	 * @param worktree The worktree.
 	 */
 	private removeWorktreeAction(worktree: GG.GitWorktree) {
-		dialog.showForm(t('Are you sure you want to remove the worktree <b><i>{0}</i></b>? Its folder is deleted (its branch is kept).', escapeHtml(worktree.path)), [
+		dialog.asDangerous().showForm(t('Are you sure you want to remove the worktree <b><i>{0}</i></b>? Its folder is deleted (its branch is kept).', escapeHtml(worktree.path)), [
 			{ type: DialogInputType.Checkbox, name: t('Force'), value: false, info: t('Remove the worktree even if it has uncommitted changes or untracked files, which are lost.') }
 		], t('Yes, remove'), (values) => {
 			runAction({ command: 'removeWorktree', repo: this.view.currentRepo, path: worktree.path, force: <boolean>values[0] }, t('Removing Worktree'));

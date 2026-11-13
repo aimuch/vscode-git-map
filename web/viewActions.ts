@@ -45,7 +45,7 @@ class ViewActions {
 							info: t('This branch is on the remote{0}{1}', (remotesWithBranch.length > 1 ? 's: ' : ' '), formatCommaSeparatedList(remotesWithBranch.map((remote) => '"' + remote + '"')))
 						});
 					}
-					dialog.showForm(t('Are you sure you want to delete the branch <b><i>{0}</i></b>?', escapeHtml(refName)), inputs, t('Yes, delete'), (values) => {
+					dialog.asDangerous().showForm(t('Are you sure you want to delete the branch <b><i>{0}</i></b>?', escapeHtml(refName)), inputs, t('Yes, delete'), (values) => {
 						runAction({ command: 'deleteBranch', repo: this.view.currentRepo, branchName: refName, forceDelete: <boolean>values[0], deleteOnRemotes: remotesWithBranch.length > 0 && <boolean>values[1] ? remotesWithBranch : [] }, t('Deleting Branch'));
 					}, target);
 				}
@@ -211,7 +211,7 @@ class ViewActions {
 				title: t('Drop') + ELLIPSIS,
 				visible: visibility.drop && this.view.graph.dropCommitPossible(this.view.commitLookup[hash]),
 				onClick: () => {
-					dialog.showConfirmation(t('Are you sure you want to permanently drop commit <b><i>{0}</i></b>?{1}', abbrevCommit(hash), (this.view.onlyFollowFirstParent ? t('<br/><i>Note: By enabling "Only follow the first parent of commits", some commits may have been hidden from the Git Map View that could affect the outcome of performing this action.</i>') : '')), t('Yes, drop'), () => {
+					dialog.asDangerous().showConfirmation(t('Are you sure you want to permanently drop commit <b><i>{0}</i></b>?{1}', abbrevCommit(hash), (this.view.onlyFollowFirstParent ? t('<br/><i>Note: By enabling "Only follow the first parent of commits", some commits may have been hidden from the Git Map View that could affect the outcome of performing this action.</i>') : '')), t('Yes, drop'), () => {
 						runAction({ command: 'dropCommit', repo: this.view.currentRepo, commitHash: hash }, t('Dropping Commit'));
 					}, target);
 				}
@@ -229,7 +229,7 @@ class ViewActions {
 				title: t('Reset current branch to this Commit') + ELLIPSIS,
 				visible: visibility.reset,
 				onClick: () => {
-					dialog.showSelect(t('Are you sure you want to reset {0} to commit <b><i>{1}</i></b>?', (this.view.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.view.gitBranchHead)) : t('the current branch')), abbrevCommit(hash)), this.view.config.dialogDefaults.resetCommit.mode, [
+					dialog.asDangerous().showSelect(t('Are you sure you want to reset {0} to commit <b><i>{1}</i></b>?', (this.view.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.view.gitBranchHead)) : t('the current branch')), abbrevCommit(hash)), this.view.config.dialogDefaults.resetCommit.mode, [
 						{ name: t('Soft - Keep all changes, but reset head'), value: GG.GitResetMode.Soft },
 						{ name: t('Mixed - Keep working tree, but reset index'), value: GG.GitResetMode.Mixed },
 						{ name: t('Hard - Discard all changes'), value: GG.GitResetMode.Hard }
@@ -306,7 +306,7 @@ class ViewActions {
 				title: t('Delete Remote Branch') + ELLIPSIS,
 				visible: visibility.delete && remote !== '',
 				onClick: () => {
-					dialog.showConfirmation(t('Are you sure you want to delete the remote branch <b><i>{0}</i></b>?', escapeHtml(refName)), t('Yes, delete'), () => {
+					dialog.asDangerous().showConfirmation(t('Are you sure you want to delete the remote branch <b><i>{0}</i></b>?', escapeHtml(refName)), t('Yes, delete'), () => {
 						runAction({ command: 'deleteRemoteBranch', repo: this.view.currentRepo, branchName: branchName, remote: remote }, t('Deleting Remote Branch'));
 					}, target);
 				}
@@ -441,15 +441,15 @@ class ViewActions {
 					if (this.view.gitRemotes.length > 1) {
 						let options = [{ name: t('Don\'t delete on any remote'), value: '-1' }];
 						this.view.gitRemotes.forEach((remote, i) => options.push({ name: remote, value: i.toString() }));
-						dialog.showSelect(message + t('<br>Do you also want to delete the tag on a remote:'), '-1', options, t('Yes, delete'), remoteIndex => {
+						dialog.asDangerous().showSelect(message + t('<br>Do you also want to delete the tag on a remote:'), '-1', options, t('Yes, delete'), remoteIndex => {
 							this.deleteTagAction(tagName, remoteIndex !== '-1' ? this.view.gitRemotes[parseInt(remoteIndex)] : null);
 						}, target);
 					} else if (this.view.gitRemotes.length === 1) {
-						dialog.showCheckbox(message, t('Also delete on remote'), false, t('Yes, delete'), deleteOnRemote => {
+						dialog.asDangerous().showCheckbox(message, t('Also delete on remote'), false, t('Yes, delete'), deleteOnRemote => {
 							this.deleteTagAction(tagName, deleteOnRemote ? this.view.gitRemotes[0] : null);
 						}, target);
 					} else {
-						dialog.showConfirmation(message, t('Yes, delete'), () => {
+						dialog.asDangerous().showConfirmation(message, t('Yes, delete'), () => {
 							this.deleteTagAction(tagName, null);
 						}, target);
 					}
@@ -513,7 +513,7 @@ class ViewActions {
 				title: t('Reset uncommitted changes') + ELLIPSIS,
 				visible: visibility.reset,
 				onClick: () => {
-					dialog.showSelect(t('Are you sure you want to reset the <b>uncommitted changes</b> to <b>HEAD</b>?'), this.view.config.dialogDefaults.resetUncommitted.mode, [
+					dialog.asDangerous().showSelect(t('Are you sure you want to reset the <b>uncommitted changes</b> to <b>HEAD</b>?'), this.view.config.dialogDefaults.resetUncommitted.mode, [
 						{ name: t('Mixed - Keep working tree, but reset index'), value: GG.GitResetMode.Mixed },
 						{ name: t('Hard - Discard all changes'), value: GG.GitResetMode.Hard }
 					], t('Yes, reset'), (mode) => {
@@ -524,7 +524,7 @@ class ViewActions {
 				title: t('Clean untracked files') + ELLIPSIS,
 				visible: visibility.clean,
 				onClick: () => {
-					dialog.showCheckbox(t('Are you sure you want to clean all untracked files?'), t('Clean untracked directories'), true, t('Yes, clean'), directories => {
+					dialog.asDangerous().showCheckbox(t('Are you sure you want to clean all untracked files?'), t('Clean untracked directories'), true, t('Yes, clean'), directories => {
 						runAction({ command: 'cleanUntrackedFiles', repo: this.view.currentRepo, directories: directories }, t('Cleaning untracked files'));
 					}, target);
 				}
@@ -833,7 +833,7 @@ class ViewActions {
 	 * @param target The target of the dialog (NULL if the dialog isn't for an element in the view).
 	 */
 	public dropStashAction(selector: string, target: DialogTarget | null) {
-		dialog.showConfirmation(t('Are you sure you want to drop the stash <b><i>{0}</i></b>?', escapeHtml(selector.substring(5))), t('Yes, drop'), () => {
+		dialog.asDangerous().showConfirmation(t('Are you sure you want to drop the stash <b><i>{0}</i></b>?', escapeHtml(selector.substring(5))), t('Yes, drop'), () => {
 			runAction({ command: 'dropStash', repo: this.view.currentRepo, selector: selector }, t('Dropping Stash'));
 		}, target);
 	}

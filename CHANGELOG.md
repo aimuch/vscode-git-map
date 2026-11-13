@@ -33,6 +33,14 @@ This release brings the history of code into the editor: the history of lines in
     * When Git Map starts, Git is found while the settings are migrated. The Git CodeLens provider is only registered while `git-map.codeLens.enabled` is on (it's off by default), and the Line History only handles cursor movements while its drawer is shown.
     * A workspace folder that's added or removed while Git Map is starting is no longer watched twice, and no longer fails to be unwatched.
     * The package no longer includes the tests & type declarations of its dependencies.
+    * Avatars from GitLab are requested with GitLab's Avatar API, which doesn't require authentication (the access token that was included in the extension is no longer used).
+    * Dialogs confirming an action that can't be undone, or that can discard work (cleaning untracked files, resetting, dropping a commit or stash, deleting a branch, tag or remote, removing a worktree, and aborting an operation), show their primary action in the colour of an error.
+    * The Git Map View isn't refreshed when only files that are ignored by Git change (e.g. the output of a build).
+    * The blame of the current line isn't loaded again when the cursor moves within the line (for 5 seconds, unless the file is changed).
+    * The Git Map View saves its state once after it changes (instead of each time a part of it changes), and at most twice a second while avatars are being loaded.
+    * The temporary files of an interactive rebase are deleted once the rebase has finished, and their paths are quoted for the shell that runs them.
+    * The Git executable configured by the `git.path` setting takes precedence over the one that was used last (so a change made while Visual Studio Code wasn't running is applied).
+    * The nonces of the Webviews' Content Security Policies are generated with a cryptographic random number generator.
 * "Toggle Current Line Blame" reports whether the blame is shown, changes the workspace's setting if it overrides the user's, and explains that the blame still shown is GitLens' if GitLens also shows the blame of the current line.
 
 ## 2.1.0 - Unreleased

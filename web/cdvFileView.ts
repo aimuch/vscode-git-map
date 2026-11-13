@@ -157,7 +157,7 @@ class CdvFileView {
 			if (expandedCommit === null) return;
 
 			const commitHash = getCommitHashForFile(file, expandedCommit);
-			dialog.showConfirmation(t('Are you sure you want to reset <b><i>{0}</i></b> to it\'s state at commit <b><i>{1}</i></b>? Any uncommitted changes made to this file will be overwritten.', escapeHtml(file.newFilePath), abbrevCommit(commitHash)), t('Yes, reset file'), () => {
+			dialog.asDangerous().showConfirmation(t('Are you sure you want to reset <b><i>{0}</i></b> to it\'s state at commit <b><i>{1}</i></b>? Any uncommitted changes made to this file will be overwritten.', escapeHtml(file.newFilePath), abbrevCommit(commitHash)), t('Yes, reset file'), () => {
 				runAction({ command: 'resetFileToRevision', repo: this.view.currentRepo, commitHash: commitHash, filePath: file.newFilePath }, t('Resetting file'));
 			}, {
 				type: TargetType.CommitDetailsView,

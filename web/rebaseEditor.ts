@@ -312,7 +312,7 @@ class OperationBar {
 			sendMessage({ command: 'viewScm' });
 		} else if (action === 'abort') {
 			const names: { [operation: string]: string } = { 'rebase': t('the rebase'), 'merge': t('the merge'), 'cherry-pick': t('the cherry pick'), 'revert': t('the revert') };
-			dialog.showConfirmation(t('Are you sure you want to abort {0}? The repository is returned to the state it was in before it started (the conflicts resolved so far are lost).', names[operation]), t('Yes, abort'), () => {
+			dialog.asDangerous().showConfirmation(t('Are you sure you want to abort {0}? The repository is returned to the state it was in before it started (the conflicts resolved so far are lost).', names[operation]), t('Yes, abort'), () => {
 				runAction({ command: 'controlOperation', repo: this.view.currentRepo, operation: operation, action: action }, t('Aborting'));
 			}, null);
 		} else {

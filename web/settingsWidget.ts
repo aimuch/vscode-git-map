@@ -447,7 +447,7 @@ class SettingsWidget {
 				addListenerToClass('deleteRemote', 'click', (e) => {
 					const remote = this.getRemoteForBtnEvent(e);
 					if (remote === null) return;
-					dialog.showConfirmation(t('Are you sure you want to delete the remote <b><i>{0}</i></b>?', escapeHtml(remote.name)), t('Yes, delete'), () => {
+					dialog.asDangerous().showConfirmation(t('Are you sure you want to delete the remote <b><i>{0}</i></b>?', escapeHtml(remote.name)), t('Yes, delete'), () => {
 						if (this.currentRepo === null) return;
 						runAction({ command: 'deleteRemote', repo: this.currentRepo, name: remote.name }, t('Deleting Remote'));
 					}, { type: TargetType.Repo });

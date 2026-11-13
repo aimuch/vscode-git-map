@@ -29,6 +29,7 @@ const mockedExtensionContext = {
 		update: jest.fn()
 	},
 	globalStoragePath: '/path/to/globalStorage',
+	globalStorageUri: { fsPath: '/path/to/globalStorage' },
 	logPath: '/path/to/logs',
 	storagePath: '/path/to/storage',
 	subscriptions: [],

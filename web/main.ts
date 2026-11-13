@@ -113,6 +113,8 @@ class GitGraphView {
 	private undo: GG.UndoInfo | null = null; // The last action in the current repository that can be undone
 	private lastUndoId: number = -1; // The id of the last action that could be undone (-1 => the repository is being loaded)
 	private undoToastTimeout: number | null = null;
+	private saveStatePending: boolean = false; // Is the state saved when the code that's running finishes
+	private saveAvatarsTimeout: number | null = null;
 	private readonly scrollShadowElem: HTMLElement;
 
 	constructor(viewElem: HTMLElement, prevState: WebViewState | null) {
@@ -751,7 +753,7 @@ class GitGraphView {
 
 	public loadAvatar(email: string, image: string) {
 		this.avatars[email] = image;
-		this.saveState();
+		this.saveStateAfterAvatars();
 		this.graph.loadAvatar(email, image);
 		let avatarsElems = <HTMLCollectionOf<HTMLElement>>document.getElementsByClassName('avatar');
 		for (let i = 0; i < avatarsElems.length; i++) {
@@ -980,7 +982,33 @@ class GitGraphView {
 
 	/* State */
 
+	/**
+	 * Save the state of the view (which is restored when the view is shown again). All of the state is serialised whenever it's saved
+	 * (including every loaded commit), so it's saved once when the code that's running finishes, however often this is called by it.
+	 */
 	public saveState() {
+		if (this.saveStatePending) return;
+		this.saveStatePending = true;
+		Promise.resolve().then(() => {
+			this.saveStatePending = false;
+			this.writeState();
+		});
+	}
+
+	/**
+	 * Save the state of the view once the avatars that are being loaded have been received (each avatar is received separately, and
+	 * saving the state after each one would serialise all of the state & avatars again each time). Avatars that aren't saved before
+	 * the view is hidden are requested again.
+	 */
+	private saveStateAfterAvatars() {
+		if (this.saveAvatarsTimeout !== null) return;
+		this.saveAvatarsTimeout = setTimeout(() => {
+			this.saveAvatarsTimeout = null;
+			this.saveState();
+		}, 500);
+	}
+
+	private writeState() {
 		let expandedCommit;
 		if (this.expandedCommit !== null) {
 			expandedCommit = Object.assign({}, this.expandedCommit);

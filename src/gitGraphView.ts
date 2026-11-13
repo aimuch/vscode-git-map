@@ -183,10 +183,17 @@ export class GitGraphView extends Disposable {
 		);
 
 		// Instantiate a RepoFileWatcher that watches for file changes in the repository currently open in the Git Map View
-		this.repoFileWatcher = new RepoFileWatcher(logger, () => {
-			if (this.panel.visible) {
+		this.repoFileWatcher = new RepoFileWatcher(logger, (changedPaths) => {
+			if (!this.panel.visible) return;
+			const repo = this.currentRepo;
+			if (changedPaths === null || repo === null) {
 				this.sendMessage({ command: 'refresh' });
+				return;
 			}
+			// Changes that are only to files ignored by Git (e.g. the output of a build) don't change anything the view shows
+			this.dataSource.areAllIgnored(repo, changedPaths).then((ignored) => {
+				if (!ignored && this.panel.visible) this.sendMessage({ command: 'refresh' });
+			});
 		});
 
 		// Render the content of the Webview

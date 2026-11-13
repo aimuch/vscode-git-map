@@ -789,6 +789,17 @@
 			const buttons = Array.from(dialog.querySelectorAll('.dialogButtons .roundedBtn')).map((elem) => elem.id);
 			const actionBounds = document.getElementById('dialogAction').getBoundingClientRect(), contentBounds = dialog.querySelector('.dialogContent').getBoundingClientRect();
 			assert(JSON.stringify(buttons) === JSON.stringify(['dialogSecondaryAction', 'dialogAction']) && contentBounds.right - actionBounds.right < 30, 'The buttons aren\'t on the right: ' + JSON.stringify(buttons));
+			const defaultColour = getComputedStyle(document.getElementById('dialogAction')).backgroundColor;
+			assert(!dialog.classList.contains('danger'), 'The Create Branch dialog is shown as dangerous');
+			key(document.body, 'Escape');
+			await waitFor('the dialog to close', () => document.querySelector('.dialog') === null);
+
+			// A dialog confirming an action that can discard work shows its primary action as dangerous
+			mouse(commitRow(4), 'contextmenu', { button: 2 });
+			mouse(Array.from((await waitFor('the context menu', () => document.querySelector('.contextMenu'))).querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Reset current branch to this Commit\u2026'), 'click');
+			const dangerDialog = await waitFor('the Reset dialog', () => document.querySelector('.dialog'));
+			const dangerColour = getComputedStyle(document.getElementById('dialogAction')).backgroundColor;
+			assert(dangerDialog.classList.contains('danger') && dangerColour !== defaultColour && dangerColour !== 'rgba(0, 0, 0, 0)', 'The Reset dialog isn\'t shown as dangerous: ' + dangerDialog.className + ', ' + dangerColour + ' (default: ' + defaultColour + ')');
 			key(document.body, 'Escape');
 			await waitFor('the dialog to close', () => document.querySelector('.dialog') === null);
 

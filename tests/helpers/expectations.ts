@@ -12,6 +12,8 @@ export function waitForExpect(expect: () => void) {
 			try {
 				attempts++;
 				expect();
+				// The interval is stopped once the expectation is met (otherwise it would keep running after the test has finished)
+				clearInterval(testInterval);
 				resolve();
 			} catch (e) {
 				if (attempts === 100) {

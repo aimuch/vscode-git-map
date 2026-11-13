@@ -86,12 +86,23 @@ type DialogTarget = {
  */
 class Dialog {
 	private elem: HTMLElement | null = null;
+	private dangerous: boolean = false; // Is the next dialog shown as confirming a dangerous action
 	private target: DialogTarget | null = null;
 	private actioned: (() => void) | null = null;
 	private type: DialogType | null = null;
 	private customSelects: { [inputIndex: string]: CustomSelect } = {};
 
 	private static readonly WHITESPACE_REGEXP = /\s/gu;
+
+	/**
+	 * Show the next dialog as confirming a dangerous action: one that can't be undone, or that can discard work (e.g. deleting a branch
+	 * on a remote, or cleaning untracked files). Its primary action is shown in the colour of an error, instead of as the default action.
+	 * @returns The dialog, to show it (e.g. `dialog.asDangerous().showConfirmation(...)`).
+	 */
+	public asDangerous() {
+		this.dangerous = true;
+		return this;
+	}
 
 	/**
 	 * Show a confirmation dialog to the user.
@@ -342,7 +353,8 @@ class Dialog {
 		eventOverlay.create('dialogBacking', null, null);
 
 		const dialog = document.createElement('div'), dialogContent = document.createElement('div');
-		dialog.className = 'dialog';
+		dialog.className = this.dangerous && type === DialogType.Form ? 'dialog danger' : 'dialog';
+		this.dangerous = false;
 		dialogContent.className = 'dialogContent';
 		dialogContent.innerHTML = (type === DialogType.Form && html.indexOf('<div class="dialogMessage">') !== 0 ? '<div class="dialogMessage">' + html + '</div>' : html) +
 			'<div class="dialogButtons"><div id="dialogSecondaryAction" class="roundedBtn" role="button" tabindex="1">' + secondaryActionName + '</div>' + (actionName !== null ? '<div id="dialogAction" class="roundedBtn" role="button" tabindex="2">' + actionName + '</div>' : '') + '</div>';

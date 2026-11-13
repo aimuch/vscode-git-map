@@ -58,6 +58,7 @@ export class DataSource extends Disposable {
 	private gitFormatLog!: string;
 	private gitFormatStash!: string;
 	private fileHistoryPathsCache: { key: string, paths: string[] } | null = null;
+	private readonly rebaseDirectories: { [repo: string]: string[] } = {}; // The temporary directories of the interactive rebases run in each repository
 
 	/**
 	 * Creates the Git Map Data Source.
@@ -720,6 +721,18 @@ export class DataSource extends Disposable {
 	 */
 	private areStagedChanges(repo: string) {
 		return this.spawnGit(['diff-index', 'HEAD'], repo, (stdout) => stdout !== '').then(changes => changes, () => false);
+	}
+
+	/**
+	 * Are all of the files ignored by Git (tracked files are never ignored).
+	 * @param repo The path of the repository.
+	 * @param paths The paths of the files (relative to the repository).
+	 * @returns TRUE => All of the files are ignored, FALSE => At least one of them isn't (or it couldn't be determined).
+	 */
+	public areAllIgnored(repo: string, paths: ReadonlyArray<string>): Promise<boolean> {
+		if (paths.length === 0) return Promise.resolve(false);
+		// The paths are written to the standard input of Git, and the ones that are ignored are output (it exits with 1 if none are)
+		return this._spawnGit(['check-ignore', '--stdin', '-z'], repo, (stdout) => stdout.toString().split('\0').filter((path) => path !== '').length === paths.length, true, paths.join('\0') + '\0').catch(() => false);
 	}
 
 	/**
@@ -2414,6 +2427,7 @@ export class DataSource extends Disposable {
 		// The base is resolved to a commit hash, so that the branch name is never included in the commands run by the shell (see #940)
 		return this.resolveCommitHash(repo, base).then((baseHash) => {
 			const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'git-map-rebase-')), lines: string[] = [];
+			(this.rebaseDirectories[repo] = this.rebaseDirectories[repo] || []).push(directory);
 			todo.forEach((item, index) => {
 				if (!/^[0-9a-f]{7,64}$/.test(item.hash)) throw new Error('Invalid commit hash: ' + item.hash);
 				lines.push((item.action === 'reword' ? 'pick' : item.action) + ' ' + item.hash);
@@ -2421,7 +2435,7 @@ export class DataSource extends Disposable {
 					// The new message is read from a file, so that it's never included in the command run by the shell
 					const messageFile = path.join(directory, 'message-' + index + '.txt').replace(/\\/g, '/');
 					fs.writeFileSync(messageFile, item.message);
-					lines.push('exec git commit --amend --allow-empty --cleanup=strip -F "' + messageFile + '"');
+					lines.push('exec git commit --amend --allow-empty --cleanup=strip -F ' + quoteForShell(messageFile));
 				}
 			});
 			const todoFile = path.join(directory, 'git-rebase-todo').replace(/\\/g, '/');
@@ -2431,8 +2445,23 @@ export class DataSource extends Disposable {
 			args.push(baseHash);
 			// The sequence editor replaces the todo list written by Git with the chosen one (Git runs it with sh, including on Windows), and
 			// the editor ":" isn't run by Git (so the combined messages of squashed commits are used)
-			return this._spawnGit(args, repo, () => null, false, null, { GIT_SEQUENCE_EDITOR: 'cp "' + todoFile + '"', GIT_EDITOR: ':' });
-		}).catch((errorMessage: string | Error) => errorMessage instanceof Error ? errorMessage.message : errorMessage);
+			return this._spawnGit(args, repo, () => null, false, null, { GIT_SEQUENCE_EDITOR: 'cp ' + quoteForShell(todoFile), GIT_EDITOR: ':' });
+		}).catch((errorMessage: string | Error) => errorMessage instanceof Error ? errorMessage.message : errorMessage).then(async (error) => {
+			await this.deleteRebaseDirectories(repo);
+			return error;
+		});
+	}
+
+	/**
+	 * Delete the temporary directories of the interactive rebases that were run in a repository, unless a rebase is still in progress
+	 * (e.g. it stopped because of conflicts), as it uses the files in them until it finishes.
+	 * @param repo The path of the repository.
+	 */
+	private async deleteRebaseDirectories(repo: string) {
+		const directories = this.rebaseDirectories[repo];
+		if (typeof directories === 'undefined' || await this.getOperationInProgress(repo).catch(() => null) === 'rebase') return;
+		delete this.rebaseDirectories[repo];
+		directories.forEach((directory) => fs.rm(directory, { recursive: true, force: true }, () => { }));
 	}
 
 	/**
@@ -2459,7 +2488,10 @@ export class DataSource extends Disposable {
 	 */
 	public controlOperation(repo: string, operation: GitOperation, action: 'continue' | 'skip' | 'abort') {
 		const args = operation === 'merge' && action === 'continue' ? ['commit', '--no-edit'] : [operation, '--' + action];
-		return this._spawnGit(args, repo, () => null, false, null, { GIT_EDITOR: ':' }).catch((errorMessage: string) => errorMessage);
+		return this._spawnGit(args, repo, () => null, false, null, { GIT_EDITOR: ':' }).catch((errorMessage: string) => errorMessage).then(async (error) => {
+			await this.deleteRebaseDirectories(repo);
+			return error;
+		});
 	}
 
 
@@ -2621,6 +2653,15 @@ export class DataSource extends Disposable {
 	}
 }
 
+
+/**
+ * Quote a path that's included in a command run by a shell (in double quotes, escaping the characters that are special within them).
+ * @param filePath The path.
+ * @returns The quoted path.
+ */
+function quoteForShell(filePath: string) {
+	return '"' + filePath.replace(/["$`\\]/g, '\\$&') + '"';
+}
 
 /**
  * Generates the file changes from the diff output and status information.

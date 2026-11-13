@@ -234,14 +234,8 @@ export class CommandManager extends Disposable {
 	 * @param uri The URI of the file.
 	 * @returns The repository & path, or NULL if the file isn't in a repository known by Git Map.
 	 */
-	private async getRepoOfFile(uri: vscode.Uri): Promise<{ repo: string, path: string } | null> {
-		const filePath = getPathFromUri(uri);
-		let repo = this.repoManager.getRepoContainingFile(filePath);
-		if (repo !== null) return { repo: repo, path: filePath.substring(repo.length + 1) };
-		// The file may be in a repository known by its symbolic path
-		const symbolicPath = await resolveToSymbolicPath(filePath);
-		repo = this.repoManager.getRepoContainingFile(symbolicPath);
-		return repo !== null ? { repo: repo, path: symbolicPath.substring(repo.length + 1) } : null;
+	private getRepoOfFile(uri: vscode.Uri): Promise<{ repo: string, path: string } | null> {
+		return this.repoManager.getRepoAndPathOfFile(getPathFromUri(uri));
 	}
 
 	/**

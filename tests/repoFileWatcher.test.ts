@@ -43,6 +43,37 @@ describe('RepoFileWatcher', () => {
 		// Assert
 		expect(vscode.workspace.createFileSystemWatcher).toHaveBeenCalledWith('/path/to/repo/**');
 		expect(callback).toHaveBeenCalledTimes(1);
+		expect(callback).toHaveBeenCalledWith(['file']);
+	});
+
+	it('Should report the files that changed, unless the Git directory changed', () => {
+		// Setup
+		repoFileWatcher.start('/path/to/repo');
+		const onDidChange = (<jest.Mock<any, any>>repoFileWatcher['fsWatcher']!.onDidChange).mock.calls[0][0];
+
+		// Run
+		onDidChange(vscode.Uri.file('/path/to/repo/dist/out.js'));
+		onDidChange(vscode.Uri.file('/path/to/repo/src/file.ts'));
+		onDidChange(vscode.Uri.file('/path/to/repo/dist/out.js'));
+		jest.runOnlyPendingTimers();
+
+		// Assert
+		expect(callback).toHaveBeenLastCalledWith(['dist/out.js', 'src/file.ts']);
+
+		// Run
+		onDidChange(vscode.Uri.file('/path/to/repo/dist/out.js'));
+		onDidChange(vscode.Uri.file('/path/to/repo/.git/HEAD'));
+		jest.runOnlyPendingTimers();
+
+		// Assert
+		expect(callback).toHaveBeenLastCalledWith(null);
+
+		// Run
+		onDidChange(vscode.Uri.file('/path/to/repo/dist/out.js'));
+		jest.runOnlyPendingTimers();
+
+		// Assert
+		expect(callback).toHaveBeenLastCalledWith(['dist/out.js']);
 	});
 
 	it('Should stop a previous active File System Watcher before creating a new one', () => {

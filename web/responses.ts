@@ -284,7 +284,7 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 
 	function handleResponseDeleteBranch(msg: GG.ResponseDeleteBranch) {
 		if (msg.errors.length > 0 && msg.errors[0] !== null && msg.errors[0].includes('git branch -D')) {
-			dialog.showConfirmation(t('The branch <b><i>{0}</i></b> is not fully merged. Would you like to force delete it?', escapeHtml(msg.branchName)), t('Yes, force delete branch'), () => {
+			dialog.asDangerous().showConfirmation(t('The branch <b><i>{0}</i></b> is not fully merged. Would you like to force delete it?', escapeHtml(msg.branchName)), t('Yes, force delete branch'), () => {
 				runAction({ command: 'deleteBranch', repo: msg.repo, branchName: msg.branchName, forceDelete: true, deleteOnRemotes: msg.deleteOnRemotes }, t('Deleting Branch'));
 			}, { type: TargetType.Repo });
 		} else {

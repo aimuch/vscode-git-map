@@ -6,7 +6,7 @@ import { DataSource } from './dataSource';
 import { DEFAULT_REPO_STATE, ExtensionState } from './extensionState';
 import { Logger } from './logger';
 import { BooleanOverride, ErrorInfo, FileViewType, GitRepoSet, GitRepoState, PullRequestConfig, PullRequestConfigBase, PullRequestProvider, RepoCommitOrdering } from './types';
-import { evalPromises, getPathFromStr, getPathFromUri, getRepoName, pathWithTrailingSlash, realpath, showErrorMessage, showInformationMessage } from './utils';
+import { evalPromises, getPathFromStr, getPathFromUri, getRepoName, pathWithTrailingSlash, realpath, resolveToSymbolicPath, showErrorMessage, showInformationMessage } from './utils';
 import { BufferedQueue } from './utils/bufferedQueue';
 import { Disposable, toDisposable } from './utils/disposable';
 import { Event, EventEmitter } from './utils/event';
@@ -252,6 +252,20 @@ export class RepoManager extends Disposable {
 			if (path.startsWith(pathWithTrailingSlash(repoPaths[i])) && (repo === null || repo.length < repoPaths[i].length)) repo = repoPaths[i];
 		}
 		return repo;
+	}
+
+	/**
+	 * Get the repository containing a file, and the path of the file within it. The file may be in a repository that's known by its
+	 * symbolic path (if a workspace folder contains symbolic links).
+	 * @param filePath The path of the file.
+	 * @returns The repository & the path of the file relative to it, or NULL if no known repository contains the file.
+	 */
+	public async getRepoAndPathOfFile(filePath: string): Promise<{ repo: string, path: string } | null> {
+		let repo = this.getRepoContainingFile(filePath);
+		if (repo !== null) return { repo: repo, path: filePath.substring(repo.length + 1) };
+		const symbolicPath = await resolveToSymbolicPath(filePath);
+		repo = this.getRepoContainingFile(symbolicPath);
+		return repo !== null ? { repo: repo, path: symbolicPath.substring(repo.length + 1) } : null;
 	}
 
 	/**
@@ -586,6 +600,8 @@ export class RepoManager extends Disposable {
 		let path = getPathFromUri(uri);
 		if (path.indexOf('/.git/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
+		// A change is only processed if a known repository is the path (or within it), as it's only checked whether they still exist
+		if (this.getReposInFolder(path).length === 0) return;
 		this.onWatcherChangeQueue.enqueue(path);
 	}
 

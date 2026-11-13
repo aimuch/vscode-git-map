@@ -6,7 +6,7 @@ import { getBlameHover } from './lineBlame';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { GitFileBlame } from './types';
-import { getPathFromUri, resolveToSymbolicPath, showErrorMessage } from './utils';
+import { getPathFromUri, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
 /**
@@ -125,17 +125,12 @@ export class FileBlame extends Disposable {
 			this.close(document.uri);
 			return;
 		}
-		const filePath = getPathFromUri(document.uri);
-		let repo = this.repoManager.getRepoContainingFile(filePath), path = filePath;
-		if (repo === null) {
-			path = await resolveToSymbolicPath(filePath);
-			repo = this.repoManager.getRepoContainingFile(path);
-		}
-		if (repo === null) {
+		const filePath = getPathFromUri(document.uri), file = await this.repoManager.getRepoAndPathOfFile(filePath);
+		if (file === null) {
 			showErrorMessage(t('Unable to Toggle File Blame: {0}', t('The file {0} isn\'t in a repository known by Git Map.', filePath)));
 			return;
 		}
-		this.files.set(key, { repo: repo, filePath: path.substring(repo.length + 1), annotations: [], decorations: [], version: -1 });
+		this.files.set(key, { repo: file.repo, filePath: file.path, annotations: [], decorations: [], version: -1 });
 		// Escape removes the annotations of the file (while it's in the active editor)
 		const uri = document.uri;
 		EscapeStack.push('fileBlame:' + key, () => this.files.has(key) && typeof vscode.window.activeTextEditor !== 'undefined' && vscode.window.activeTextEditor.document.uri.toString() === key, () => this.close(uri));
@@ -208,7 +203,7 @@ export class FileBlame extends Disposable {
 	}
 
 	/**
-	 * Update the context key used by the menus (whether the file in the active editor is blamed).
+	 * Update the context key used by the menus (whether any file is blamed).
 	 */
 	private updateContext() {
 		vscode.commands.executeCommand('setContext', 'git-map:fileBlameShown', this.files.size > 0);

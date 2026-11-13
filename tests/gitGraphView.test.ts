@@ -440,7 +440,7 @@ describe('GitGraphView', () => {
 				GitGraphView.createOrShow('/path/to/extension', dataSource, extensionState, avatarManager, repoManager, logger, null);
 
 				// Run
-				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback']();
+				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback'](null);
 
 				// Assert
 				const mockedWebviewPanel = vscode.getMockedWebviewPanel(0);
@@ -451,6 +451,29 @@ describe('GitGraphView', () => {
 				]);
 			});
 
+			it('Should only refresh the view if a file that changed isn\'t ignored by Git', async () => {
+				// Setup
+				GitGraphView.createOrShow('/path/to/extension', dataSource, extensionState, avatarManager, repoManager, logger, null);
+				GitGraphView.currentPanel!['currentRepo'] = '/path/to/repo';
+				const spyOnAreAllIgnored = jest.spyOn(dataSource, 'areAllIgnored');
+				spyOnAreAllIgnored.mockResolvedValueOnce(true);
+				spyOnAreAllIgnored.mockResolvedValueOnce(false);
+				const mockedWebviewPanel = vscode.getMockedWebviewPanel(0);
+
+				// Run
+				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback'](['dist/out.js']);
+
+				// Assert
+				await waitForExpect(() => expect(spyOnAreAllIgnored).toHaveBeenCalledWith('/path/to/repo', ['dist/out.js']));
+				expect(mockedWebviewPanel.mocks.messages).toHaveLength(0);
+
+				// Run
+				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback'](['dist/out.js', 'src/file.ts']);
+
+				// Assert
+				await waitForExpect(() => expect(mockedWebviewPanel.mocks.messages).toStrictEqual([{ command: 'refresh' }]));
+			});
+
 			it('Shouldn\'t refresh the view when it isn\'t visible', () => {
 				// Setup
 				GitGraphView.createOrShow('/path/to/extension', dataSource, extensionState, avatarManager, repoManager, logger, null);
@@ -458,7 +481,7 @@ describe('GitGraphView', () => {
 				mockedWebviewPanel.mocks.panel.setVisibility(false);
 
 				// Run
-				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback']();
+				GitGraphView.currentPanel!['repoFileWatcher']['repoChangeCallback'](null);
 
 				// Assert
 				expect(mockedWebviewPanel.mocks.messages).toHaveLength(0);

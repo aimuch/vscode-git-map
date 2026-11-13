@@ -180,6 +180,17 @@ body.vscode-high-contrast .dialog{
 	background-color:var(--vscode-button-hoverBackground, rgba(128,128,128,0.25));
 }
 
+.dialog.danger #dialogAction{
+	background-color:var(--vscode-statusBarItem-errorBackground, #c72e0f);
+	border-color:transparent;
+	color:var(--vscode-statusBarItem-errorForeground, #ffffff);
+}
+
+.dialog.danger #dialogAction:hover{
+	background-color:var(--vscode-statusBarItem-errorBackground, #c72e0f);
+	filter:brightness(1.15);
+}
+
 .dialog.noInput #dialogAction, .dialog.inputInvalid #dialogAction{
 	opacity:0.5;
 }

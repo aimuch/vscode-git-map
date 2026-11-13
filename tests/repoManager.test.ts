@@ -1723,24 +1723,17 @@ describe('RepoManager', () => {
 			});
 		});
 
-		it('Shouldn\'t remove a repository when a directory is removed, but it doesn\'t contain any repositories', async () => {
-			// Setup
-			mockFsStatOnce(new Error(), true);
-
+		it('Shouldn\'t process a change that isn\'t to a repository, or to a directory containing repositories', () => {
 			// Run
 			emitOnDidChange(vscode.Uri.file('/path/to/workspace-folder1/dir/repo'));
 
 			// Assert
-			expect(spyOnEnqueue).toHaveBeenCalledWith('/path/to/workspace-folder1/dir/repo');
-			await waitForExpect(() => {
-				expect(repoManager['onWatcherChangeQueue']['queue']).toStrictEqual([]);
-				expect(repoManager['onWatcherChangeQueue']['processing']).toBe(false);
-				expect(spyOnStat).toHaveBeenCalledWith('/path/to/workspace-folder1/dir/repo', expect.anything());
-				expect(repoManager.getRepos()).toStrictEqual({
-					'/path/to/workspace-folder1/repo': mockRepoState({ workspaceFolderIndex: 0 })
-				});
-				expect(onDidChangeReposEvents).toStrictEqual([]);
+			expect(spyOnEnqueue).not.toHaveBeenCalled();
+			expect(spyOnStat).not.toHaveBeenCalledWith('/path/to/workspace-folder1/dir/repo', expect.anything());
+			expect(repoManager.getRepos()).toStrictEqual({
+				'/path/to/workspace-folder1/repo': mockRepoState({ workspaceFolderIndex: 0 })
 			});
+			expect(onDidChangeReposEvents).toStrictEqual([]);
 		});
 	});
 

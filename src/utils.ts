@@ -1,4 +1,5 @@
 import * as cp from 'child_process';
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
@@ -199,8 +200,9 @@ export function getExtensionVersion(extensionContext: vscode.ExtensionContext) {
 export function getNonce() {
 	let text = '';
 	const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+	const bytes = crypto.randomBytes(32); // The nonce is used by the Content Security Policy of Webviews, so it must not be predictable
 	for (let i = 0; i < 32; i++) {
-		text += possible.charAt(Math.floor(Math.random() * possible.length));
+		text += possible.charAt(bytes[i] % possible.length);
 	}
 	return text;
 }
@@ -710,17 +712,19 @@ export interface GitExecutable {
  * @returns A Git executable.
  */
 export async function findGit(extensionState: ExtensionState) {
-	const lastKnownPath = extensionState.getLastKnownGitPath();
-	if (lastKnownPath !== null) {
-		try {
-			return await getGitExecutable(lastKnownPath);
-		} catch (_) { }
-	}
-
+	// The Git executable configured by the "git.path" setting is used if there is one (also if it was changed while Visual Studio Code
+	// wasn't running), otherwise the Git executable that was used last
 	const configGitPaths = getConfig().gitPaths;
 	if (configGitPaths.length > 0) {
 		try {
 			return await getGitExecutableFromPaths(configGitPaths);
+		} catch (_) { }
+	}
+
+	const lastKnownPath = extensionState.getLastKnownGitPath();
+	if (lastKnownPath !== null) {
+		try {
+			return await getGitExecutable(lastKnownPath);
 		} catch (_) { }
 	}
 

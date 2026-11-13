@@ -10,7 +10,7 @@ import { Logger } from './logger';
 import { getRemoteCommitUrl, getRemoteFileUrl, getRemoteWebRepo } from './remoteLinks';
 import { RepoManager } from './repoManager';
 import { ErrorInfo, GitFileStatus, GitLineHistory, GitLineHistoryEntry, GitLineRange, LineHistoryLocation } from './types';
-import { UNCOMMITTED, abbrevCommit, copyToClipboard, getPathFromUri, getSelectedLines, openExternalUrl, resolveToSymbolicPath, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
+import { UNCOMMITTED, abbrevCommit, copyToClipboard, getPathFromUri, getSelectedLines, openExternalUrl, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 
@@ -540,18 +540,12 @@ export class LineHistory extends Disposable {
 	 * @returns The lines, or NULL if the file isn't in a repository known by Git Map.
 	 */
 	private async getTarget(uri: vscode.Uri, range: GitLineRange): Promise<LineHistoryTarget | null> {
-		const filePath = getPathFromUri(uri);
-		let repo = this.repoManager.getRepoContainingFile(filePath), path = filePath;
-		if (repo === null) {
-			// The file may be in a repository known by its symbolic path
-			path = await resolveToSymbolicPath(filePath);
-			repo = this.repoManager.getRepoContainingFile(path);
-		}
-		if (repo === null) {
+		const filePath = getPathFromUri(uri), file = await this.repoManager.getRepoAndPathOfFile(filePath);
+		if (file === null) {
 			this.logger.log('Unable to view the line history of ' + filePath + ', as it isn\'t in a known repository');
 			return null;
 		}
-		return { uri: uri, repo: repo, filePath: path.substring(repo.length + 1), range: range };
+		return { uri: uri, repo: file.repo, filePath: file.path, range: range };
 	}
 }
 

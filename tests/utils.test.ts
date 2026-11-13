@@ -1923,10 +1923,28 @@ describe('findGit', () => {
 		expect(spyOnSpawn).toHaveBeenCalledWith('/path/to/git', ['--version']);
 	});
 
-	it('Should use the users git.path if the last known Git executable path no longer exists', async () => {
+	it('Should use the users git.path instead of the last known Git executable path', async () => {
 		// Setup
-		jest.spyOn(extensionState, 'getLastKnownGitPath').mockReturnValueOnce('/path/to/not-git');
+		jest.spyOn(extensionState, 'getLastKnownGitPath').mockReturnValueOnce('/path/to/last-git');
 		vscode.mockExtensionSettingReturnValue('path', '/path/to/git');
+		mockSpawnGitVersionSuccessOnce();
+
+		// Run
+		const result = await findGit(extensionState);
+
+		// Assert
+		expect(result).toStrictEqual({
+			path: '/path/to/git',
+			version: '1.2.3'
+		});
+		expect(spyOnSpawn).toHaveBeenCalledWith('/path/to/git', ['--version']);
+		expect(spyOnSpawn).not.toHaveBeenCalledWith('/path/to/last-git', ['--version']);
+	});
+
+	it('Should use the last known Git executable path if the users git.path isn\'t a Git executable', async () => {
+		// Setup
+		jest.spyOn(extensionState, 'getLastKnownGitPath').mockReturnValueOnce('/path/to/git');
+		vscode.mockExtensionSettingReturnValue('path', '/path/to/not-git');
 		mockSpawnGitVersionThrowingErrorOnce();
 		mockSpawnGitVersionSuccessOnce();
 
@@ -1938,6 +1956,7 @@ describe('findGit', () => {
 			path: '/path/to/git',
 			version: '1.2.3'
 		});
+		expect(spyOnSpawn).toHaveBeenCalledWith('/path/to/not-git', ['--version']);
 		expect(spyOnSpawn).toHaveBeenCalledWith('/path/to/git', ['--version']);
 	});
 

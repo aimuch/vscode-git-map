@@ -4,7 +4,7 @@ import { DiffDocProvider, decodeDiffDocUri } from './diffDocProvider';
 import { t } from './l10n';
 import { RepoManager } from './repoManager';
 import { GitFileStatus } from './types';
-import { UNCOMMITTED, abbrevCommit, getPathFromUri, resolveToSymbolicPath, showErrorMessage, showInformationMessage, viewDiff } from './utils';
+import { UNCOMMITTED, abbrevCommit, getPathFromUri, showErrorMessage, showInformationMessage, viewDiff } from './utils';
 import { Disposable } from './utils/disposable';
 
 /**
@@ -115,12 +115,7 @@ export class RevisionNavigation extends Disposable {
 		}
 		const editor = vscode.window.activeTextEditor;
 		if (typeof editor === 'undefined' || editor.document.uri.scheme !== 'file') return null;
-		const filePath = getPathFromUri(editor.document.uri);
-		let repo = this.repoManager.getRepoContainingFile(filePath), path = filePath;
-		if (repo === null) {
-			path = await resolveToSymbolicPath(filePath);
-			repo = this.repoManager.getRepoContainingFile(path);
-		}
-		return repo !== null ? { repo: repo, commit: UNCOMMITTED, filePath: path.substring(repo.length + 1) } : null;
+		const file = await this.repoManager.getRepoAndPathOfFile(getPathFromUri(editor.document.uri));
+		return file !== null ? { repo: file.repo, commit: UNCOMMITTED, filePath: file.path } : null;
 	}
 }

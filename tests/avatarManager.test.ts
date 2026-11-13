@@ -128,10 +128,10 @@ describe('AvatarManager', () => {
 				}), expect.anything());
 			});
 
-			it('Should encode the email address when searching for a user on GitLab', async () => {
+			it('Should encode the email address when requesting an avatar from GitLab', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('https://gitlab.com/mhutchie/test-repo.git');
-				mockHttpsResponse(200, '[{"avatar_url":"https://avatar-url"}]');
+				mockHttpsResponse(200, '{"avatar_url":"https://avatar-url"}');
 				mockHttpsResponse(200, 'binary-image-data');
 				mockWriteFile(null);
 				mockReadFile('binary-image-data');
@@ -144,7 +144,7 @@ describe('AvatarManager', () => {
 				await avatarEvents;
 				expect(spyOnHttpsGet).toHaveBeenCalledWith(expect.objectContaining({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user%2Btag%26more@mhutchie.com'
+					path: '/api/v4/avatar?email=user%2Btag%26more@mhutchie.com&size=162'
 				}), expect.anything());
 			});
 
@@ -528,7 +528,7 @@ describe('AvatarManager', () => {
 			it('Should fetch a new avatar from GitLab (HTTPS Remote)', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('https://gitlab.com/mhutchie/test-repo.git');
-				mockHttpsResponse(200, '[{"avatar_url":"https://avatar-url"}]');
+				mockHttpsResponse(200, '{"avatar_url":"https://avatar-url"}');
 				mockHttpsResponse(200, 'binary-image-data');
 				mockWriteFile(null);
 				mockReadFile('binary-image-data');
@@ -545,8 +545,8 @@ describe('AvatarManager', () => {
 				expect(spyOnGetRemoteUrl).toHaveBeenCalledWith('test-repo', 'test-remote');
 				expect(spyOnHttpsGet).toHaveBeenCalledWith({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user4@mhutchie.com',
-					headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' },
+					path: '/api/v4/avatar?email=user4@mhutchie.com&size=162',
+					headers: { 'User-Agent': 'vscode-git-graph' },
 					agent: false,
 					timeout: 15000
 				}, expect.anything());
@@ -569,7 +569,7 @@ describe('AvatarManager', () => {
 			it('Should fetch a new avatar from GitLab (SSH Remote)', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('git@gitlab.com:mhutchie/test-repo.git');
-				mockHttpsResponse(200, '[{"avatar_url":"https://avatar-url"}]');
+				mockHttpsResponse(200, '{"avatar_url":"https://avatar-url"}');
 				mockHttpsResponse(200, 'binary-image-data');
 				mockWriteFile(null);
 				mockReadFile('binary-image-data');
@@ -586,8 +586,8 @@ describe('AvatarManager', () => {
 				expect(spyOnGetRemoteUrl).toHaveBeenCalledWith('test-repo', 'test-remote');
 				expect(spyOnHttpsGet).toHaveBeenCalledWith({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user4@mhutchie.com',
-					headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' },
+					path: '/api/v4/avatar?email=user4@mhutchie.com&size=162',
+					headers: { 'User-Agent': 'vscode-git-graph' },
 					agent: false,
 					timeout: 15000
 				}, expect.anything());
@@ -607,10 +607,10 @@ describe('AvatarManager', () => {
 				});
 			});
 
-			it('Should fallback to Gravatar when no users are in the GitLab response', async () => {
+			it('Should fallback to Gravatar when GitLab doesn\'t have an avatar for the email address (it returns a Gravatar URL)', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('https://gitlab.com/mhutchie/test-repo.git');
-				mockHttpsResponse(200, '[]');
+				mockHttpsResponse(200, '{"avatar_url":"https://www.gravatar.com/avatar/0ca9d3f228e867bd4feb6d62cc2edbfe?s=162&d=identicon"}');
 				mockHttpsResponse(200, 'binary-image-data');
 				mockWriteFile(null);
 				mockReadFile('binary-image-data');
@@ -627,8 +627,8 @@ describe('AvatarManager', () => {
 				expect(spyOnGetRemoteUrl).toHaveBeenCalledWith('test-repo', 'test-remote');
 				expect(spyOnHttpsGet).toHaveBeenCalledWith({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user4@mhutchie.com',
-					headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' },
+					path: '/api/v4/avatar?email=user4@mhutchie.com&size=162',
+					headers: { 'User-Agent': 'vscode-git-graph' },
 					agent: false,
 					timeout: 15000
 				}, expect.anything());
@@ -668,8 +668,8 @@ describe('AvatarManager', () => {
 				expect(spyOnGetRemoteUrl).toHaveBeenCalledWith('test-repo', 'test-remote');
 				expect(spyOnHttpsGet).toHaveBeenCalledWith({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user4@mhutchie.com',
-					headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' },
+					path: '/api/v4/avatar?email=user4@mhutchie.com&size=162',
+					headers: { 'User-Agent': 'vscode-git-graph' },
 					agent: false,
 					timeout: 15000
 				}, expect.anything());
@@ -692,7 +692,7 @@ describe('AvatarManager', () => {
 			it('Should halt fetching the avatar when the GitLab avatar url request is unsuccessful', async () => {
 				// Setup
 				spyOnGetRemoteUrl.mockResolvedValueOnce('https://gitlab.com/mhutchie/test-repo.git');
-				mockHttpsResponse(200, '[{"avatar_url":"https://avatar-url"}]');
+				mockHttpsResponse(200, '{"avatar_url":"https://avatar-url"}');
 				mockHttpsResponse(404, '');
 
 				// Run
@@ -705,8 +705,8 @@ describe('AvatarManager', () => {
 				expect(spyOnGetRemoteUrl).toHaveBeenCalledWith('test-repo', 'test-remote');
 				expect(spyOnHttpsGet).toHaveBeenCalledWith({
 					hostname: 'gitlab.com',
-					path: '/api/v4/users?search=user4@mhutchie.com',
-					headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' },
+					path: '/api/v4/avatar?email=user4@mhutchie.com&size=162',
+					headers: { 'User-Agent': 'vscode-git-graph' },
 					agent: false,
 					timeout: 15000
 				}, expect.anything());

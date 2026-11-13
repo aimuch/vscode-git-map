@@ -7,7 +7,7 @@ import { t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { getUndoManager } from './undoManager';
-import { getPathFromStr, getPathFromUri, getRepoName, resolveToSymbolicPath, showErrorMessage, showInformationMessage } from './utils';
+import { getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
 /**
@@ -356,13 +356,10 @@ export class RemoveFromHistory extends Disposable {
 	 * @returns The repository & path, or NULL if the file isn't in a repository known by Git Map.
 	 */
 	private async getRepoOfFile(uri: vscode.Uri): Promise<{ repo: string, path: string } | null> {
-		const repos = this.repoManager.getRepos();
-		for (const filePath of [getPathFromUri(uri), getPathFromStr(await resolveToSymbolicPath(getPathFromUri(uri)))]) {
-			// A folder that's a repository itself is in that repository (not in a repository containing it)
-			const repo = typeof repos[filePath] !== 'undefined' ? filePath : this.repoManager.getRepoContainingFile(filePath);
-			if (repo !== null) return { repo: repo, path: filePath.substring(repo.length + 1) };
-		}
-		return null;
+		// A folder that's a repository itself is in that repository (not in a repository containing it)
+		const filePath = getPathFromUri(uri);
+		if (this.repoManager.isKnownRepo(filePath)) return { repo: filePath, path: '' };
+		return this.repoManager.getRepoAndPathOfFile(filePath);
 	}
 }
 

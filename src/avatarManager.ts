@@ -295,9 +295,10 @@ export class AvatarManager extends Disposable {
 			}
 		};
 
+		// GitLab's Avatar API doesn't require authentication. The email address is encoded (e.g. it may contain "+" or "&").
 		https.get({
-			hostname: 'gitlab.com', path: '/api/v4/users?search=' + encodeURIComponent(avatarRequest.email).replace(/%40/g, '@'), // The email address is encoded (e.g. it may contain "+" or "&")
-			headers: { 'User-Agent': 'vscode-git-graph', 'Private-Token': 'w87U_3gAxWWaPtFgCcus' }, // Token only has read access
+			hostname: 'gitlab.com', path: '/api/v4/avatar?email=' + encodeURIComponent(avatarRequest.email).replace(/%40/g, '@') + '&size=162',
+			headers: { 'User-Agent': 'vscode-git-graph' },
 			agent: false, timeout: 15000
 		}, (res) => {
 			let respBody = '';
@@ -310,9 +311,15 @@ export class AvatarManager extends Disposable {
 				}
 
 				if (res.statusCode === 200) { // Success
-					let users: any = JSON.parse(respBody);
-					if (users.length > 0 && users[0].avatar_url) { // Avatar url found
-						let img = await this.downloadAvatarImage(avatarRequest.email, users[0].avatar_url);
+					let avatarUrl: string | null = null;
+					try {
+						const response: any = JSON.parse(respBody);
+						if (typeof response === 'object' && response !== null && typeof response.avatar_url === 'string') avatarUrl = response.avatar_url;
+					} catch (_) { }
+					// If GitLab doesn't have an avatar for the email address, it returns the URL of an external avatar service (Gravatar),
+					// which is fetched by the fallback below instead (so that an identicon is only used if there isn't an avatar)
+					if (avatarUrl !== null && !/^https?:\/\/([^/]+\.)?(gravatar|libravatar)\.(com|org)\//.test(avatarUrl)) { // Avatar url found
+						let img = await this.downloadAvatarImage(avatarRequest.email, avatarUrl);
 						if (img !== null) {
 							this.saveAvatar(avatarRequest.email, img, false);
 						} else {
