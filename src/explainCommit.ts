@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getApiKey, getDirectAiConfig, getDirectAiProblem, getHost, streamChatCompletion } from './aiProviders';
 import { Language } from './l10n';
 import { LanguageModelInfo } from './types';
 
@@ -32,14 +33,21 @@ function getApi(): { lm: LanguageModelApi, userMessage: (text: string) => any } 
  * Get the language models that can explain commits.
  * @returns The models, and an error if none are available.
  */
-export async function getLanguageModels(): Promise<{ models: LanguageModelInfo[], error: string | null }> {
+export async function getLanguageModels(): Promise<{ models: LanguageModelInfo[], error: string | null, needsApiKey: boolean }> {
+	const direct = getDirectAiConfig();
+	if (direct !== null) {
+		// The API of the provider configured is called directly: its model is the only one
+		const problem = await getDirectAiProblem(direct);
+		if (problem !== null) return { models: [], error: problem.error, needsApiKey: problem.needsApiKey };
+		return { models: [{ id: direct.model, name: direct.model, vendor: direct.name, endpoint: getHost(direct.baseUrl) }], error: null, needsApiKey: false };
+	}
 	const api = getApi();
-	if (api === null) return { models: [], error: UNAVAILABLE };
+	if (api === null) return { models: [], error: UNAVAILABLE, needsApiKey: false };
 	try {
 		const models = await api.lm.selectChatModels();
-		return { models: models.map((model) => ({ id: model.id, name: model.name, vendor: model.vendor })), error: models.length > 0 ? null : UNAVAILABLE };
+		return { models: models.map((model) => ({ id: model.id, name: model.name, vendor: model.vendor, endpoint: null })), error: models.length > 0 ? null : UNAVAILABLE, needsApiKey: false };
 	} catch (error) {
-		return { models: [], error: String(error) };
+		return { models: [], error: String(error), needsApiKey: false };
 	}
 }
 
@@ -73,6 +81,18 @@ export function getExplainPrompt(commit: string, language: Language) {
  * @returns The explanation, the name of the model, and the error.
  */
 export async function explainCommit(commit: string, modelId: string | null, language: Language, onProgress: (text: string, model: string) => void, token: vscode.CancellationToken): Promise<{ text: string, model: string | null, error: string | null }> {
+	const direct = getDirectAiConfig();
+	if (direct !== null) {
+		const problem = await getDirectAiProblem(direct);
+		if (problem !== null) return { text: '', model: null, error: problem.error };
+		const modelName = direct.model + ' (' + direct.name + ')';
+		let text = '';
+		const error = await streamChatCompletion(direct.baseUrl, direct.model, await getApiKey(direct.provider), getExplainPrompt(commit, language), (part) => {
+			text += part;
+			onProgress(text, modelName);
+		}, token);
+		return { text: text, model: modelName, error: error };
+	}
 	const api = getApi();
 	if (api === null) return { text: '', model: null, error: UNAVAILABLE };
 	let text = '', modelName: string | null = null;

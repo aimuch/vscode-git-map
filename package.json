@@ -282,16 +282,64 @@
 				"category": "Git Map",
 				"command": "git-map.escape",
 				"title": "%command.escape.title%"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.setApiKey",
+				"title": "%command.ai.setApiKey.title%"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.clearApiKey",
+				"title": "%command.ai.clearApiKey.title%"
 			}
 		],
 		"configuration": {
 			"type": "object",
 			"title": "Git Map",
 			"properties": {
+				"git-map.ai.baseUrl": {
+					"type": "string",
+					"default": "",
+					"description": "%config.ai.baseUrl.description%",
+					"scope": "machine"
+				},
 				"git-map.ai.explainCommit.enabled": {
 					"type": "boolean",
 					"default": false,
 					"description": "%config.ai.explainCommit.enabled.description%"
+				},
+				"git-map.ai.model": {
+					"type": "string",
+					"default": "",
+					"description": "%config.ai.model.description%",
+					"scope": "machine"
+				},
+				"git-map.ai.provider": {
+					"type": "string",
+					"enum": [
+						"VS Code",
+						"DeepSeek",
+						"Kimi",
+						"Doubao",
+						"Qwen",
+						"OpenAI",
+						"Ollama",
+						"OpenAI Compatible"
+					],
+					"enumDescriptions": [
+						"%config.ai.provider.enumDescriptions.0%",
+						"%config.ai.provider.enumDescriptions.1%",
+						"%config.ai.provider.enumDescriptions.2%",
+						"%config.ai.provider.enumDescriptions.3%",
+						"%config.ai.provider.enumDescriptions.4%",
+						"%config.ai.provider.enumDescriptions.5%",
+						"%config.ai.provider.enumDescriptions.6%",
+						"%config.ai.provider.enumDescriptions.7%"
+					],
+					"default": "VS Code",
+					"description": "%config.ai.provider.description%",
+					"scope": "machine"
 				},
 				"git-map.blame.currentLine": {
 					"type": "boolean",

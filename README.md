@@ -90,7 +90,7 @@ View a graph of your repository's Git history, and easily perform Git actions fr
 * Stashes: "Stash uncommitted changes…" can stash only some of the changed files, or only the staged changes (Git 2.35 or later), and "Stash this File…" stashes one file. "Restore File from this Stash…" (in the context menu of a file of a stash) restores a file without applying the whole stash.
 * Visual File History (in the context menus of files in the Explorer, editors & the Commit Details View): the commits that changed a file on a timeline, a row for each author, sized by the number of lines changed, with the lines added & deleted by each commit (drag across them to zoom into a range of dates).
 * Blame options: the blame of the current line can also be shown in the Status Bar (`git-map.blame.statusBar`), and blame can ignore whitespace changes (`git-map.blame.ignoreWhitespace`) and the commits listed in `.git-blame-ignore-revs` (`git-map.blame.ignoreRevsFile`).
-* Explain Commit (`git-map.ai.explainCommit.enabled`, off by default): an "Explain" tab in the Commit Details View, where a language model provided in Visual Studio Code (e.g. by GitHub Copilot) explains the commit. Nothing is sent until you ask for an explanation, and the first time you choose the model it's sent to.
+* Explain Commit (`git-map.ai.explainCommit.enabled`, off by default): an "Explain" tab in the Commit Details View, where a language model explains the commit — either a model provided in Visual Studio Code (e.g. by GitHub Copilot), or an OpenAI-compatible API called directly (`git-map.ai.provider`: DeepSeek, Kimi, Doubao, Qwen, OpenAI, Ollama or OpenAI Compatible, with API keys stored in Visual Studio Code's Secret Storage via "Git Map: Set AI API Key..."). Nothing is sent until you ask for an explanation, and the first time it shows which model & destination the commit is sent to.
 * The editor's context menu has a "Git Map" submenu with these actions (each can be moved directly into the context menu, or hidden, with `git-map.editorContextMenu`). Escape closes the drawer, inline window or File Blame that was shown most recently. No other extension is required: everything uses Visual Studio Code's API and Git.
 * A broad range of configurable settings (e.g. graph style, branch colours, and more...). See the 'Extension Settings' section below for more information.
 * "Git Map" launch button in the Status Bar
@@ -102,7 +102,10 @@ Every setting is described in the Visual Studio Code Settings Editor (search for
 
 A summary of the Git Map extension settings are:
 * **AI**:
-    * **Explain Commit**: Show an "Explain" tab in the Commit Details View, where a language model provided in Visual Studio Code explains the commit (default: disabled).
+    * **Base Url**: Override the base URL of the OpenAI-compatible API when calling a provider directly (`git-map.ai.baseUrl`).
+    * **Explain Commit**: Show an "Explain" tab in the Commit Details View, where a language model explains the commit (default: disabled).
+    * **Model**: The model ID (or endpoint ID) sent when calling a provider directly (`git-map.ai.model`).
+    * **Provider**: The provider of the language model (`git-map.ai.provider`): `VS Code` (default), `DeepSeek`, `Kimi`, `Doubao`, `Qwen`, `OpenAI`, `Ollama`, or `OpenAI Compatible`. API keys are managed with the `Git Map: Set AI API Key...` and `Git Map: Clear AI API Key` commands.
 * **Blame**:
     * **Current Line**: Show who last changed the line the cursor is on, and when & why (the author, date & subject of the commit), at the end of the line in the editor (default: enabled).
     * **Ignore Revs File**: The file listing the commits that blame ignores, e.g. commits that only reformat code (default: `.git-blame-ignore-revs`, used when it exists).

@@ -104,10 +104,24 @@ The context menus, and the key of each of their actions:
 
 ## Explain Commit
 
-`git-map.ai.explainCommit.enabled` (default: `false`) shows an "Explain" tab in the Commit Details View. A language model provided in Visual Studio Code (by an extension such as GitHub Copilot Chat, Visual Studio Code 1.90 or later) explains the commit: a summary, its main changes, and what's worth checking.
+`git-map.ai.explainCommit.enabled` (default: `false`) shows an "Explain" tab in the Commit Details View, where a language model explains the commit: a summary, its main changes, and what's worth checking.
 
-* Nothing is sent until you open the tab and choose "Explain". The first time, it says what's sent and lets you choose the model (unless you choose not to be asked again).
-* The message of the commit and its changes (up to 3,000 lines; the rest isn't sent) are sent to the model you chose, through Visual Studio Code. Git Map doesn't send them anywhere else.
+`git-map.ai.provider` (default: `"VS Code"`) chooses how the model is called:
+
+| Provider | Default Base URL | Default Model | API Key Required |
+|---|---|---|---|
+| `VS Code` | *(Language Model API in Visual Studio Code 1.90+, e.g. GitHub Copilot Chat)* | — | No |
+| `DeepSeek` | `https://api.deepseek.com` | `deepseek-chat` | Yes |
+| `Kimi` | `https://api.moonshot.cn/v1` | *(set `git-map.ai.model`)* | Yes |
+| `Doubao` | `https://ark.cn-beijing.volces.com/api/v3` | *(set `git-map.ai.model`)* | Yes |
+| `Qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | Yes |
+| `OpenAI` | `https://api.openai.com/v1` | *(set `git-map.ai.model`)* | Yes |
+| `Ollama` | `http://localhost:11434/v1` | *(set `git-map.ai.model`)* | No |
+| `OpenAI Compatible` | *(set `git-map.ai.baseUrl`)* | *(set `git-map.ai.model`)* | Optional |
+
+* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). `git-map.ai.provider`, `git-map.ai.baseUrl` & `git-map.ai.model` are machine-scoped, so workspace `.vscode/settings.json` files can't redirect requests.
+* API keys are set per provider with `"Git Map: Set AI API Key..."` (or the "Set API Key…" button in the Explain tab when a key hasn't been set) and deleted with `"Git Map: Clear AI API Key"`. Keys are stored in Visual Studio Code's Secret Storage, never in settings.
+* Nothing is sent until you open the tab and choose "Explain". The first time, it says what's sent (the message of the commit, and up to 3,000 lines of its changes) and names the model, provider & destination host (unless you choose not to be asked again).
 * The explanation is written in the language Git Map is displayed in (`git-map.language`), and may be inaccurate.
 
 ## Max Depth of Repo Search

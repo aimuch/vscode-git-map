@@ -171,6 +171,7 @@ export const window = {
 	createTerminal: jest.fn(() => mocks.terminal),
 	showErrorMessage: jest.fn(),
 	showInformationMessage: jest.fn(),
+	showInputBox: jest.fn(),
 	showOpenDialog: jest.fn(),
 	showQuickPick: jest.fn(),
 	showSaveDialog: jest.fn()

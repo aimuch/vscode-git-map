@@ -187,7 +187,9 @@
 			case 'viewBisectLog':
 				return { command: 'viewBisectLog', error: null };
 			case 'loadLanguageModels':
-				return { command: 'loadLanguageModels', models: [{ id: 'm1', name: 'Model One', vendor: 'copilot' }, { id: 'm2', name: 'Model Two', vendor: 'copilot' }], error: null };
+				return { command: 'loadLanguageModels', models: [{ id: 'm1', name: 'Model One', vendor: 'copilot', endpoint: null }, { id: 'm2', name: 'Model Two', vendor: 'copilot', endpoint: null }], needsApiKey: false, error: null };
+			case 'setAiApiKey':
+				return { command: 'loadLanguageModels', models: [{ id: 'deepseek-chat', name: 'deepseek-chat', vendor: 'DeepSeek', endpoint: 'api.deepseek.com' }], needsApiKey: false, error: null };
 			case 'explainCommit':
 				// The first part of the explanation (the rest is sent by the check)
 				return { command: 'explainCommit', commitHash: msg.commitHash, text: '## Summary\nThis commit **fixes** a bug', done: false, model: 'Model One', truncated: false, error: null };
@@ -1738,7 +1740,18 @@
 				mouse(view.querySelector('[data-explain="copy"]'), 'click');
 				const copied = await waitFor('the explanation to be copied', () => requestsOf('copyToClipboard').filter((msg) => msg.type === 'Explanation').slice(-1)[0]);
 				assert(copied.data.startsWith('## Summary'), 'Unexpected copy: ' + JSON.stringify(copied));
-				return 'Asked first (2 models), explained by Model Two: ' + headings.join(' / ') + '; HTML escaped; copied';
+
+				// Direct provider: missing API key shows "Set API Key…", and once set shows the destination host
+				await openDetails(commitRow(1));
+				mouse(await waitFor('the Explain tab', () => document.querySelector('.cdvTab[data-tab="explain"]')), 'click');
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'loadLanguageModels', models: [], needsApiKey: true, error: 'Set the API key of DeepSeek with the "Git Map: Set AI API Key..." command.' } }));
+				const setKeyBtn = await waitFor('the Set API Key button', () => document.querySelector('#cdvExplainView [data-explain="setApiKey"]'));
+				assert(setKeyBtn.textContent === 'Set API Key\u2026', 'Unexpected button text: ' + setKeyBtn.textContent);
+				const setKeyCount = requestsOf('setAiApiKey').length;
+				mouse(setKeyBtn, 'click');
+				await waitFor('the setAiApiKey request & direct consent', () => requestsOf('setAiApiKey').length > setKeyCount && document.getElementById('explainConsentText') !== null);
+				assert(document.getElementById('explainConsentText').textContent.includes('sent to deepseek-chat (DeepSeek) at api.deepseek.com'), 'The consent doesn\'t name the direct endpoint: ' + document.getElementById('explainConsentText').textContent);
+				return 'Asked first (2 models), explained by Model Two: ' + headings.join(' / ') + '; HTML escaped; copied; Set API Key\u2026 & direct endpoint';
 			} finally {
 				initialState.config.explainCommit = false;
 				await closeDetails();

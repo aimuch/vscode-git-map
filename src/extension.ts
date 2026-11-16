@@ -15,6 +15,7 @@ import { RemoveFromHistory } from './removeFromHistory';
 import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
 import { VisualFileHistory } from './visualFileHistory';
+import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
 import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage } from './utils';
@@ -67,8 +68,11 @@ export async function activate(context: vscode.ExtensionContext) {
 	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration);
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
+	setAiSecretStorage(context.secrets);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('git-map.ai.setApiKey', (key?: unknown) => setApiKey(key)),
+		vscode.commands.registerCommand('git-map.ai.clearApiKey', () => clearApiKey()),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.workspace.onDidChangeConfiguration((event) => {
 			if (event.affectsConfiguration('git-map')) {

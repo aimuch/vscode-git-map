@@ -410,7 +410,8 @@ export interface GitFileTimelineCommit {
 export interface LanguageModelInfo {
 	readonly id: string;
 	readonly name: string;
-	readonly vendor: string;
+	readonly vendor: string; // The provider (e.g. "copilot", or the name of a provider whose API is called directly)
+	readonly endpoint: string | null; // The host the commit is sent to, when the API of the provider is called directly (NULL => provided in Visual Studio Code)
 }
 
 export interface CodeReview {
@@ -1968,6 +1969,11 @@ export interface RequestLoadLanguageModels extends BaseMessage {
 export interface ResponseLoadLanguageModels extends ResponseWithErrorInfo {
 	readonly command: 'loadLanguageModels';
 	readonly models: ReadonlyArray<LanguageModelInfo>;
+	readonly needsApiKey: boolean; // The API key of the provider configured hasn't been set
+}
+
+export interface RequestSetAiApiKey extends BaseMessage {
+	readonly command: 'setAiApiKey';
 }
 
 export interface RequestExplainCommit extends RepoRequest {
@@ -2077,6 +2083,7 @@ export type RequestMessage =
 	| RequestBisect
 	| RequestLoadBisectState
 	| RequestViewBisectLog
+	| RequestSetAiApiKey
 	| RequestSavePatch
 	| RequestCheckPatch
 	| RequestApplyPatch

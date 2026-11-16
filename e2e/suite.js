@@ -7,6 +7,7 @@
  */
 const cp = require('child_process');
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const vscode = require('vscode');
@@ -1077,6 +1078,64 @@ async function run() {
 			return 'Refused while turned off; explained by ' + explained.model;
 		} finally {
 			await config().update('ai.explainCommit.enabled', undefined, vscode.ConfigurationTarget.Global);
+		}
+	});
+
+	await check('explain-commit-direct', '[AI] Explaining a commit can call an OpenAI-compatible API directly (git-map.ai.provider), storing the API key in Secret Storage and streaming the explanation', async () => {
+		const view = await getView();
+		const { respond } = undoHelpers(view, main);
+		const config = () => vscode.workspace.getConfiguration('git-map');
+		const commands = await vscode.commands.getCommands(true);
+		assert(commands.includes('git-map.ai.setApiKey') && commands.includes('git-map.ai.clearApiKey'), 'AI API key commands aren\'t registered');
+
+		let receivedAuth = '', receivedBody = null, receivedUrl = '';
+		const server = http.createServer((req, res) => {
+			receivedUrl = req.url || '';
+			receivedAuth = String(req.headers['authorization'] || '');
+			let body = '';
+			req.setEncoding('utf8');
+			req.on('data', (chunk) => { body += chunk; });
+			req.on('end', () => {
+				receivedBody = JSON.parse(body);
+				res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+				res.write('data: {"choices":[{"delta":{"content":"## Summary\\n"}}]}\n\n');
+				res.write('data: {"choices":[{"delta":{"content":"Explained directly by DeepSeek."}}]}\n\n');
+				res.end('data: [DONE]\n\n');
+			});
+		});
+		await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+		const host = '127.0.0.1:' + server.address().port;
+
+		try {
+			await config().update('ai.explainCommit.enabled', true, vscode.ConfigurationTarget.Global);
+			await config().update('ai.provider', 'DeepSeek', vscode.ConfigurationTarget.Global);
+			await config().update('ai.baseUrl', 'http://' + host + '/v1', vscode.ConfigurationTarget.Global);
+			await vscode.commands.executeCommand('git-map.ai.clearApiKey');
+
+			const missingKey = await respond({ command: 'loadLanguageModels' }, 'loadLanguageModels');
+			assert(missingKey.models.length === 0 && missingKey.needsApiKey === true && missingKey.error.includes('Set AI API Key'), 'Expected missing API key error: ' + JSON.stringify(missingKey));
+
+			const stored = await vscode.commands.executeCommand('git-map.ai.setApiKey', 'e2e-deepseek-key');
+			assert(stored === true, 'The API key wasn\'t stored');
+
+			const loaded = await respond({ command: 'loadLanguageModels' }, 'loadLanguageModels');
+			assert(JSON.stringify(loaded) === JSON.stringify({ command: 'loadLanguageModels', models: [{ id: 'deepseek-chat', name: 'deepseek-chat', vendor: 'DeepSeek', endpoint: host }], needsApiKey: false, error: null }), 'Unexpected direct model: ' + JSON.stringify(loaded));
+
+			const explained = await respond({ command: 'explainCommit', repo: main, commitHash: fixtures.firstCommit, modelId: 'deepseek-chat' }, 'explainCommit', (msg) => msg.done);
+			assert(receivedUrl === '/v1/chat/completions' && receivedAuth === 'Bearer e2e-deepseek-key', 'Unexpected request headers/URL: ' + receivedUrl + ', ' + receivedAuth);
+			assert(receivedBody && receivedBody.model === 'deepseek-chat' && receivedBody.stream === true && receivedBody.messages[0].content.includes('First commit'), 'Unexpected request body');
+			assert(explained.error === null && explained.model === 'deepseek-chat (DeepSeek)' && explained.text === '## Summary\nExplained directly by DeepSeek.', 'Unexpected explanation: ' + JSON.stringify(explained));
+
+			await vscode.commands.executeCommand('git-map.ai.clearApiKey');
+			const cleared = await respond({ command: 'loadLanguageModels' }, 'loadLanguageModels');
+			assert(cleared.needsApiKey === true, 'The API key wasn\'t cleared: ' + JSON.stringify(cleared));
+			return 'needsApiKey → stored in Secret Storage → streamed from ' + host + ' → cleared';
+		} finally {
+			await vscode.commands.executeCommand('git-map.ai.clearApiKey');
+			for (const setting of ['ai.explainCommit.enabled', 'ai.provider', 'ai.baseUrl', 'ai.model']) {
+				await config().update(setting, undefined, vscode.ConfigurationTarget.Global);
+			}
+			await new Promise((resolve) => server.close(resolve));
 		}
 	});
 

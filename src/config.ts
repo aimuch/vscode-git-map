@@ -1,3 +1,4 @@
+import { AiProvider } from './aiProviders';
 import * as vscode from 'vscode';
 import {
 	AppearanceConfig,
@@ -446,6 +447,30 @@ class Config {
 	 */
 	get explainCommit() {
 		return !!this.config.get('ai.explainCommit.enabled', false);
+	}
+
+	/**
+	 * Get the value of the `git-map.ai.provider` Extension Setting.
+	 */
+	get aiProvider(): AiProvider {
+		const value = this.config.get('ai.provider', 'VS Code');
+		return typeof value === 'string' && (<string[]>['VS Code', 'DeepSeek', 'Kimi', 'Doubao', 'Qwen', 'OpenAI', 'Ollama', 'OpenAI Compatible']).includes(value) ? <AiProvider>value : AiProvider.VsCode;
+	}
+
+	/**
+	 * Get the value of the `git-map.ai.baseUrl` Extension Setting.
+	 */
+	get aiBaseUrl() {
+		const value = this.config.get('ai.baseUrl', '');
+		return typeof value === 'string' ? value.trim() : '';
+	}
+
+	/**
+	 * Get the value of the `git-map.ai.model` Extension Setting.
+	 */
+	get aiModel() {
+		const value = this.config.get('ai.model', '');
+		return typeof value === 'string' ? value.trim() : '';
 	}
 
 	/**

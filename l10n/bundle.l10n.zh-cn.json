@@ -1258,5 +1258,21 @@
 	"Reset Zoom": "重置缩放",
 	"Files": "文件",
 	"Stash {0} Files": "储藏 {0} 个文件",
-	"Stash 1 File": "储藏 1 个文件"
+	"Stash 1 File": "储藏 1 个文件",
+	"Choose a provider whose API Git Map calls directly in the \"git-map.ai.provider\" setting first (the models provided in Visual Studio Code don't need an API key).": "请先在 \"git-map.ai.provider\" 设置中选择一个由 Git Map 直接调用其 API 的提供方（Visual Studio Code 中提供的模型不需要 API Key）。",
+	"Git Map: Set AI API Key": "Git Map: 设置 AI API Key",
+	"The API key of {0}. It's stored in the Secret Storage of Visual Studio Code, and only sent to {1}.": "{0} 的 API Key。它会保存在 Visual Studio Code 的机密存储中，且仅发送至 {1}。",
+	"The API key can't be empty.": "API Key 不能为空。",
+	"The API key of {0} was stored.": "已保存 {0} 的 API Key。",
+	"The API key of {0} was deleted.": "已删除 {0} 的 API Key。",
+	"Set the base URL of the API of {0} in the \"git-map.ai.baseUrl\" setting.": "请在 \"git-map.ai.baseUrl\" 设置中填写 {0} 的 API 基础地址。",
+	"The base URL of the API must start with https:// or http:// (in the \"git-map.ai.baseUrl\" setting).": "API 基础地址必须以 https:// 或 http:// 开头（在 \"git-map.ai.baseUrl\" 设置中）。",
+	"Set the model of {0} to use in the \"git-map.ai.model\" setting.": "请在 \"git-map.ai.model\" 设置中填写要使用的 {0} 模型。",
+	"Set the API key of {0} with the \"Git Map: Set AI API Key...\" command.": "请使用“Git Map: 设置 AI API Key...”命令设置 {0} 的 API Key。",
+	"This version of Visual Studio Code can't call the API (it requires Visual Studio Code 1.82 or later).": "当前版本的 Visual Studio Code 无法调用该 API（需要 Visual Studio Code 1.82 或更高版本）。",
+	"The API returned an error ({0}): {1}": "API 返回错误（{0}）：{1}",
+	"The API returned an error: {0}": "API 返回错误：{0}",
+	"Unable to call the API at {0}: {1}": "无法调用位于 {0} 的 API：{1}",
+	"The message of the commit and its changes (up to 3,000 lines) are sent to {0} ({1}) at {2}. Git Map doesn't send them anywhere else.": "提交说明及其更改（最多 3,000 行）会发送到 {2} 的 {0}（{1}）。Git Map 不会将其发送到其他任何地方。",
+	"Set API Key": "设置 API Key"
 }

@@ -1,6 +1,7 @@
 import * as vscode from './mocks/vscode';
 jest.mock('vscode', () => vscode, { virtual: true });
 
+import { AiProvider } from '../src/aiProviders';
 import { getConfig } from '../src/config';
 import { CommitDetailsViewLocation, CommitOrdering, DateFormatType, DateType, FileViewType, GitResetMode, GraphStyle, GraphUncommittedChangesStyle, RepoDropdownOrder, SquashMessageFormat, TabIconColourTheme, TagType } from '../src/types';
 
@@ -2965,6 +2966,30 @@ describe('Config', () => {
 	describe('retainContextWhenHidden', testBooleanExtensionSetting('retainContextWhenHidden', 'retainContextWhenHidden', true));
 
 	describe('showStatusBarItem', testBooleanExtensionSetting('showStatusBarItem', 'showStatusBarItem', true));
+
+	describe('ai', () => {
+		describe('explainCommit', testBooleanExtensionSetting('explainCommit', 'ai.explainCommit.enabled', false));
+
+		it('Should return the configured AI provider, base URL (trimmed) & model (trimmed), falling back to defaults', () => {
+			expect(config.aiProvider).toBe(AiProvider.VsCode);
+			expect(config.aiBaseUrl).toBe('');
+			expect(config.aiModel).toBe('');
+
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'DeepSeek');
+			vscode.mockExtensionSettingReturnValue('ai.baseUrl', '  https://example.com/v1  ');
+			vscode.mockExtensionSettingReturnValue('ai.model', '  deepseek-reasoner  ');
+			expect(config.aiProvider).toBe(AiProvider.DeepSeek);
+			expect(config.aiBaseUrl).toBe('https://example.com/v1');
+			expect(config.aiModel).toBe('deepseek-reasoner');
+
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'Unknown');
+			vscode.mockExtensionSettingReturnValue('ai.baseUrl', 123);
+			vscode.mockExtensionSettingReturnValue('ai.model', null);
+			expect(config.aiProvider).toBe(AiProvider.VsCode);
+			expect(config.aiBaseUrl).toBe('');
+			expect(config.aiModel).toBe('');
+		});
+	});
 
 	describe('tabIconColourTheme', () => {
 		it('Should return TabIconColourTheme.Colour when the configuration value is "colour"', () => {

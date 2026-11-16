@@ -1,7 +1,7 @@
 /**
- * The Explain tab of the Commit Details View (when `git-map.ai.explainCommit.enabled` is on): a language model provided in Visual Studio
- * Code (e.g. by GitHub Copilot) explains the commit. Nothing is sent until the person asks for it, and the first time they confirm which
- * model the commit is sent to (unless they choose not to be asked again).
+ * The Explain tab of the Commit Details View (when `git-map.ai.explainCommit.enabled` is on): a language model (provided in Visual Studio
+ * Code, e.g. by GitHub Copilot, or called directly via `git-map.ai.provider`) explains the commit. Nothing is sent until the person asks
+ * for it, and the first time they confirm which model & destination the commit is sent to (unless they choose not to be asked again).
  */
 class CommitExplainer {
 	public static readonly ICON = '<svg class="explainIcon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></svg>';
@@ -9,6 +9,7 @@ class CommitExplainer {
 	private readonly view: GitGraphView;
 	private models: ReadonlyArray<GG.LanguageModelInfo> | null = null;
 	private modelsError: GG.ErrorInfo = null;
+	private needsApiKey: boolean = false;
 	private readonly results: Map<string, { text: string, done: boolean, model: string | null, truncated: boolean, error: GG.ErrorInfo }> = new Map();
 	private shownHash: string | null = null;
 
@@ -37,6 +38,9 @@ class CommitExplainer {
 					this.start(hash);
 					break;
 				}
+				case 'setApiKey':
+					sendMessage({ command: 'setAiApiKey' });
+					break;
 				case 'regenerate':
 					this.start(hash);
 					break;
@@ -64,7 +68,7 @@ class CommitExplainer {
 			this.start(hash);
 			return;
 		}
-		if (this.models === null && this.modelsError === null) sendMessage({ command: 'loadLanguageModels' });
+		if (this.models === null || this.modelsError !== null) sendMessage({ command: 'loadLanguageModels' });
 		this.render();
 	}
 
@@ -75,6 +79,7 @@ class CommitExplainer {
 	public processLoadLanguageModelsResponse(msg: GG.ResponseLoadLanguageModels) {
 		this.models = msg.models;
 		this.modelsError = msg.models.length === 0 ? msg.error : null;
+		this.needsApiKey = msg.models.length === 0 && msg.needsApiKey;
 		this.render();
 	}
 
@@ -118,17 +123,23 @@ class CommitExplainer {
 	}
 
 	/**
-	 * Get the text saying what's sent to a language model, and which model it is.
+	 * Get the text saying what's sent to a language model, which model it is, and where it's sent.
 	 */
 	private static getConsentText(model: GG.LanguageModelInfo | null) {
-		return model !== null
-			? t('The message of the commit and its changes (up to 3,000 lines) are sent to {0}, provided by {1} in Visual Studio Code. Git Map doesn\'t send them anywhere else.', '<b>' + escapeHtml(model.name) + '</b>', '<b>' + escapeHtml(CommitExplainer.getProviderName(model)) + '</b>')
-			: t('The message of the commit and its changes (up to 3,000 lines) are sent to the language model you choose, provided in Visual Studio Code (e.g. by GitHub Copilot). Git Map doesn\'t send them anywhere else.');
+		if (model === null) {
+			return t('The message of the commit and its changes (up to 3,000 lines) are sent to the language model you choose, provided in Visual Studio Code (e.g. by GitHub Copilot). Git Map doesn\'t send them anywhere else.');
+		}
+		if (model.endpoint !== null) {
+			return t('The message of the commit and its changes (up to 3,000 lines) are sent to {0} ({1}) at {2}. Git Map doesn\'t send them anywhere else.', '<b>' + escapeHtml(model.name) + '</b>', escapeHtml(CommitExplainer.getProviderName(model)), '<b>' + escapeHtml(model.endpoint) + '</b>');
+		}
+		return t('The message of the commit and its changes (up to 3,000 lines) are sent to {0}, provided by {1} in Visual Studio Code. Git Map doesn\'t send them anywhere else.', '<b>' + escapeHtml(model.name) + '</b>', '<b>' + escapeHtml(CommitExplainer.getProviderName(model)) + '</b>');
 	}
 
 	private getConsentHtml() {
 		if (this.modelsError !== null) {
-			return '<div class="explainConsent"><div class="explainError">' + SVG_ICONS.alert + escapeHtml(this.modelsError) + '</div></div>';
+			return '<div class="explainConsent"><div class="explainError">' + SVG_ICONS.alert + escapeHtml(this.modelsError) + '</div>' +
+				(this.needsApiKey ? '<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="setApiKey">' + t('Set API Key') + ELLIPSIS + '</button></div>' : '') +
+				'</div>';
 		}
 		const models = this.models, chosen = typeof globalState.explainCommitModel === 'string' ? globalState.explainCommitModel : null;
 		const first = models !== null && models.length > 0 ? (models.find((model) => model.id === chosen) || models[0]) : null;

@@ -939,7 +939,14 @@ export class GitGraphView extends Disposable {
 				break;
 			case 'loadLanguageModels': {
 				const result = await getLanguageModels();
-				this.sendMessage({ command: 'loadLanguageModels', models: result.models, error: result.error });
+				this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
+				break;
+			}
+			case 'setAiApiKey': {
+				// Ask for the API key (from the Explain tab), then load the models again
+				await vscode.commands.executeCommand('git-map.ai.setApiKey');
+				const result = await getLanguageModels();
+				this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
 				break;
 			}
 			case 'explainCommit':

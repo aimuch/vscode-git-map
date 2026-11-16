@@ -25,7 +25,7 @@ Git Map has two parts that communicate with messages: the extension (`src/`, run
 | `removeFromHistory.ts`, `historyRewrite.ts`, `historyFilter.ts` | Remove Files from History: the commands & their confirmation (`removeFromHistory.ts`), running `git fast-export` & `git fast-import`, the backup, restoring it & cleaning up (`historyRewrite.ts`, which doesn't depend on Visual Studio Code), and the filter that removes the files from the fast-export stream (`historyFilter.ts`). |
 | `gitFeatures.ts` | The Git operations of comparing & cleaning up branches, rewriting the latest commits, bisecting, patches, stashing & restoring files, the timeline of a file, and the changes of a commit that's explained (doesn't depend on Visual Studio Code). |
 | `visualFileHistory.ts` | The Visual File History panel (a Webview with its own page). |
-| `explainCommit.ts` | Explains a commit with a language model provided in Visual Studio Code (the Language Model API, when it exists). |
+| `explainCommit.ts`, `aiProviders.ts` | Explains a commit with a language model provided in Visual Studio Code (the Language Model API, when it exists) or by calling an OpenAI-compatible Chat Completions API directly (`aiProviders.ts`, with API keys in Visual Studio Code's Secret Storage). |
 | `remoteLinks.ts` | Links to lines & commits on the web pages of remote repositories. |
 | `settingsMigration.ts` | Copies the Extension Settings named `git-graph.*` (before version 2.1.0, and by the original Git Graph extension) to `git-map.*` when Git Map starts. |
 | `l10n.ts` | Translation of messages (see [Localisation](#localisation)). |
