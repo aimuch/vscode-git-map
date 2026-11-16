@@ -137,7 +137,7 @@ function getLabel(history: GitLineHistory) {
  * Get the body of the comment of a change: its subject, how it changed the lines, and links to its actions.
  */
 function getBody(entry: GitLineHistoryEntry) {
-	const uncommitted = entry.hash === UNCOMMITTED, args = encodeURIComponent(JSON.stringify([entry.hash]));
+	const uncommitted = entry.hash === UNCOMMITTED, args = encodeURIComponent(JSON.stringify([entry.hash])).replace(/[()]/g, (char) => char === '(' ? '%28' : '%29');
 	const body = new vscode.MarkdownString();
 	body.isTrusted = { enabledCommands: LINK_COMMANDS };
 	body.appendMarkdown('**');

@@ -68,9 +68,11 @@ declare global {
 		readonly maxCommits: number;
 		readonly onlyFollowFirstParent: boolean;
 		readonly expandedCommit: ExpandedCommit | null;
+		readonly activeCdvTab?: 'files' | 'message' | 'explain';
 		readonly scrollTop: number;
 		readonly findWidget: FindWidgetState;
 		readonly settingsWidget: SettingsWidgetState;
+		readonly branchCompare?: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null;
 	}
 
 

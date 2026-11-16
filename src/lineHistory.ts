@@ -10,7 +10,7 @@ import { Logger } from './logger';
 import { getRemoteCommitUrl, getRemoteFileUrl, getRemoteWebRepo } from './remoteLinks';
 import { RepoManager } from './repoManager';
 import { ErrorInfo, GitFileStatus, GitLineHistory, GitLineHistoryEntry, GitLineRange, LineHistoryLocation } from './types';
-import { UNCOMMITTED, abbrevCommit, copyToClipboard, getPathFromUri, getSelectedLines, openExternalUrl, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
+import { UNCOMMITTED, abbrevCommit, copyToClipboard, getPathFromUri, getSelectedLines, getSettingTarget, openExternalUrl, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 
@@ -60,6 +60,7 @@ export class LineHistory extends Disposable {
 	private readonly avatars: { [email: string]: string } = {};
 	private shown: ShownLineHistory | null = null;
 	private loadId: number = 0;
+	private loadCancellation: vscode.CancellationTokenSource | null = null;
 	private followTimeout: NodeJS.Timeout | null = null;
 
 	/**
@@ -118,6 +119,11 @@ export class LineHistory extends Disposable {
 			{
 				dispose: () => {
 					if (this.followTimeout !== null) clearTimeout(this.followTimeout);
+					if (this.loadCancellation !== null) {
+						this.loadCancellation.cancel();
+						this.loadCancellation.dispose();
+						this.loadCancellation = null;
+					}
 					if (LineHistory.instance === this) LineHistory.instance = null;
 				}
 			}
@@ -191,15 +197,25 @@ export class LineHistory extends Disposable {
 	 */
 	private async load(target: LineHistoryTarget, contents: string, maxCommits: number, location: LineHistoryLocation, reveal: boolean) {
 		const loadId = ++this.loadId;
-		if (location === LineHistoryLocation.Drawer) {
-			if (this.shown === null || !isSameTarget(this.shown.target, target)) this.drawer.show({ kind: 'loading', filePath: target.filePath, range: target.range });
-			if (reveal) await this.revealDrawer();
+		if (this.loadCancellation !== null) {
+			this.loadCancellation.cancel();
+			this.loadCancellation.dispose();
 		}
-		const history = await this.dataSource.getLineHistory(target.repo, target.filePath, target.range, contents, maxCommits);
-		if (loadId !== this.loadId) return;
-		this.shown = { target: target, history: history, maxCommits: maxCommits };
-		this.requestAvatars(target.repo, history);
-		this.present(location);
+		const cancellation = this.loadCancellation = new vscode.CancellationTokenSource();
+		try {
+			if (location === LineHistoryLocation.Drawer) {
+				if (this.shown === null || !isSameTarget(this.shown.target, target)) this.drawer.show({ kind: 'loading', filePath: target.filePath, range: target.range });
+				if (reveal) await this.revealDrawer();
+			}
+			const history = await this.dataSource.getLineHistory(target.repo, target.filePath, target.range, contents, maxCommits, cancellation.token);
+			if (loadId !== this.loadId || cancellation.token.isCancellationRequested) return;
+			this.shown = { target: target, history: history, maxCommits: maxCommits };
+			this.requestAvatars(target.repo, history);
+			this.present(location);
+		} finally {
+			cancellation.dispose();
+			if (this.loadCancellation === cancellation) this.loadCancellation = null;
+		}
 	}
 
 	/**
@@ -240,7 +256,8 @@ export class LineHistory extends Disposable {
 	 * @param location The location.
 	 */
 	private async switchLocation(location: LineHistoryLocation) {
-		await vscode.workspace.getConfiguration('git-map').update('lineHistory.location', location === LineHistoryLocation.InlineWindow ? 'Inline Window' : 'Drawer', vscode.ConfigurationTarget.Global);
+		const config = vscode.workspace.getConfiguration('git-map');
+		await config.update('lineHistory.location', location === LineHistoryLocation.InlineWindow ? 'Inline Window' : 'Drawer', getSettingTarget(config, 'lineHistory.location'));
 		if (this.shown === null) {
 			if (location === LineHistoryLocation.Drawer) await this.revealDrawer();
 			return;
@@ -259,7 +276,8 @@ export class LineHistory extends Disposable {
 	 * @param follow TRUE => Follow the cursor, FALSE => Stop following the cursor.
 	 */
 	private async setFollowCursor(follow: boolean) {
-		await vscode.workspace.getConfiguration('git-map').update('lineHistory.followCursor', follow, vscode.ConfigurationTarget.Global);
+		const config = vscode.workspace.getConfiguration('git-map');
+		await config.update('lineHistory.followCursor', follow, getSettingTarget(config, 'lineHistory.followCursor'));
 		this.updateContext();
 		const editor = vscode.window.activeTextEditor;
 		if (follow && typeof editor !== 'undefined') this.onSelectionChange(editor);

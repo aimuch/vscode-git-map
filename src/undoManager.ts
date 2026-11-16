@@ -13,11 +13,13 @@ interface HeadState {
 /**
  * How an action is undone.
  */
+type HeadResetMode = 'keep' | 'soft' | 'mixed';
+
 type UndoRecord = {
 	readonly kind: 'head'; // The action moved HEAD (or the current branch), which is moved back
 	readonly before: HeadState;
 	readonly after: HeadState;
-	readonly soft: boolean; // Move the current branch back with "git reset --soft" (keeping the changes it made staged), instead of "--keep"
+	readonly resetMode: HeadResetMode;
 } | {
 	readonly kind: 'createRef'; // The action created a branch or tag (and may have checked out the branch), which is deleted
 	readonly ref: string;
@@ -92,14 +94,15 @@ export class UndoManager {
 	 * when the action committed changes that were staged, or undid a commit).
 	 * @returns The value the action resolved to.
 	 */
-	public async trackHead<T>(repo: string, description: string, action: () => Promise<T>, succeeded: (value: T) => boolean, soft: boolean = false): Promise<T> {
+	public async trackHead<T>(repo: string, description: string, action: () => Promise<T>, succeeded: (value: T) => boolean, reset: boolean | HeadResetMode = false): Promise<T> {
 		delete this.records[repo];
 		const before = await this.getHeadState(repo);
 		const value = await action();
 		if (before !== null && succeeded(value)) {
 			const after = await this.getHeadState(repo);
 			if (after !== null && (after.hash !== before.hash || after.branch !== before.branch)) {
-				this.record(repo, description, { kind: 'head', before: before, after: after, soft: soft });
+				const resetMode: HeadResetMode = typeof reset === 'string' ? reset : reset ? 'soft' : 'keep';
+				this.record(repo, description, { kind: 'head', before: before, after: after, resetMode: resetMode });
 			}
 		}
 		return value;
@@ -235,7 +238,7 @@ export class UndoManager {
 				const head = await this.getHeadState(repo);
 				if (head === null || head.hash !== record.after.hash || head.branch !== record.after.branch) return changed;
 				error = record.after.branch === record.before.branch
-					? await this.run(repo, ['reset', record.soft ? '--soft' : '--keep', record.before.hash]) // Moves the current branch back, keeping uncommitted changes
+					? await this.run(repo, ['reset', '--' + record.resetMode, record.before.hash]) // Moves the current branch back, keeping uncommitted changes
 					: await this.run(repo, record.before.branch !== null ? ['checkout', record.before.branch] : ['checkout', '--detach', record.before.hash]);
 				break;
 			}

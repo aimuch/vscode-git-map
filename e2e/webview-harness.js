@@ -1726,24 +1726,31 @@
 				document.getElementById('explainModel').value = 'm2';
 				document.getElementById('explainModel').dispatchEvent(new Event('change', { bubbles: true }));
 				assert(document.getElementById('explainConsentText').textContent.includes('sent to Model Two, provided by GitHub Copilot'), 'The consent doesn\'t name the model chosen: ' + document.getElementById('explainConsentText').textContent);
+				document.getElementById('explainDontAsk').checked = true;
 				mouse(consent.querySelector('[data-explain="explain"]'), 'click');
 				const request = await waitFor('the commit to be explained', () => requestsOf('explainCommit').length > explained ? requestsOf('explainCommit').slice(-1)[0] : null);
-				assert(request.commitHash === hash(3) && request.modelId === 'm2', 'Unexpected request: ' + JSON.stringify(request));
-				await waitFor('the first part of the explanation', () => document.querySelector('#cdvExplainView .explainLoading') !== null && document.querySelector('#cdvExplainView .explainText') !== null);
-				window.dispatchEvent(new MessageEvent('message', { data: { command: 'explainCommit', commitHash: hash(3), done: true, model: 'Model Two', truncated: false, error: null, text: '## Summary\nThis commit **fixes** a bug in `parse()`.\n\n## Changes\n- Handles <img src=x onerror="window.e2eInjected=1"> empty input\n- Adds a test\n\n## Worth checking\nNothing in particular.' } }));
+				assert(request.commitHash === hash(3) && request.modelId === 'm2' && request.endpoint === null, 'Unexpected request: ' + JSON.stringify(request));
+				await waitFor('the first part of the explanation & Stop button', () => document.querySelector('#cdvExplainView .explainLoading [data-explain="stop"]') !== null && document.querySelector('#cdvExplainView .explainText') !== null);
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'explainCommit', commitHash: hash(3), done: true, model: 'Model Two', truncated: false, error: null, text: '## Summary\nThis commit **fixes** a bug in `parse()` and ignores `**/out/**`.\n\n```ts\nconst ok = a < b;\n```\n\n## Changes\n- Handles <img src=x onerror="window.e2eInjected=1"> empty input\n- Adds a test\n\n## Worth checking\nNothing in particular.' } }));
 				const view = await waitFor('the explanation', () => document.querySelector('#cdvExplainView .explainFooter') ? document.getElementById('cdvExplainView') : null);
 				const headings = Array.from(view.querySelectorAll('.explainHeading')).map((elem) => elem.textContent);
-				assert(JSON.stringify(headings) === JSON.stringify(['Summary', 'Changes', 'Worth checking']) && view.querySelectorAll('.explainText li').length === 2 && view.querySelector('.explainText code').textContent === 'parse()' && view.querySelector('.explainText b').textContent === 'fixes', 'Unexpected explanation: ' + view.innerHTML.substring(0, 300));
+				const codes = Array.from(view.querySelectorAll('.explainText p code')).map((elem) => elem.textContent);
+				assert(JSON.stringify(headings) === JSON.stringify(['Summary', 'Changes', 'Worth checking']) && view.querySelectorAll('.explainText li').length === 2 && JSON.stringify(codes) === JSON.stringify(['parse()', '**/out/**']) && view.querySelector('.explainText pre.explainCode code').textContent === 'const ok = a < b;' && view.querySelector('.explainText b').textContent === 'fixes', 'Unexpected explanation: ' + view.innerHTML.substring(0, 300));
 				assert(view.querySelector('img') === null && typeof window.e2eInjected === 'undefined' && view.textContent.includes('<img src=x'), 'HTML in the explanation was rendered');
-				assert(view.querySelector('.explainFooter').textContent.includes('Model Two · may be inaccurate') && view.querySelector('.explainLoading') === null, 'Unexpected footer: ' + view.querySelector('.explainFooter').textContent);
+				assert(view.querySelector('.explainFooter').textContent.includes('Model Two · may be inaccurate') && view.querySelector('.explainFooter [data-explain="changeModel"]') !== null && view.querySelector('.explainLoading') === null, 'Unexpected footer: ' + view.querySelector('.explainFooter').textContent);
 				await shot('explain-result');
 				mouse(view.querySelector('[data-explain="copy"]'), 'click');
 				const copied = await waitFor('the explanation to be copied', () => requestsOf('copyToClipboard').filter((msg) => msg.type === 'Explanation').slice(-1)[0]);
 				assert(copied.data.startsWith('## Summary'), 'Unexpected copy: ' + JSON.stringify(copied));
 
-				// Direct provider: missing API key shows "Set API Key…", and once set shows the destination host
+				// Switching to a direct provider invalidates the Copilot "Don't ask again" consent, keeps the Explain tab active, and re-prompts for the new destination host
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'loadLanguageModels', models: [{ id: 'qwen3:8b', name: 'qwen3:8b', vendor: 'Ollama', endpoint: 'localhost:11434' }], needsApiKey: false, error: null } }));
+				const explainedBeforeDirect = requestsOf('explainCommit').length;
 				await openDetails(commitRow(1));
-				mouse(await waitFor('the Explain tab', () => document.querySelector('.cdvTab[data-tab="explain"]')), 'click');
+				await waitFor('the direct consent card', () => document.getElementById('explainConsentText') !== null && document.getElementById('explainConsentText').textContent.includes('qwen3:8b (Ollama) at localhost:11434'));
+				assert(requestsOf('explainCommit').length === explainedBeforeDirect, 'Copilot consent leaked to direct provider without re-confirming');
+
+				// Missing API key shows "Set API Key…", and once set shows the destination host
 				window.dispatchEvent(new MessageEvent('message', { data: { command: 'loadLanguageModels', models: [], needsApiKey: true, error: 'Set the API key of DeepSeek with the "Git Map: Set AI API Key..." command.' } }));
 				const setKeyBtn = await waitFor('the Set API Key button', () => document.querySelector('#cdvExplainView [data-explain="setApiKey"]'));
 				assert(setKeyBtn.textContent === 'Set API Key\u2026', 'Unexpected button text: ' + setKeyBtn.textContent);
@@ -1751,8 +1758,11 @@
 				mouse(setKeyBtn, 'click');
 				await waitFor('the setAiApiKey request & direct consent', () => requestsOf('setAiApiKey').length > setKeyCount && document.getElementById('explainConsentText') !== null);
 				assert(document.getElementById('explainConsentText').textContent.includes('sent to deepseek-chat (DeepSeek) at api.deepseek.com'), 'The consent doesn\'t name the direct endpoint: ' + document.getElementById('explainConsentText').textContent);
-				return 'Asked first (2 models), explained by Model Two: ' + headings.join(' / ') + '; HTML escaped; copied; Set API Key\u2026 & direct endpoint';
+				return 'Asked first (2 models), target-scoped consent, explained by Model Two: ' + headings.join(' / ') + '; code/fences & HTML escaped; copied; Set API Key\u2026 & direct endpoint';
 			} finally {
+				globalState.explainCommitAccepted = false;
+				globalState.explainCommitAcceptedTarget = null;
+				if (document.querySelector('.cdvTab[data-tab="files"]') !== null) mouse(document.querySelector('.cdvTab[data-tab="files"]'), 'click');
 				initialState.config.explainCommit = false;
 				await closeDetails();
 			}

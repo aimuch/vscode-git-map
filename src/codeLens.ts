@@ -36,15 +36,26 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 	 * @param repoManager The Git Map RepoManager instance.
 	 * @param onDidChangeConfiguration The Event emitting when the configuration changes.
 	 */
-	constructor(dataSource: DataSource, repoManager: RepoManager, onDidChangeConfiguration: Event<vscode.ConfigurationChangeEvent>) {
+	constructor(dataSource: DataSource, repoManager: RepoManager, onDidChangeConfiguration: Event<vscode.ConfigurationChangeEvent>, onDidChangeGitState?: Event<void>) {
 		super();
 		this.dataSource = dataSource;
 		this.repoManager = repoManager;
+		const refresh = () => {
+			if (this.registration !== null) {
+				this.blames.clear();
+				this.onDidChangeCodeLensesEmitter.fire();
+			}
+		};
 		this.registerDisposables(
 			this.onDidChangeCodeLensesEmitter,
 			onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.codeLens.enabled')) this.updateRegistration();
+				if (event.affectsConfiguration('git-map.codeLens.enabled')) {
+					this.updateRegistration();
+				} else if (event.affectsConfiguration('git-map.blame.ignoreWhitespace') || event.affectsConfiguration('git-map.blame.ignoreRevsFile') || event.affectsConfiguration('git-map.language')) {
+					refresh();
+				}
 			}),
+			...(typeof onDidChangeGitState === 'function' ? [onDidChangeGitState(refresh)] : []),
 			vscode.workspace.onDidCloseTextDocument((document) => this.blames.delete(document.uri.toString())),
 			{
 				dispose: () => {
@@ -78,13 +89,13 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 	 */
 	public async provideCodeLenses(document: vscode.TextDocument, token: vscode.CancellationToken): Promise<vscode.CodeLens[]> {
 		if (!getConfig().codeLensEnabled) return [];
-		const filePath = getPathFromUri(document.uri), repo = this.repoManager.getRepoContainingFile(filePath);
-		if (repo === null) return [];
+		const file = await this.repoManager.getRepoAndPathOfFile(getPathFromUri(document.uri));
+		if (token.isCancellationRequested || file === null) return [];
 		const symbols = await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[] | undefined>('vscode.executeDocumentSymbolProvider', document.uri);
 		if (token.isCancellationRequested || typeof symbols === 'undefined' || symbols.length === 0) return [];
 		const ranges = getSymbolRanges(symbols, 1);
 		if (ranges.length === 0) return [];
-		const blame = await this.getBlame(document, repo, filePath.substring(repo.length + 1));
+		const blame = await this.getBlame(document, file.repo, file.path, token);
 		if (token.isCancellationRequested || blame === null) return [];
 		return ranges.map((range) => {
 			const title = getCodeLensTitle(blame, range.start.line, range.end.line);
@@ -102,13 +113,18 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 	 * @param document The document.
 	 * @param repo The repository containing the document's file.
 	 * @param filePath The path of the file (relative to the repository).
+	 * @param token The cancellation token.
 	 * @returns The blame, or NULL if the file couldn't be blamed (e.g. it isn't tracked).
 	 */
-	private getBlame(document: vscode.TextDocument, repo: string, filePath: string) {
+	private getBlame(document: vscode.TextDocument, repo: string, filePath: string, token: vscode.CancellationToken) {
 		const key = document.uri.toString(), cached = this.blames.get(key);
 		if (typeof cached !== 'undefined' && cached.version === document.version) return cached.blame;
-		const blame = this.dataSource.getFileBlame(repo, filePath, document.getText());
-		this.blames.set(key, { version: document.version, blame: blame });
+		const version = document.version;
+		const blame = this.dataSource.getFileBlame(repo, filePath, document.isDirty ? document.getText() : null, token).then((result) => {
+			if (token.isCancellationRequested && this.blames.get(key)?.blame === blame) this.blames.delete(key);
+			return result;
+		});
+		this.blames.set(key, { version: version, blame: blame });
 		return blame;
 	}
 }

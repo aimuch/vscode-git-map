@@ -61,6 +61,7 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 				refreshOrDisplayError(msg.error, t('Unable to Undo Commit'));
 				break;
 			case 'fixupCommit':
+				if (msg.error !== null) gitGraph.refresh(false);
 				refreshOrDisplayError(msg.error, t('Unable to Fix Up Commit'));
 				break;
 			case 'bisect':
@@ -79,6 +80,7 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 				gitGraph.actions.processCheckPatchResponse(msg);
 				break;
 			case 'applyPatch':
+				if (msg.error !== null) gitGraph.refresh(false);
 				refreshOrDisplayError(msg.error, t('Unable to Apply Patch'));
 				break;
 			case 'loadStashableFiles':

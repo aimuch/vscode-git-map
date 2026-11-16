@@ -9,6 +9,10 @@ const RECORD = '\x1e';
 const HASH_REGEXP = /^[0-9a-f]{40}([0-9a-f]{24})?$/;
 const EMPTY_TREE_HASH = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const MAX_EXPLAIN_DIFF_LINES = 3000;
+const MAX_EXPLAIN_LINE_CHARS = 500;
+const MAX_EXPLAIN_CHARS = 80000;
+const MAX_EXPLAIN_BYTES = 256 * 1024;
+const MAX_PATCH_BYTES = 25 * 1024 * 1024;
 
 /**
  * The result of a Git command that changes a repository: NULL if it succeeded, otherwise its error message.
@@ -78,7 +82,7 @@ export class GitFeatures {
 		const branches = await this.run(repo, ['for-each-ref', '--format=' + ['%(refname:short)', '%(objectname)', '%(upstream:short)', '%(upstream:track)', '%(committerdate:unix)', '%(authorname)'].join('%1f'), 'refs/heads']);
 		if (branches.code !== 0) return { defaultBranch: null, candidates: [], error: branches.stderr || 'Unable to read the branches.' };
 		const merged = new Set(defaultBranch !== null ? splitLines((await this.run(repo, ['for-each-ref', '--merged', defaultBranch, '--format=%(refname:short)', 'refs/heads'])).stdout) : []);
-		const remoteRefs = splitLines((await this.run(repo, ['for-each-ref', '--format=%(refname)', 'refs/remotes'])).stdout);
+		const remoteRefs = new Set(splitLines((await this.run(repo, ['for-each-ref', '--format=%(refname)', 'refs/remotes'])).stdout));
 		const remotes = splitLines((await this.run(repo, ['remote'])).stdout);
 		const worktreeBranches = new Set(splitLines((await this.run(repo, ['worktree', 'list', '--porcelain'])).stdout).filter((line) => line.startsWith('branch refs/heads/')).map((line) => line.substring(18)));
 		const defaultLocal = defaultBranch !== null ? defaultBranch.replace(new RegExp('^(' + remotes.map(escapeRegExp).join('|') + ')/'), '') : null;
@@ -87,13 +91,22 @@ export class GitFeatures {
 		for (const line of splitLines(branches.stdout)) {
 			const [name, hash, upstream, track, date, author] = line.split(FIELD);
 			if (typeof author === 'undefined' || name === current || name === defaultBranch || name === defaultLocal || worktreeBranches.has(name)) continue;
-			const isMerged = merged.has(name), upstreamGone = upstream !== '' && track === '[gone]';
+			let isMerged = merged.has(name);
+			const upstreamGone = upstream !== '' && track === '[gone]';
 			if (!isMerged && !upstreamGone) continue;
 			let unmergedCommits = 0;
 			if (!isMerged) {
 				// The commits that only this branch contains (which are lost if it's deleted)
 				const count = await this.run(repo, ['rev-list', '--count', 'refs/heads/' + name, '--not', '--exclude=' + name, '--branches', '--remotes', '--tags']);
 				unmergedCommits = parseInt(count.stdout.toString().trim()) || 0;
+				if (unmergedCommits > 0 && defaultBranch !== null) {
+					const cherry = await this.run(repo, ['cherry', defaultBranch, 'refs/heads/' + name]);
+					const cherryLines = splitLines(cherry.stdout);
+					if (cherry.code === 0 && cherryLines.length > 0 && cherryLines.every((cherryLine) => cherryLine.startsWith('- '))) {
+						isMerged = true;
+						unmergedCommits = 0;
+					}
+				}
 			}
 			candidates.push({
 				name: name,
@@ -104,7 +117,7 @@ export class GitFeatures {
 				unmergedCommits: unmergedCommits,
 				date: parseInt(date) || 0,
 				author: author,
-				remotes: remotes.filter((remote) => remoteRefs.includes('refs/remotes/' + remote + '/' + name))
+				remotes: remotes.filter((remote) => remoteRefs.has('refs/remotes/' + remote + '/' + name))
 			});
 		}
 		// The branches that can be deleted safely first, then the most recently changed
@@ -166,12 +179,30 @@ export class GitFeatures {
 	public async fixupCommit(repo: string, hash: string, sign: boolean): Promise<GitFeatureError> {
 		if (!HASH_REGEXP.test(hash)) return 'Invalid commit hash: ' + hash;
 		if ((await this.run(repo, ['diff', '--cached', '--quiet'])).code === 0) return 'There aren\'t any staged changes to add to the commit.';
-		const commit = await this.change(repo, ['commit', '--no-verify', '--fixup=' + hash].concat(sign ? ['-S'] : []));
+		const headBefore = await this.resolveCommit(repo, 'HEAD');
+		const commit = await this.change(repo, ['commit', '--no-verify', '-m', 'fixup! ' + hash].concat(sign ? ['-S'] : []));
 		if (commit !== null) return commit;
+		const fixupHash = await this.resolveCommit(repo, 'HEAD');
+		if (fixupHash === null) return 'Unable to resolve the fixup commit.';
 		const isRoot = (await this.run(repo, ['rev-parse', '-q', '--verify', hash + '^'])).code !== 0;
-		// The todo list made by --autosquash is used as it is, and no editor is opened for the messages
-		const args = ['-c', 'rebase.instructionFormat=%s', 'rebase', '--interactive', '--autosquash', '--autostash'].concat(sign ? ['-S'] : [], isRoot ? ['--root'] : [hash + '^']);
-		const rebase = await runGit(this.git, repo, args, null, null, { GIT_SEQUENCE_EDITOR: ':', GIT_EDITOR: ':' });
+		const revList = await this.run(repo, ['rev-list', '--reverse'].concat(isRoot ? ['HEAD'] : [hash + '^..HEAD']));
+		const commits = splitLines(revList.stdout).filter((c) => c !== fixupHash);
+		if (!commits.includes(hash)) {
+			if (headBefore !== null) await this.change(repo, ['reset', '--soft', headBefore]);
+			return 'Only commits of the current branch can be fixed up.';
+		}
+		const todoLines: string[] = [];
+		commits.forEach((c) => {
+			todoLines.push('pick ' + c);
+			if (c === hash) todoLines.push('fixup ' + fixupHash);
+		});
+		const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'git-map-fixup-')), todoFile = path.join(directory, 'git-rebase-todo').replace(/\\/g, '/');
+		fs.writeFileSync(todoFile, todoLines.join('\n') + '\n');
+		const args = ['rebase', '--interactive', '--autostash'].concat(sign ? ['-S'] : [], isRoot ? ['--root'] : [hash + '^']);
+		const rebase = await runGit(this.git, repo, args, null, null, { GIT_SEQUENCE_EDITOR: 'cp \'' + todoFile.replace(/'/g, '\'\\\'\'') + '\'', GIT_EDITOR: ':' });
+		const rebaseMerge = await this.getGitPath(repo, 'rebase-merge'), rebaseApply = await this.getGitPath(repo, 'rebase-apply');
+		const inProgress = (rebaseMerge !== null && fs.existsSync(rebaseMerge)) || (rebaseApply !== null && fs.existsSync(rebaseApply));
+		if (!inProgress) fs.rm(directory, { recursive: true, force: true }, () => { });
 		return rebase.code === 0 ? null : errorOf(rebase);
 	}
 
@@ -253,10 +284,13 @@ export class GitFeatures {
 	 */
 	public async getCommitsPatch(repo: string, hashes: ReadonlyArray<string>): Promise<{ patch: string, error: GitFeatureError }> {
 		const patches: string[] = [];
+		let totalBytes = 0;
 		for (const hash of hashes) {
 			if (!HASH_REGEXP.test(hash)) return { patch: '', error: 'Invalid commit hash: ' + hash };
-			const result = await this.run(repo, ['format-patch', '--stdout', '--binary', '--no-signature', '-1', hash]);
+			const result = await runGit(this.git, repo, ['format-patch', '--stdout', '--binary', '--no-signature', '-1', hash], null, null, undefined, MAX_PATCH_BYTES - totalBytes);
+			if (result.truncated) return { patch: '', error: 'The patch is larger than 25 MB.' };
 			if (result.code !== 0) return { patch: '', error: errorOf(result) };
+			totalBytes += result.stdout.length;
 			patches.push(result.stdout.toString());
 		}
 		return { patch: patches.join(''), error: null };
@@ -269,11 +303,13 @@ export class GitFeatures {
 	 * @returns The patch, and the error.
 	 */
 	public async getStashPatch(repo: string, hash: string): Promise<{ patch: string, error: GitFeatureError }> {
-		const tracked = await this.run(repo, ['diff', '--binary', '--no-color', '--no-ext-diff', hash + '^1', hash, '--']);
+		const tracked = await runGit(this.git, repo, ['diff', '--binary', '--no-color', '--no-ext-diff', hash + '^1', hash, '--'], null, null, undefined, MAX_PATCH_BYTES);
+		if (tracked.truncated) return { patch: '', error: 'The patch is larger than 25 MB.' };
 		if (tracked.code !== 0) return { patch: '', error: errorOf(tracked) };
 		let patch = tracked.stdout.toString();
 		if ((await this.run(repo, ['rev-parse', '-q', '--verify', hash + '^3'])).code === 0) {
-			const untracked = await this.run(repo, ['diff', '--binary', '--no-color', '--no-ext-diff', EMPTY_TREE_HASH, hash + '^3', '--']);
+			const untracked = await runGit(this.git, repo, ['diff', '--binary', '--no-color', '--no-ext-diff', EMPTY_TREE_HASH, hash + '^3', '--'], null, null, undefined, Math.max(1, MAX_PATCH_BYTES - tracked.stdout.length));
+			if (untracked.truncated) return { patch: '', error: 'The patch is larger than 25 MB.' };
 			if (untracked.code === 0) patch += untracked.stdout.toString();
 		}
 		return { patch: patch, error: null };
@@ -285,7 +321,8 @@ export class GitFeatures {
 	 * @returns The patch, and the error.
 	 */
 	public async getUncommittedPatch(repo: string): Promise<{ patch: string, error: GitFeatureError }> {
-		const result = await this.run(repo, ['diff', '--binary', '--no-color', '--no-ext-diff', 'HEAD', '--']);
+		const result = await runGit(this.git, repo, ['diff', '--binary', '--no-color', '--no-ext-diff', 'HEAD', '--'], null, null, undefined, MAX_PATCH_BYTES);
+		if (result.truncated) return { patch: '', error: 'The patch is larger than 25 MB.' };
 		return result.code === 0 ? { patch: result.stdout.toString(), error: null } : { patch: '', error: errorOf(result) };
 	}
 
@@ -373,14 +410,21 @@ export class GitFeatures {
 	 */
 	public async restoreFileFromStash(repo: string, hash: string, filePath: string, untracked: boolean, force: boolean): Promise<{ error: GitFeatureError, hasChanges: boolean }> {
 		if (!HASH_REGEXP.test(hash)) return { error: 'Invalid stash hash: ' + hash, hasChanges: false };
-		const status = await this.run(repo, ['status', '--porcelain', '--untracked-files=all', '--', filePath]);
+		const repoRoot = path.resolve(repo), absolutePath = path.resolve(repoRoot, filePath);
+		if (path.isAbsolute(filePath) || !absolutePath.startsWith(repoRoot + path.sep)) return { error: 'Invalid file path: ' + filePath, hasChanges: false };
+		const status = await this.run(repo, ['status', '--porcelain', '--untracked-files=all', '--', ':(literal)' + filePath]);
 		if (!force && status.stdout.toString().trim() !== '') return { error: null, hasChanges: true };
 		const source = untracked ? hash + '^3' : hash;
+		const restored = await this.change(repo, ['restore', '--source=' + source, '--worktree', '--', ':(literal)' + filePath]);
+		if (restored === null) return { error: null, hasChanges: false };
+		// Fallback for Git < 2.23 without `git restore`
 		const contents = await this.run(repo, ['show', source + ':' + filePath]);
-		if (contents.code !== 0) return { error: errorOf(contents), hasChanges: false };
+		if (contents.code !== 0) return { error: restored, hasChanges: false };
 		try {
-			const absolutePath = path.join(repo, filePath);
+			const realRepo = fs.realpathSync(repoRoot);
 			fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+			const realParent = fs.realpathSync(path.dirname(absolutePath));
+			if (realParent !== realRepo && !realParent.startsWith(realRepo + path.sep)) return { error: 'Invalid file path: ' + filePath, hasChanges: false };
 			fs.writeFileSync(absolutePath, contents.stdout);
 		} catch (error) {
 			return { error: 'Unable to write the file: ' + String(error), hasChanges: false };
@@ -396,16 +440,18 @@ export class GitFeatures {
 	 * @param repo The path of the repository.
 	 * @param filePath The path of the file (relative to the repository).
 	 * @param maxCommits The maximum number of commits.
+	 * @param revision The revision to trace from (defaults to HEAD).
 	 * @returns The commits (newest first), and the error.
 	 */
-	public async getFileTimeline(repo: string, filePath: string, maxCommits: number): Promise<{ commits: GitFileTimelineCommit[], error: GitFeatureError }> {
-		const result = await this.run(repo, ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--follow', '-M', '--max-count=' + maxCommits, '--format=' + RECORD + '%H' + FIELD + '%aN' + FIELD + '%aE' + FIELD + '%at' + FIELD + '%s', '--numstat', '--summary', '--', filePath]);
+	public async getFileTimeline(repo: string, filePath: string, maxCommits: number, revision: string = 'HEAD'): Promise<{ commits: GitFileTimelineCommit[], error: GitFeatureError }> {
+		const rev = revision === 'HEAD' || HASH_REGEXP.test(revision) ? revision : 'HEAD';
+		const result = await this.run(repo, ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--follow', '-M', '--max-count=' + maxCommits, '--format=' + RECORD + '%H' + FIELD + '%aN' + FIELD + '%aE' + FIELD + '%at' + FIELD + '%s', '--numstat', '--summary', rev, '--', filePath]);
 		if (result.code !== 0) return { commits: [], error: errorOf(result) };
 		const commits: GitFileTimelineCommit[] = [];
 		result.stdout.toString().split(RECORD).slice(1).forEach((record) => {
 			const recordLines = record.split(/\r?\n/), header = recordLines[0].split(FIELD);
 			if (header.length < 5) return;
-			let additions = 0, deletions = 0, path = filePath, added = false;
+			let additions = 0, deletions = 0, currentPath = filePath, oldFilePath: string | null = null, added = false;
 			recordLines.slice(1).forEach((line) => {
 				if (line.startsWith(' create mode ')) added = true;
 				const fields = line.split('\t');
@@ -413,9 +459,14 @@ export class GitFeatures {
 				additions += parseInt(fields[0]) || 0;
 				deletions += parseInt(fields[1]) || 0;
 				const changedPath = fields.slice(2).join('\t'), arrow = changedPath.indexOf(' => ');
-				path = arrow > -1 ? changedPath.replace(/^(.*)\{(.*) => (.*)\}(.*)$/, '$1$3$4').replace(/^.* => /, '').replace(/\/\//g, '/') : changedPath;
+				if (arrow > -1) {
+					oldFilePath = changedPath.replace(/^(.*)\{(.*) => (.*)\}(.*)$/, '$1$2$4').replace(/ => .*$/, '').replace(/\/\//g, '/');
+					currentPath = changedPath.replace(/^(.*)\{(.*) => (.*)\}(.*)$/, '$1$3$4').replace(/^.* => /, '').replace(/\/\//g, '/');
+				} else {
+					currentPath = changedPath;
+				}
 			});
-			commits.push({ hash: header[0], author: header[1], email: header[2], date: parseInt(header[3]) || 0, subject: header.slice(4).join(FIELD), additions: additions, deletions: deletions, filePath: path, added: added });
+			commits.push({ hash: header[0], author: header[1], email: header[2], date: parseInt(header[3]) || 0, subject: header.slice(4).join(FIELD), additions: additions, deletions: deletions, filePath: currentPath, oldFilePath: oldFilePath, added: added });
 		});
 		return { commits: commits, error: null };
 	}
@@ -431,10 +482,23 @@ export class GitFeatures {
 	 */
 	public async getCommitForExplanation(repo: string, hash: string): Promise<{ text: string, truncated: boolean, error: GitFeatureError }> {
 		if (!HASH_REGEXP.test(hash)) return { text: '', truncated: false, error: 'Invalid commit hash: ' + hash };
-		const result = await this.run(repo, ['-c', 'log.showSignature=false', 'show', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=Subject: %s%n%n%b', hash, '--']);
-		if (result.code !== 0) return { text: '', truncated: false, error: errorOf(result) };
-		const lines = result.stdout.toString().split(/\r?\n/), truncated = lines.length > MAX_EXPLAIN_DIFF_LINES;
-		return { text: (truncated ? lines.slice(0, MAX_EXPLAIN_DIFF_LINES) : lines).join('\n'), truncated: truncated, error: null };
+		const result = await runGit(this.git, repo, ['-c', 'log.showSignature=false', 'show', '-m', '--first-parent', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=Subject: %s%n%n%b', hash, '--'], null, null, undefined, MAX_EXPLAIN_BYTES);
+		if (result.code !== 0 && !result.truncated) return { text: '', truncated: false, error: errorOf(result) };
+		const rawLines = result.stdout.toString().split(/\r?\n/);
+		let truncated = result.truncated || rawLines.length > MAX_EXPLAIN_DIFF_LINES;
+		const lines = (rawLines.length > MAX_EXPLAIN_DIFF_LINES ? rawLines.slice(0, MAX_EXPLAIN_DIFF_LINES) : rawLines).map((line) => {
+			if (line.length > MAX_EXPLAIN_LINE_CHARS) {
+				truncated = true;
+				return line.substring(0, MAX_EXPLAIN_LINE_CHARS) + ' …';
+			}
+			return line;
+		});
+		let text = lines.join('\n');
+		if (text.length > MAX_EXPLAIN_CHARS) {
+			text = text.substring(0, MAX_EXPLAIN_CHARS);
+			truncated = true;
+		}
+		return { text: text, truncated: truncated, error: null };
 	}
 
 

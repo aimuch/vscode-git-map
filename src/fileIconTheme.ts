@@ -169,13 +169,12 @@ function lowerCaseKeys(value: any) {
  * @returns The JSON without comments.
  */
 function stripJsonComments(text: string) {
-	let result = '', i = 0, inString = false;
+	const parts: string[] = [];
+	let start = 0, i = 0, inString = false;
 	while (i < text.length) {
 		const char = text[i];
 		if (inString) {
-			result += char;
 			if (char === '\\') {
-				result += text[i + 1] || '';
 				i += 2;
 				continue;
 			}
@@ -183,17 +182,20 @@ function stripJsonComments(text: string) {
 			i++;
 		} else if (char === '"') {
 			inString = true;
-			result += char;
 			i++;
 		} else if (char === '/' && text[i + 1] === '/') {
+			if (i > start) parts.push(text.slice(start, i));
 			while (i < text.length && text[i] !== '\n') i++;
+			start = i;
 		} else if (char === '/' && text[i + 1] === '*') {
-			i = text.indexOf('*/', i + 2);
-			i = i === -1 ? text.length : i + 2;
+			if (i > start) parts.push(text.slice(start, i));
+			const end = text.indexOf('*/', i + 2);
+			i = end === -1 ? text.length : end + 2;
+			start = i;
 		} else {
-			result += char;
 			i++;
 		}
 	}
-	return result.replace(/,(\s*[}\]])/g, '$1');
+	if (start < text.length) parts.push(text.slice(start));
+	return parts.join('').replace(/,(\s*[}\]])/g, '$1');
 }

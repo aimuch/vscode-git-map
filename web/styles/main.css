@@ -3487,6 +3487,15 @@ button.operationBarBtn svg{
 	font-family:var(--vscode-editor-font-family);
 	font-size:12px;
 }
+.explainCode{
+	margin:6px 0 8px;
+	padding:8px 10px;
+	border:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	border-radius:4px;
+	background-color:var(--vscode-textCodeBlock-background, rgba(128,128,128,0.1));
+	overflow-x:auto;
+	line-height:17px;
+}
 .explainHeading{
 	margin:10px 0 4px;
 	font-weight:600;

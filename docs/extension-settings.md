@@ -119,9 +119,9 @@ The context menus, and the key of each of their actions:
 | `Ollama` | `http://localhost:11434/v1` | *(set `git-map.ai.model`)* | No |
 | `OpenAI Compatible` | *(set `git-map.ai.baseUrl`)* | *(set `git-map.ai.model`)* | Optional |
 
-* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). `git-map.ai.provider`, `git-map.ai.baseUrl` & `git-map.ai.model` are machine-scoped, so workspace `.vscode/settings.json` files can't redirect requests.
-* API keys are set per provider with `"Git Map: Set AI API Key..."` (or the "Set API Key…" button in the Explain tab when a key hasn't been set) and deleted with `"Git Map: Clear AI API Key"`. Keys are stored in Visual Studio Code's Secret Storage, never in settings.
-* Nothing is sent until you open the tab and choose "Explain". The first time, it says what's sent (the message of the commit, and up to 3,000 lines of its changes) and names the model, provider & destination host (unless you choose not to be asked again).
+* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). All `git-map.ai.*` settings (`explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable commit explanations or redirect requests.
+* API keys are set per provider with `"Git Map: Set AI API Key..."` (or the "Set API Key…" button in the Explain tab when a key hasn't been set) and deleted with `"Git Map: Clear AI API Key"` (which also lets you delete stored keys of other providers). Keys are stored in Visual Studio Code's Secret Storage, never in settings.
+* Nothing is sent until you open the tab and choose "Explain". The first time (and whenever the provider or destination host changes), it says what's sent (the message of the commit, and up to 3,000 lines of its changes) and names the model, provider & destination host. While streaming, a "Stop" button cancels the request; afterwards, "Model…" reopens model selection and resets saved consent.
 * The explanation is written in the language Git Map is displayed in (`git-map.language`), and may be inaccurate.
 
 ## Max Depth of Repo Search

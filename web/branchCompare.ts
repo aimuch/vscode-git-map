@@ -139,6 +139,31 @@ class BranchCompare {
 	}
 
 	/**
+	 * Get the serialisable state of the comparison, or NULL if no comparison is active.
+	 */
+	public getState(): { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null {
+		if (this.previousBranches === undefined || this.left === null || this.right === null) return null;
+		return { left: this.left, right: this.right, previousBranches: this.previousBranches, mode: this.mode, fromMergeBase: this.fromMergeBase };
+	}
+
+	/**
+	 * Restore a previously active branch comparison.
+	 */
+	public restoreState(state: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null | undefined) {
+		if (!state || typeof state.left !== 'string' || typeof state.right !== 'string') return;
+		this.previousBranches = state.previousBranches;
+		this.left = state.left;
+		this.right = state.right;
+		this.mode = state.mode || 'both';
+		this.fromMergeBase = typeof state.fromMergeBase === 'boolean' ? state.fromMergeBase : true;
+		this.comparison = null;
+		this.fileChanges = [];
+		this.sides.clear();
+		this.render();
+		this.request();
+	}
+
+	/**
 	 * Get the class of the row of a commit (marking the branch it's on, while branches are compared).
 	 * @param hash The hash of the commit.
 	 * @returns The class (with a leading space), or an empty string.

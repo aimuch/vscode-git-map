@@ -10,6 +10,7 @@ class BranchCleanup {
 	private error: GG.ErrorInfo = null;
 	private readonly selected: Set<string> = new Set();
 	private deleteOnRemote: boolean = false;
+	private openedAt: number = 0;
 
 	/**
 	 * Construct a new BranchCleanup instance.
@@ -25,6 +26,7 @@ class BranchCleanup {
 	public show() {
 		this.close();
 		closeDialogAndContextMenu();
+		this.openedAt = Date.now();
 		this.candidates = null;
 		this.error = null;
 		this.selected.clear();
@@ -48,6 +50,10 @@ class BranchCleanup {
 	public close() {
 		const listElem = document.getElementById('branchCleanup');
 		if (listElem !== null) listElem.remove();
+	}
+
+	public closeOnBackdropClick() {
+		if (Date.now() - this.openedAt > 50) this.close();
 	}
 
 	/**

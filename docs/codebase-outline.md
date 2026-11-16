@@ -62,4 +62,4 @@ Messages are translated with `t('English message {0}', ...args)` in both parts; 
 
 * `npm run compile`: Lint, then compile the extension (`out/`) and the front-end (`media/`).
 * `npm run package`: Create `git-map-<version>.vsix`.
-* `.github/workflows/build-and-test.yml`: On every push & pull request, lints, compiles, tests and packages the extension, uploading the VSIX as the `git-graph-vsix` artifact. Each push to the main branch replaces the `dev` pre-release with the new VSIX, and pushing a `v<version>` tag (which must match the version in `package.json`) creates a GitHub Release with the VSIX attached.
+* `.github/workflows/build-and-test.yml`: On every push & pull request, lints, compiles, tests and packages the extension, uploading the VSIX as the `git-map-vsix` artifact. Each push to the main branch replaces the `dev` pre-release with the new VSIX, and pushing a `v<version>` tag (which must match the version in `package.json`) creates a GitHub Release with the VSIX attached.

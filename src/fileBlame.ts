@@ -8,6 +8,7 @@ import { RepoManager } from './repoManager';
 import { GitFileBlame } from './types';
 import { getPathFromUri, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
+import { Event } from './utils/event';
 
 /**
  * The time (in milliseconds) after a file blamed by the File Blame is changed, before it's blamed again.
@@ -55,14 +56,17 @@ export class FileBlame extends Disposable {
 	private readonly decorationType: vscode.TextEditorDecorationType;
 	private readonly files = new Map<string, BlamedFile>(); // The blamed files, by the URI of their document
 	private readonly timeouts = new Map<string, NodeJS.Timeout>();
+	private readonly cancellations = new Map<string, vscode.CancellationTokenSource>();
 
 	/**
 	 * Creates the File Blame.
 	 * @param dataSource The Git Map DataSource instance.
 	 * @param repoManager The Git Map RepoManager instance.
 	 * @param logger The Git Map Logger instance.
+	 * @param onDidChangeConfiguration Optional Event emitting when configuration changes.
+	 * @param onDidChangeGitState Optional Event emitting when HEAD, the index, or refs change in a repository.
 	 */
-	constructor(dataSource: DataSource, repoManager: RepoManager, logger: Logger) {
+	constructor(dataSource: DataSource, repoManager: RepoManager, logger: Logger, onDidChangeConfiguration?: Event<vscode.ConfigurationChangeEvent>, onDidChangeGitState?: Event<void>) {
 		super();
 		this.dataSource = dataSource;
 		this.repoManager = repoManager;
@@ -76,6 +80,12 @@ export class FileBlame extends Disposable {
 			rangeBehavior: vscode.DecorationRangeBehavior.ClosedClosed
 		});
 		FileBlame.instance = this;
+		const reblameAll = () => {
+			if (this.files.size === 0) return;
+			vscode.workspace.textDocuments.forEach((doc) => {
+				if (this.files.has(doc.uri.toString())) this.scheduleBlame(doc);
+			});
+		};
 
 		this.registerDisposables(
 			this.decorationType,
@@ -85,9 +95,20 @@ export class FileBlame extends Disposable {
 				if (this.files.has(event.document.uri.toString()) && event.contentChanges.length > 0) this.scheduleBlame(event.document);
 			}),
 			vscode.workspace.onDidCloseTextDocument((document) => this.close(document.uri)),
+			...(typeof onDidChangeConfiguration === 'function' ? [onDidChangeConfiguration((event) => {
+				if (event.affectsConfiguration('git-map.blame.ignoreWhitespace') || event.affectsConfiguration('git-map.blame.ignoreRevsFile') || event.affectsConfiguration('git-map.language')) {
+					reblameAll();
+				}
+			})] : []),
+			...(typeof onDidChangeGitState === 'function' ? [onDidChangeGitState(reblameAll)] : []),
 			{
 				dispose: () => {
 					this.timeouts.forEach((timeout) => clearTimeout(timeout));
+					this.cancellations.forEach((cancellation) => {
+						cancellation.cancel();
+						cancellation.dispose();
+					});
+					this.cancellations.clear();
 					if (FileBlame.instance === this) FileBlame.instance = null;
 				}
 			}
@@ -145,9 +166,14 @@ export class FileBlame extends Disposable {
 	 * @param uri The file.
 	 */
 	private close(uri: vscode.Uri) {
-		const key = uri.toString(), timeout = this.timeouts.get(key);
+		const key = uri.toString(), timeout = this.timeouts.get(key), cancellation = this.cancellations.get(key);
 		if (typeof timeout !== 'undefined') clearTimeout(timeout);
 		this.timeouts.delete(key);
+		if (typeof cancellation !== 'undefined') {
+			cancellation.cancel();
+			cancellation.dispose();
+			this.cancellations.delete(key);
+		}
 		EscapeStack.remove('fileBlame:' + key);
 		if (!this.files.delete(key)) return;
 		vscode.window.visibleTextEditors.filter((editor) => editor.document.uri.toString() === key).forEach((editor) => editor.setDecorations(this.decorationType, []));
@@ -159,8 +185,13 @@ export class FileBlame extends Disposable {
 	 * @param document The document of the file.
 	 */
 	private scheduleBlame(document: vscode.TextDocument) {
-		const key = document.uri.toString(), timeout = this.timeouts.get(key);
+		const key = document.uri.toString(), timeout = this.timeouts.get(key), cancellation = this.cancellations.get(key);
 		if (typeof timeout !== 'undefined') clearTimeout(timeout);
+		if (typeof cancellation !== 'undefined') {
+			cancellation.cancel();
+			cancellation.dispose();
+			this.cancellations.delete(key);
+		}
 		this.timeouts.set(key, setTimeout(() => {
 			this.timeouts.delete(key);
 			this.blame(document).catch((error) => this.logger.logError('Unable to blame ' + document.uri.fsPath + ': ' + error));
@@ -175,22 +206,34 @@ export class FileBlame extends Disposable {
 	private async blame(document: vscode.TextDocument) {
 		const key = document.uri.toString(), file = this.files.get(key), version = document.version;
 		if (typeof file === 'undefined') return false;
-		const blame = await this.dataSource.getFileBlame(file.repo, file.filePath, document.getText());
-		if (this.files.get(key) !== file || document.version !== version) return true; // The file stopped being blamed, or was changed again
-		if (blame === null) return false;
-		file.annotations = getAnnotations(blame);
-		file.decorations = file.annotations.map((annotation) => {
-			const line = blame.lines[annotation.line], commit = blame.commits[line.hash];
-			return {
-				range: new vscode.Range(annotation.line, 0, annotation.line, 0),
-				hoverMessage: annotation.label !== '' ? getBlameHover(file.repo, { hash: line.hash, committed: commit.committed, author: commit.author, authorEmail: commit.authorEmail, authorDate: commit.authorDate, summary: commit.summary, originalLine: line.originalLine, originalFilePath: commit.filePath }, document.uri, annotation.line + 1, null) : undefined,
-				renderOptions: { before: { contentText: annotation.label !== '' ? annotation.label : ' ', backgroundColor: annotation.colour } }
-			};
-		});
-		file.version = version;
-		vscode.window.visibleTextEditors.forEach((editor) => this.decorate(editor));
-		this.updateContext();
-		return true;
+		const previous = this.cancellations.get(key);
+		if (typeof previous !== 'undefined') {
+			previous.cancel();
+			previous.dispose();
+		}
+		const cancellation = new vscode.CancellationTokenSource();
+		this.cancellations.set(key, cancellation);
+		try {
+			const blame = await this.dataSource.getFileBlame(file.repo, file.filePath, document.isDirty ? document.getText() : null, cancellation.token);
+			if (cancellation.token.isCancellationRequested || this.files.get(key) !== file || document.version !== version) return true; // The file stopped being blamed, or was changed again
+			if (blame === null) return false;
+			file.annotations = getAnnotations(blame);
+			file.decorations = file.annotations.map((annotation) => {
+				const line = blame.lines[annotation.line], commit = blame.commits[line.hash];
+				return {
+					range: new vscode.Range(annotation.line, 0, annotation.line, 0),
+					hoverMessage: annotation.label !== '' ? getBlameHover(file.repo, { hash: line.hash, committed: commit.committed, author: commit.author, authorEmail: commit.authorEmail, authorDate: commit.authorDate, summary: commit.summary, originalLine: line.originalLine, originalFilePath: commit.filePath }, document.uri, annotation.line + 1, null) : undefined,
+					renderOptions: { before: { contentText: annotation.label !== '' ? annotation.label : ' ', backgroundColor: annotation.colour } }
+				};
+			});
+			file.version = version;
+			vscode.window.visibleTextEditors.forEach((editor) => this.decorate(editor));
+			this.updateContext();
+			return true;
+		} finally {
+			cancellation.dispose();
+			if (this.cancellations.get(key) === cancellation) this.cancellations.delete(key);
+		}
 	}
 
 	/**

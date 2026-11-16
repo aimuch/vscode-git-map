@@ -86,7 +86,7 @@ const COLUMN_AUTO = -101;
 
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_LEFT_RIGHT_PADDING = 24;
-const VIRTUAL_ROWS_THRESHOLD = 2000; // Above this number of commits, only the rows near the view are rendered
+const VIRTUAL_ROWS_THRESHOLD = 400; // Above this number of commits, only the rows near the view are rendered
 const VIRTUAL_ROWS_BUFFER = 80; // The number of rows rendered above & below the rows in view (when they're virtualised)
 const REFS_COLUMN_DEFAULT_WIDTH = 172;
 const REFS_COLUMN_MIN_WIDTH = 60;
@@ -379,6 +379,8 @@ function formatIsoDateTime(unixTimestamp: number) {
  * @param unixTimestamp The unix timestamp of the date to format.
  * @returns The formatted date.
  */
+let cachedLongDateFormatter: { lang: string, formatter: Intl.DateTimeFormat } | null = null;
+
 function formatLongDate(unixTimestamp: number) {
 	const date = new Date(unixTimestamp * 1000);
 	if (initialState.config.dateFormat.iso) {
@@ -387,7 +389,12 @@ function formatLongDate(unixTimestamp: number) {
 		let timezone = timezoneOffset === 0 ? 'Z' : ' ' + (timezoneOffset < 0 ? '+' : '-') + pad2(Math.floor(absoluteTimezoneOffset / 60)) + pad2(absoluteTimezoneOffset % 60);
 		return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate()) + ' ' + pad2(date.getHours()) + ':' + pad2(date.getMinutes()) + ':' + pad2(date.getSeconds()) + timezone;
 	} else {
-		return initialState.l10n !== null ? date.toLocaleString(document.documentElement.lang, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) : date.toString();
+		if (initialState.l10n === null) return date.toString();
+		const lang = document.documentElement.lang || 'en';
+		if (cachedLongDateFormatter === null || cachedLongDateFormatter.lang !== lang) {
+			cachedLongDateFormatter = { lang: lang, formatter: new Intl.DateTimeFormat(lang, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short' }) };
+		}
+		return cachedLongDateFormatter.formatter.format(date);
 	}
 }
 

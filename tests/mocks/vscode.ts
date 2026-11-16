@@ -101,6 +101,24 @@ export const EventEmitter = jest.fn(() => ({
 	event: jest.fn()
 }));
 
+export class CancellationTokenSource {
+	private listeners: (() => void)[] = [];
+	public readonly token = {
+		isCancellationRequested: false,
+		onCancellationRequested: (listener: () => void) => {
+			this.listeners.push(listener);
+			return { dispose: () => { } };
+		}
+	};
+	public cancel() {
+		this.token.isCancellationRequested = true;
+		this.listeners.forEach((listener) => listener());
+	}
+	public dispose() {
+		this.listeners = [];
+	}
+}
+
 export class Uri implements vscode.Uri {
 	public readonly scheme: string;
 	public readonly authority: string;

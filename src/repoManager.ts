@@ -503,7 +503,7 @@ export class RepoManager extends Disposable {
 						} else {
 							let dirs = [];
 							for (let i = 0; i < dirContents.length; i++) {
-								if (dirContents[i] !== '.git' && await isDirectory(directory + '/' + dirContents[i])) {
+								if (dirContents[i] !== '.git' && dirContents[i] !== 'node_modules' && await isDirectory(directory + '/' + dirContents[i])) {
 									dirs.push(directory + '/' + dirContents[i]);
 								}
 							}
@@ -587,8 +587,9 @@ export class RepoManager extends Disposable {
 	 */
 	private onWatcherCreate(uri: vscode.Uri) {
 		let path = getPathFromUri(uri);
-		if (path.indexOf('/.git/') > -1) return;
+		if (path.indexOf('/.git/') > -1 || path.indexOf('/node_modules/') > -1) return;
 		if (path.endsWith('/.git')) path = path.slice(0, -5);
+		if (this.isDirectoryWithinRepos(path)) return;
 		this.onWatcherCreateQueue.enqueue(path);
 	}
 

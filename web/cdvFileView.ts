@@ -301,7 +301,7 @@ class CdvFileView {
 					{
 						title: t('Visual File History'),
 						visible: visibility.visualFileHistory && file.type !== GG.GitFileStatus.Untracked && !(isUncommitted && file.type === GG.GitFileStatus.Added),
-						onClick: () => sendMessage({ command: 'viewVisualFileHistory', repo: this.view.currentRepo, filePath: file.newFilePath })
+						onClick: () => sendMessage({ command: 'viewVisualFileHistory', repo: this.view.currentRepo, filePath: file.newFilePath, commitHash: isUncommitted ? null : commitOrder.to })
 					}
 				],
 				[

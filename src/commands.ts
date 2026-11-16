@@ -8,7 +8,7 @@ import { CodeReviewData, CodeReviews, ExtensionState } from './extensionState';
 import { GitGraphView } from './gitGraphView';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
-import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromUri, getRelativeTimeDiff, getRepoName, getSelectedLines, getSortedRepositoryPaths, isPathInWorkspace, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage } from './utils';
+import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, VsCodeVersionRequirement, abbrevCommit, abbrevText, copyToClipboard, doesVersionMeetRequirement, getExtensionVersion, getPathFromUri, getRelativeTimeDiff, getRepoName, getSelectedLines, getSettingTarget, getSortedRepositoryPaths, isPathInWorkspace, openFile, resolveToSymbolicPath, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 import { t } from './l10n';
@@ -439,7 +439,8 @@ export class CommandManager extends Disposable {
 		const selected = await vscode.window.showQuickPick(items, { placeHolder: t('Select the preset of colours used on the graph'), ignoreFocusOut: true });
 		if (selected) {
 			try {
-				await vscode.workspace.getConfiguration('git-map').update('graph.colourPreset', selected.preset, vscode.ConfigurationTarget.Global);
+				const config = vscode.workspace.getConfiguration('git-map');
+				await config.update('graph.colourPreset', selected.preset, getSettingTarget(config, 'graph.colourPreset'));
 			} catch (_) {
 				showErrorMessage(t('Unable to save the Graph Colour Preset.'));
 			}

@@ -53,6 +53,20 @@ export async function activate(context: vscode.ExtensionContext) {
 
 	const configurationEmitter = new EventEmitter<vscode.ConfigurationChangeEvent>();
 	const onDidChangeConfiguration = configurationEmitter.subscribe;
+	const gitStateEmitter = new EventEmitter<void>();
+	const onDidChangeGitState = gitStateEmitter.subscribe;
+	let gitStateTimeout: NodeJS.Timeout | null = null;
+	const notifyGitStateChanged = () => {
+		if (gitStateTimeout !== null) clearTimeout(gitStateTimeout);
+		gitStateTimeout = setTimeout(() => {
+			gitStateTimeout = null;
+			gitStateEmitter.emit();
+		}, 300);
+	};
+	const gitStateWatcher = vscode.workspace.createFileSystemWatcher('**/.git/{HEAD,index,packed-refs,refs/**}');
+	gitStateWatcher.onDidChange(notifyGitStateChanged);
+	gitStateWatcher.onDidCreate(notifyGitStateChanged);
+	gitStateWatcher.onDidDelete(notifyGitStateChanged);
 
 	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
 	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
@@ -60,12 +74,12 @@ export async function activate(context: vscode.ExtensionContext) {
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
 	const commandManager = new CommandManager(context, avatarManager, dataSource, extensionState, repoManager, gitExecutable, onDidChangeGitExecutable, logger);
 	const diffDocProvider = new DiffDocProvider(dataSource);
-	const lineBlame = new LineBlame(dataSource, repoManager, onDidChangeConfiguration, logger);
+	const lineBlame = new LineBlame(dataSource, repoManager, onDidChangeConfiguration, logger, onDidChangeGitState);
 	const escapeStack = new EscapeStack();
 	const lineHistory = new LineHistory(dataSource, repoManager, avatarManager, onDidChangeConfiguration, logger);
-	const fileBlame = new FileBlame(dataSource, repoManager, logger);
+	const fileBlame = new FileBlame(dataSource, repoManager, logger, onDidChangeConfiguration, onDidChangeGitState);
 	const revisionNavigation = new RevisionNavigation(dataSource, repoManager);
-	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration);
+	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration, onDidChangeGitState);
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
 	setAiSecretStorage(context.secrets);
@@ -95,6 +109,13 @@ export async function activate(context: vscode.ExtensionContext) {
 				});
 			}
 		}),
+		{
+			dispose: () => {
+				if (gitStateTimeout !== null) clearTimeout(gitStateTimeout);
+				gitStateWatcher.dispose();
+			}
+		},
+		gitStateEmitter,
 		diffDocProvider,
 		lineBlame,
 		escapeStack,

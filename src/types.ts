@@ -401,6 +401,7 @@ export interface GitFileTimelineCommit {
 	readonly additions: number;
 	readonly deletions: number;
 	readonly filePath: string; // The path of the file in the commit
+	readonly oldFilePath?: string | null; // The path before this commit renamed it (if it did)
 	readonly added: boolean; // Did the commit add the file
 }
 
@@ -551,6 +552,7 @@ export interface GitGraphViewGlobalState {
 	minimapHeight?: number;
 	pushTagSkipRemoteCheck: boolean;
 	explainCommitAccepted?: boolean; // Has the person agreed to send the changes of commits to a language model
+	explainCommitAcceptedTarget?: string | null; // Which provider / endpoint was consented to (re-asks when the target changes)
 	explainCommitModel?: string | null; // The id of the language model chosen to explain commits
 }
 
@@ -1961,6 +1963,7 @@ export interface ResponseRestoreFileFromStash extends ResponseWithErrorInfo {
 export interface RequestViewVisualFileHistory extends RepoRequest {
 	readonly command: 'viewVisualFileHistory';
 	readonly filePath: string;
+	readonly commitHash?: string | null;
 }
 
 export interface RequestLoadLanguageModels extends BaseMessage {
@@ -1976,10 +1979,15 @@ export interface RequestSetAiApiKey extends BaseMessage {
 	readonly command: 'setAiApiKey';
 }
 
+export interface RequestCancelExplainCommit extends BaseMessage {
+	readonly command: 'cancelExplainCommit';
+}
+
 export interface RequestExplainCommit extends RepoRequest {
 	readonly command: 'explainCommit';
 	readonly commitHash: string;
 	readonly modelId: string | null;
+	readonly endpoint?: string | null;
 }
 export interface ResponseExplainCommit extends ResponseWithErrorInfo {
 	readonly command: 'explainCommit';
@@ -1988,6 +1996,7 @@ export interface ResponseExplainCommit extends ResponseWithErrorInfo {
 	readonly done: boolean;
 	readonly model: string | null;
 	readonly truncated: boolean;
+	readonly cancelled?: boolean;
 }
 
 export type RequestMessage =
@@ -2091,6 +2100,7 @@ export type RequestMessage =
 	| RequestRestoreFileFromStash
 	| RequestViewVisualFileHistory
 	| RequestLoadLanguageModels
+	| RequestCancelExplainCommit
 	| RequestExplainCommit;
 
 export type ResponseMessage =

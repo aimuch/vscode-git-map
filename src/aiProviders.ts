@@ -72,6 +72,18 @@ export function getHost(baseUrl: string) {
 	}
 }
 
+const ALL_DIRECT_PROVIDERS: ReadonlyArray<AiProvider> = [
+	AiProvider.DeepSeek,
+	AiProvider.Kimi,
+	AiProvider.Doubao,
+	AiProvider.Qwen,
+	AiProvider.OpenAI,
+	AiProvider.Ollama,
+	AiProvider.OpenAICompatible
+];
+
+const STREAM_TIMEOUT_MS = 60000;
+
 /* API Keys (stored in the Secret Storage of Visual Studio Code, never in the Extension Settings) */
 
 let secretStorage: vscode.SecretStorage | null = null;
@@ -81,6 +93,16 @@ let secretStorage: vscode.SecretStorage | null = null;
  */
 export function setAiSecretStorage(secrets: vscode.SecretStorage | null) {
 	secretStorage = secrets;
+}
+
+/**
+ * Subscribe to changes of the stored AI API keys (when supported by this version of Visual Studio Code).
+ */
+export function onDidChangeAiApiKey(listener: () => void): vscode.Disposable {
+	if (secretStorage === null || typeof secretStorage.onDidChange !== 'function') return { dispose: () => { } };
+	return secretStorage.onDidChange((event) => {
+		if (event && typeof event.key === 'string' && event.key.startsWith('git-map.ai.apiKey.')) listener();
+	});
 }
 
 function getSecretKey(provider: AiProvider) {
@@ -124,13 +146,38 @@ export async function setApiKey(key?: unknown): Promise<boolean> {
 }
 
 /**
- * The method run when the `git-map.ai.clearApiKey` command is invoked: delete the API key of the provider configured.
+ * The method run when the `git-map.ai.clearApiKey` command is invoked: delete the API key of the provider configured (or let the
+ * person choose which stored key to delete when the active provider has none).
  */
 export async function clearApiKey() {
+	if (secretStorage === null) return;
 	const config = getDirectAiConfig();
-	if (config === null || secretStorage === null) return;
-	await secretStorage.delete(getSecretKey(config.provider));
-	vscode.window.showInformationMessage(t('The API key of {0} was deleted.', config.name));
+	if (config !== null && await getApiKey(config.provider) !== null) {
+		await secretStorage.delete(getSecretKey(config.provider));
+		vscode.window.showInformationMessage(t('The API key of {0} was deleted.', config.name));
+		return;
+	}
+	const stored: { provider: AiProvider, name: string }[] = [];
+	for (const provider of ALL_DIRECT_PROVIDERS) {
+		if (await getApiKey(provider) !== null) stored.push({ provider: provider, name: PRESETS[provider].name });
+	}
+	if (stored.length === 0) {
+		vscode.window.showInformationMessage(t('No AI API keys are stored in Git Map.'));
+		return;
+	}
+	if (stored.length === 1) {
+		await secretStorage.delete(getSecretKey(stored[0].provider));
+		vscode.window.showInformationMessage(t('The API key of {0} was deleted.', stored[0].name));
+		return;
+	}
+	const items: (vscode.QuickPickItem & { providers: AiProvider[] })[] = stored.map((entry) => ({ label: entry.name, providers: [entry.provider] }));
+	items.push({ label: t('All Stored AI API Keys'), providers: stored.map((entry) => entry.provider) });
+	const picked = typeof vscode.window.showQuickPick === 'function'
+		? await vscode.window.showQuickPick(items, { placeHolder: t('Select the AI API key to delete'), ignoreFocusOut: true })
+		: undefined;
+	if (typeof picked === 'undefined') return;
+	for (const provider of picked.providers) await secretStorage.delete(getSecretKey(provider));
+	vscode.window.showInformationMessage(picked.providers.length === 1 ? t('The API key of {0} was deleted.', picked.label) : t('All stored AI API keys were deleted.'));
 }
 
 /* The OpenAI-compatible Chat Completions API */
@@ -160,6 +207,15 @@ export async function getDirectAiProblem(config: DirectAiConfig): Promise<{ erro
 export async function streamChatCompletion(baseUrl: string, model: string, apiKey: string | null, prompt: string, onText: (text: string) => void, token: vscode.CancellationToken): Promise<string | null> {
 	if (typeof fetch !== 'function') return t('This version of Visual Studio Code can\'t call the API (it requires Visual Studio Code 1.82 or later).');
 	const controller = new AbortController(), cancellation = token.onCancellationRequested(() => controller.abort());
+	let timedOut = false, timer: NodeJS.Timeout | null = null;
+	const resetTimeout = () => {
+		if (timer !== null) clearTimeout(timer);
+		timer = setTimeout(() => {
+			timedOut = true;
+			controller.abort();
+		}, STREAM_TIMEOUT_MS);
+	};
+	resetTimeout();
 	try {
 		const headers: { [name: string]: string } = { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' };
 		if (apiKey !== null) headers['Authorization'] = 'Bearer ' + apiKey;
@@ -169,41 +225,78 @@ export async function streamChatCompletion(baseUrl: string, model: string, apiKe
 			body: JSON.stringify({ model: model, stream: true, messages: [{ role: 'user', content: prompt }] }),
 			signal: controller.signal
 		});
+		resetTimeout();
 		if (!response.ok || response.body === null) {
 			return t('The API returned an error ({0}): {1}', String(response.status), await getErrorMessage(response));
 		}
+		const contentType = (response.headers.get('content-type') || '').toLowerCase();
+		if (contentType.includes('application/json')) {
+			const json = parseJson(await response.text());
+			if (json !== null && typeof json.error === 'object' && json.error !== null) {
+				return t('The API returned an error: {0}', String(json.error.message || JSON.stringify(json.error)));
+			}
+			const choice = json !== null && Array.isArray(json.choices) ? json.choices[0] : null;
+			const messageContent = choice && choice.message && typeof choice.message.content === 'string' ? choice.message.content : '';
+			if (messageContent === '') return t('The model returned an empty response.');
+			onText(messageContent);
+			return null;
+		}
+
 		const decoder = new TextDecoder();
 		const reader = response.body.getReader();
-		let buffer = '', done = false;
+		let buffer = '', done = false, receivedText = false;
+		const processLine = (rawLine: string): string | null => {
+			const line = rawLine.trim();
+			if (!line.startsWith('data:')) return null;
+			const data = line.substring(5).trim();
+			if (data === '[DONE]') {
+				done = true;
+				return null;
+			}
+			const event = parseJson(data);
+			if (event === null) return null;
+			if (typeof event.error === 'object' && event.error !== null) return t('The API returned an error: {0}', String(event.error.message || JSON.stringify(event.error)));
+			const choice = Array.isArray(event.choices) ? event.choices[0] : null;
+			const text = choice && choice.delta && typeof choice.delta.content === 'string'
+				? choice.delta.content
+				: (choice && choice.message && typeof choice.message.content === 'string' ? choice.message.content : '');
+			if (text !== '') {
+				receivedText = true;
+				onText(text);
+			}
+			return null;
+		};
 		while (!done) {
 			const chunk = await reader.read();
-			if (chunk.done) break;
+			resetTimeout();
+			if (chunk.done) {
+				buffer += decoder.decode();
+				break;
+			}
 			buffer += decoder.decode(chunk.value, { stream: true });
 			// Server-Sent Events: each event is a line "data: {json}", and the stream ends with "data: [DONE]"
 			let newline: number;
 			while ((newline = buffer.indexOf('\n')) > -1) {
-				const line = buffer.substring(0, newline).trim();
+				const line = buffer.substring(0, newline);
 				buffer = buffer.substring(newline + 1);
-				if (!line.startsWith('data:')) continue;
-				const data = line.substring(5).trim();
-				if (data === '[DONE]') {
-					done = true;
-					break;
-				}
-				const event = parseJson(data);
-				if (event === null) continue;
-				if (typeof event.error === 'object' && event.error !== null) return t('The API returned an error: {0}', String(event.error.message || JSON.stringify(event.error)));
-				const choice = Array.isArray(event.choices) ? event.choices[0] : null;
-				const text = choice && choice.delta && typeof choice.delta.content === 'string' ? choice.delta.content : '';
-				if (text !== '') onText(text);
+				const lineError = processLine(line);
+				if (lineError !== null) return lineError;
+				if (done) break;
 			}
 		}
+		if (!done && buffer.trim() !== '') {
+			const trailingError = processLine(buffer);
+			if (trailingError !== null) return trailingError;
+		}
 		await reader.cancel().catch(() => { });
+		if (!receivedText && !token.isCancellationRequested) return t('The model returned an empty response.');
 		return null;
 	} catch (error) {
 		if (token.isCancellationRequested) return null;
+		if (timedOut) return t('The API at {0} timed out without responding.', getHost(baseUrl));
 		return t('Unable to call the API at {0}: {1}', getHost(baseUrl), error instanceof Error ? ((<any>error).cause instanceof Error ? error.message + ' (' + (<any>error).cause.message + ')' : error.message) : String(error));
 	} finally {
+		if (timer !== null) clearTimeout(timer);
 		cancellation.dispose();
 	}
 }

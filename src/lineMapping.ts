@@ -26,25 +26,46 @@ export function mapLines(base: ReadonlyArray<string>, current: ReadonlyArray<str
 		map[currentEnd] = baseEnd;
 	}
 
-	const a = base.slice(start, baseEnd), b = current.slice(start, currentEnd), n = a.length, m = b.length;
+	const n = baseEnd - start, m = currentEnd - start;
 	if (n === 0 || m === 0) return map;
 
-	// Find the furthest reaching path on each diagonal k (x - y) for each number of differences d, keeping each step's diagonals [-d, d]
+	// Intern lines to 32-bit integer IDs so inner snake comparisons don't compare strings repeatedly
+	const lineIds = new Map<string, number>();
+	let nextId = 1;
+	const a = new Int32Array(n), b = new Int32Array(m);
+	for (let i = 0; i < n; i++) {
+		const text = base[start + i];
+		let id = lineIds.get(text);
+		if (typeof id === 'undefined') {
+			id = nextId++;
+			lineIds.set(text, id);
+		}
+		a[i] = id;
+	}
+	for (let j = 0; j < m; j++) {
+		const id = lineIds.get(current[start + j]);
+		b[j] = typeof id !== 'undefined' ? id : 0; // 0 never matches any ID in `a`
+	}
+
+	// Find the furthest reaching path on each diagonal k (x - y) for each number of differences d, storing only the d + 1 active diagonals
 	const max = Math.min(n + m, MAX_DIFFERENCES), v = new Int32Array(2 * max + 3), offset = max + 1, trace: Int32Array[] = [];
 	for (let d = 0; d <= max; d++) {
-		trace.push(v.slice(offset - d - 1, offset + d + 2));
-		for (let k = -d; k <= d; k += 2) {
+		const step = new Int32Array(d + 1);
+		for (let k = -d, idx = 0; k <= d; k += 2, idx++) {
 			let x = k === -d || (k !== d && v[offset + k - 1] < v[offset + k + 1]) ? v[offset + k + 1] : v[offset + k - 1] + 1, y = x - k;
 			while (x < n && y < m && a[x] === b[y]) {
 				x++;
 				y++;
 			}
 			v[offset + k] = x;
+			step[idx] = x;
 			if (x >= n && y >= m) {
+				trace.push(step);
 				backtrack(trace, n, m, (baseIndex, currentIndex) => map[start + currentIndex] = start + baseIndex);
 				return map;
 			}
 		}
+		trace.push(step);
 	}
 	// The versions differ too much: the lines between the common start & end are treated as changed
 	return map;
@@ -52,7 +73,7 @@ export function mapLines(base: ReadonlyArray<string>, current: ReadonlyArray<str
 
 /**
  * Follow the furthest reaching paths back from the end of both versions, reporting the lines that are the same.
- * @param trace The diagonals of each step (step d holds diagonals [-d - 1, d + 1]).
+ * @param trace For each step d, the d + 1 end-of-snake x values at diagonals -d, -d + 2, ..., d.
  * @param n The number of lines of the base version.
  * @param m The number of lines of the current version.
  * @param onSame Called for each line that's the same in both versions.
@@ -60,10 +81,16 @@ export function mapLines(base: ReadonlyArray<string>, current: ReadonlyArray<str
 function backtrack(trace: ReadonlyArray<Int32Array>, n: number, m: number, onSame: (baseIndex: number, currentIndex: number) => void) {
 	let x = n, y = m;
 	for (let d = trace.length - 1; d >= 0; d--) {
-		const v = trace[d], at = (k: number) => v[k + d + 1], k = x - y;
-		const prevK = k === -d || (k !== d && at(k - 1) < at(k + 1)) ? k + 1 : k - 1;
-		const prevX = d > 0 ? at(prevK) : 0, prevY = d > 0 ? prevX - prevK : 0;
-		while (x > prevX && y > prevY) {
+		const k = x - y;
+		let prevX = 0, prevY = 0;
+		if (d > 0) {
+			const prev = trace[d - 1], atPrev = (diag: number) => prev[(diag + d - 1) >> 1];
+			const prevK = k === -d || (k !== d && atPrev(k - 1) < atPrev(k + 1)) ? k + 1 : k - 1;
+			prevX = atPrev(prevK);
+			prevY = prevX - prevK;
+		}
+		const startX = d === 0 ? 0 : (prevX - prevY < k ? prevX + 1 : prevX), startY = startX - k;
+		while (x > startX && y > startY) {
 			x--;
 			y--;
 			onSame(x, y);

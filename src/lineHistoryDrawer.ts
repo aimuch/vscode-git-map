@@ -55,12 +55,15 @@ export class LineHistoryDrawer extends Disposable implements vscode.WebviewViewP
 		this.view = webviewView;
 		webviewView.webview.options = { enableScripts: true, localResourceRoots: [] };
 		webviewView.webview.html = getLineHistoryPage(this.content, webviewView.webview.cspSource);
-		webviewView.webview.onDidReceiveMessage((message: LineHistoryDrawerMessage) => this.onMessage(message));
-		webviewView.onDidDispose(() => {
+		const messageDisposable = webviewView.webview.onDidReceiveMessage((message: LineHistoryDrawerMessage) => this.onMessage(message));
+		const visibilityDisposable = webviewView.onDidChangeVisibility(() => EscapeStack.update());
+		const disposeDisposable = webviewView.onDidDispose(() => {
+			messageDisposable.dispose();
+			visibilityDisposable.dispose();
+			disposeDisposable.dispose();
 			if (this.view === webviewView) this.view = null;
 			EscapeStack.update();
 		});
-		webviewView.onDidChangeVisibility(() => EscapeStack.update());
 	}
 
 	/**
@@ -193,8 +196,7 @@ function renderDetails(history: GitLineHistory, entry: GitLineHistoryEntry, inde
 		action('copyRemoteLink', ICONS.link, t('Copy Remote Link'), t('Copy a permanent link to these lines at this commit, on the web page of the remote')),
 		action('openCommitOnRemote', ICONS.external, t('Open Commit on Remote'), t('Open the commit on the web page of the remote'))
 	];
-	return '<section class="lhDetail" data-index="' + index + '" hidden>' +
-		'<h3 class="lhDetailSubject">' + escapeHtml(uncommitted ? t('Uncommitted Changes') : entry.subject) + '</h3>' +
+	const inner = '<h3 class="lhDetailSubject">' + escapeHtml(uncommitted ? t('Uncommitted Changes') : entry.subject) + '</h3>' +
 		'<div class="lhDetailAuthor">' + renderAvatar(entry, avatars) + '<span><b>' + escapeHtml(uncommitted ? t('You') : entry.author) + '</b>' +
 		(entry.authorEmail !== '' ? ' <span class="lhMuted">&lt;' + escapeHtml(entry.authorEmail) + '&gt;</span>' : '') + '<br>' +
 		'<span class="lhMuted">' + escapeHtml(uncommitted ? t('Not committed yet') : formatDate(entry.authorDate) + ' (' + getRelativeTimeDiff(entry.authorDate) + ')') + '</span></span></div>' +
@@ -207,8 +209,8 @@ function renderDetails(history: GitLineHistory, entry: GitLineHistoryEntry, inde
 		'<div class="lhActions"><button type="button" class="lhPrimary" data-action="openChanges" title="' + escapeHtml(t('Open the changes of this commit to the file, selecting the lines')) + '">' + ICONS.diff + '<span>' + escapeHtml(t('Open Changes')) + '</span></button>' +
 		'<div class="lhActionGroup">' + fileActions.join('') + '</div>' +
 		(commitActions.length > 0 ? '<div class="lhActionGroup">' + commitActions.join('') + '</div>' : '') + '</div>' +
-		(index === history.entries.length - 1 && !history.moreAvailable && !uncommitted ? '<p class="lhOrigin">' + ICONS.info + '<span>' + escapeHtml(entry.oldRange === null ? t('These lines were added by this commit.') : t('This is the oldest change found.')) + '</span></p>' : '') +
-		'</section>';
+		(index === history.entries.length - 1 && !history.moreAvailable && !uncommitted ? '<p class="lhOrigin">' + ICONS.info + '<span>' + escapeHtml(entry.oldRange === null ? t('These lines were added by this commit.') : t('This is the oldest change found.')) + '</span></p>' : '');
+	return '<section class="lhDetail" data-index="' + index + '" hidden>' + (index === 0 ? inner : '<template>' + inner + '</template>') + '</section>';
 }
 
 /**
@@ -263,11 +265,17 @@ export function formatRange(range: GitLineRange) {
 	return range.start === range.end ? t('Line {0}', range.start) : t('Lines {0}–{1}', range.start, range.end);
 }
 
+let cachedDateFormatter: { locale: string, formatter: Intl.DateTimeFormat } | null = null;
+
 /**
  * Format a date (a Unix timestamp) in the language Git Map is displayed in.
  */
 export function formatDate(date: number) {
-	return new Date(date * 1000).toLocaleString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
+	if (cachedDateFormatter === null || cachedDateFormatter.locale !== locale) {
+		cachedDateFormatter = { locale: locale, formatter: new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) };
+	}
+	return cachedDateFormatter.formatter.format(new Date(date * 1000));
 }
 
 /**
@@ -404,7 +412,14 @@ const SCRIPT = `
 		if (all.length === 0) return;
 		selected = Math.max(0, Math.min(index, all.length - 1));
 		all.forEach(function (item, i) { item.classList.toggle('selected', i === selected); item.setAttribute('aria-selected', i === selected ? 'true' : 'false'); });
-		root.querySelectorAll('.lhDetail').forEach(function (detail) { detail.hidden = parseInt(detail.dataset.index) !== selected; });
+		root.querySelectorAll('.lhDetail').forEach(function (detail) {
+			var active = parseInt(detail.dataset.index) === selected;
+			if (active) {
+				var tpl = detail.querySelector('template');
+				if (tpl) detail.replaceChildren(tpl.content.cloneNode(true));
+			}
+			detail.hidden = !active;
+		});
 		vscode.setState({ key: root.dataset.key, selected: selected });
 		layout();
 		if (scroll) all[selected].scrollIntoView({ block: 'nearest' });
@@ -432,9 +447,13 @@ const SCRIPT = `
 		if (msg.command === 'render') {
 			render(msg.html, msg.key);
 		} else if (msg.command === 'avatar') {
-			root.querySelectorAll('.lhAvatar').forEach(function (elem) {
-				if (elem.dataset.email === msg.email) { elem.textContent = ''; var img = document.createElement('img'); img.src = msg.image; img.alt = ''; elem.appendChild(img); }
-			});
+			function updateAvatarScope(scope) {
+				scope.querySelectorAll('.lhAvatar').forEach(function (elem) {
+					if (elem.dataset.email === msg.email) { elem.textContent = ''; var img = document.createElement('img'); img.src = msg.image; img.alt = ''; elem.appendChild(img); }
+				});
+				scope.querySelectorAll('template').forEach(function (tpl) { updateAvatarScope(tpl.content); });
+			}
+			updateAvatarScope(root);
 		}
 	});
 	document.addEventListener('click', function (event) {

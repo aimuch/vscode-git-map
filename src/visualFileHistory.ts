@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { GitFeatures } from './gitFeatures';
 import { getLanguage, t } from './l10n';
@@ -80,8 +81,10 @@ export class VisualFileHistory extends Disposable {
 	 */
 	private async show(arg: any) {
 		let file: { repo: string, path: string } | null = null;
+		let revision = 'HEAD';
 		if (typeof arg === 'object' && arg !== null && typeof arg.repo === 'string' && typeof arg.filePath === 'string') {
 			file = { repo: arg.repo, path: arg.filePath };
+			if (typeof arg.commitHash === 'string' && arg.commitHash !== '') revision = arg.commitHash;
 		} else {
 			const uri = arg instanceof vscode.Uri ? arg : vscode.window.activeTextEditor ? vscode.window.activeTextEditor.document.uri : null;
 			if (uri === null || uri.scheme !== 'file') {
@@ -95,7 +98,7 @@ export class VisualFileHistory extends Disposable {
 			}
 		}
 
-		const result = await this.gitFeatures.getFileTimeline(file.repo, file.path, MAX_COMMITS);
+		const result = await this.gitFeatures.getFileTimeline(file.repo, file.path, MAX_COMMITS, revision);
 		if (result.error !== null) {
 			showErrorMessage(t('Unable to show the Visual File History: {0}', result.error));
 			return;
@@ -107,12 +110,17 @@ export class VisualFileHistory extends Disposable {
 		this.shown = { repo: file.repo, filePath: file.path, commits: result.commits };
 		const title = t('History: {0}', file.path.substring(file.path.lastIndexOf('/') + 1));
 		if (this.panel === null) {
-			this.panel = vscode.window.createWebviewPanel('git-map.visualFileHistory', title, vscode.ViewColumn.Active, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
-			this.panel.onDidDispose(() => {
-				this.panel = null;
-				this.shown = null;
+			this.panel = vscode.window.createWebviewPanel('git-map.visualFileHistory', title, getConfig().openNewTabEditorGroup, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
+			const panel = this.panel;
+			const messageDisposable = panel.webview.onDidReceiveMessage((message) => this.onMessage(message));
+			const disposeDisposable = panel.onDidDispose(() => {
+				messageDisposable.dispose();
+				disposeDisposable.dispose();
+				if (this.panel === panel) {
+					this.panel = null;
+					this.shown = null;
+				}
 			});
-			this.panel.webview.onDidReceiveMessage((message) => this.onMessage(message));
 		} else {
 			this.panel.title = title;
 			this.panel.reveal();
@@ -130,8 +138,9 @@ export class VisualFileHistory extends Disposable {
 		if (shown === null || typeof message !== 'object' || message === null || typeof message.index !== 'number') return;
 		const commit = shown.commits[message.index];
 		if (typeof commit === 'undefined') return;
-		// The path of the file in the commit before it (the commits are the newest first), which differs if the commit renamed it
-		const older = shown.commits[message.index + 1], oldFilePath = typeof older !== 'undefined' ? older.filePath : commit.filePath;
+		// The path of the file in the commit before it, which differs if the commit renamed it
+		const older = shown.commits[message.index + 1];
+		const oldFilePath = typeof commit.oldFilePath === 'string' ? commit.oldFilePath : (typeof older !== 'undefined' ? older.filePath : commit.filePath);
 		let error: string | null = null;
 		switch (message.command) {
 			case 'openChanges':
@@ -259,7 +268,8 @@ const SCRIPT = `
 	var range = 365, selected = 0, zoom = null, view = null; // zoom: the range of dates zoomed into by dragging across the bars
 	function esc(text) { return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 	function format(text, value) { return text.replace('{0}', value); }
-	function date(seconds) { return new Date(seconds * 1000).toLocaleDateString(LOCALE, { year: 'numeric', month: 'short', day: 'numeric' }); }
+	var dtf = new Intl.DateTimeFormat(LOCALE, { year: 'numeric', month: 'short', day: 'numeric' });
+	function date(seconds) { return dtf.format(new Date(seconds * 1000)); }
 	function visible() {
 		if (zoom !== null) return COMMITS.map(function (c, i) { return i; }).filter(function (i) { return COMMITS[i].d >= zoom.from && COMMITS[i].d <= zoom.to; });
 		if (range === 0) return COMMITS.map(function (c, i) { return i; });
@@ -299,7 +309,8 @@ const SCRIPT = `
 		indexes.slice().reverse().forEach(function (i) {
 			var c = COMMITS[i], lane = laneOf(c.a), colour = COLOURS[lane % COLOURS.length], size = Math.round(8 + Math.sqrt(c.p + c.m) * 1.6), left = lefts[i].toFixed(2);
 			html += '<button type="button" class="vfhBubble' + (i === selected ? ' selected' : '') + '" data-index="' + i + '" title="' + esc(c.s + ' \\u00b7 ' + c.a + ' \\u00b7 ' + date(c.d) + ' \\u00b7 +' + c.p + ' \\u2212' + c.m) + '" style="left:' + left + '%;top:' + (lane * LANE + LANE / 2) + 'px;width:' + size + 'px;height:' + size + 'px;background:' + colour + '55;border-color:' + colour + '"></button>';
-			barsHtml += '<div class="vfhBar add" style="left:' + left + '%;height:' + Math.max(1, Math.round(c.p / maxLines * 34)) + 'px"></div><div class="vfhBar del" style="left:' + left + '%;height:' + Math.max(c.m > 0 ? 1 : 0, Math.round(c.m / maxLines * 34)) + 'px"></div>';
+			if (c.p > 0) barsHtml += '<div class="vfhBar add" style="left:' + left + '%;height:' + Math.max(1, Math.round(c.p / maxLines * 34)) + 'px"></div>';
+			if (c.m > 0) barsHtml += '<div class="vfhBar del" style="left:' + left + '%;height:' + Math.max(1, Math.round(c.m / maxLines * 34)) + 'px"></div>';
 		});
 		plot.innerHTML = html;
 		bars.innerHTML = barsHtml;

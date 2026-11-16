@@ -382,7 +382,9 @@ export class HistoryRewriter {
 	 */
 	public async restoreBackup(repo: string, bundlePath: string) {
 		const status = await this.run(repo, ['status', '--porcelain', '--untracked-files=no']);
-		if (status.code !== 0 || status.stdout.length > 0) throw new Error(UNCOMMITTED_CHANGES_ERROR);
+		// Allow restoring immediately after Remove Files from History added the removed paths to .gitignore
+		const dirtyLines = status.stdout.toString().split(/\r?\n/).filter((line) => line !== '' && !/^[ M]{2} \.gitignore$/.test(line));
+		if (status.code !== 0 || dirtyLines.length > 0) throw new Error(UNCOMMITTED_CHANGES_ERROR);
 		const fetch = await this.run(repo, ['fetch', '--force', '--update-head-ok', '--no-tags', bundlePath, '+refs/heads/*:refs/heads/*', '+refs/tags/*:refs/tags/*']);
 		if (fetch.code !== 0) throw new Error(fetch.stderr || 'Unable to read the backup.');
 		const reset = await this.run(repo, ['reset', '--hard', '--quiet']);
@@ -521,8 +523,8 @@ export class HistoryRewriter {
  * @param env Additional environment variables.
  * @returns The exit code (-1 if it couldn't be run or was killed), and the output of the command.
  */
-export function runGit(git: GitProcessRunner, repo: string, args: string[], input: string | null = null, cancellation: CancellationRequest | null = null, env?: { [name: string]: string }) {
-	return new Promise<{ code: number, stdout: Buffer, stderr: string }>((resolve, reject) => {
+export function runGit(git: GitProcessRunner, repo: string, args: string[], input: string | null = null, cancellation: CancellationRequest | null = null, env?: { [name: string]: string }, maxBytes: number = 0) {
+	return new Promise<{ code: number, stdout: Buffer, stderr: string, truncated: boolean }>((resolve, reject) => {
 		let child: cp.ChildProcess;
 		try {
 			child = git.spawnGitProcess(args, repo, env);
@@ -530,16 +532,29 @@ export function runGit(git: GitProcessRunner, repo: string, args: string[], inpu
 			return reject(error);
 		}
 		const stdout: Buffer[] = [];
-		let stderr = '', settled = false;
+		let stderr = '', settled = false, totalBytes = 0, truncated = false;
 		const cancelListener = cancellation !== null ? cancellation.onCancellationRequested(() => child.kill()) : null;
 		const finish = (code: number) => {
 			if (settled) return;
 			settled = true;
 			if (cancelListener !== null) cancelListener.dispose();
-			resolve({ code: code, stdout: Buffer.concat(stdout), stderr: stderr.trim() });
+			resolve({ code: truncated && code === -1 ? 0 : code, stdout: Buffer.concat(stdout), stderr: stderr.trim(), truncated: truncated });
 		};
-		child.stdout!.on('data', (data: Buffer) => stdout.push(data));
-		child.stderr!.on('data', (data) => stderr += data);
+		child.stdout!.on('data', (data: Buffer) => {
+			if (truncated) return;
+			if (maxBytes > 0 && totalBytes + data.length >= maxBytes) {
+				stdout.push(data.subarray(0, maxBytes - totalBytes));
+				totalBytes = maxBytes;
+				truncated = true;
+				child.kill();
+			} else {
+				stdout.push(data);
+				totalBytes += data.length;
+			}
+		});
+		child.stderr!.on('data', (data) => {
+			if (stderr.length < 65536) stderr += data;
+		});
 		child.on('error', (error) => {
 			stderr += error.message;
 			finish(-1);

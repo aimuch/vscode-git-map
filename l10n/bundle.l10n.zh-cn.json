@@ -1156,7 +1156,7 @@
 	"Try Again": "重试",
 	"Regenerate": "重新生成",
 	"Explain this commit with a language model?": "使用语言模型解释此提交？",
-	"The message of the commit and its changes (up to 3,000 lines) are sent to the language model you choose, provided in Visual Studio Code (e.g. by GitHub Copilot). Git Map doesn't send them anywhere else.": "提交说明及其更改（最多 3,000 行）会发送给你选择的、由 Visual Studio Code 提供的语言模型（例如 GitHub Copilot）。Git Map 不会将其发送到其他任何地方。",
+	"The message of the commit and its changes (up to 3,000 lines) are only sent when you ask for an explanation.": "提交说明及其更改（最多 3,000 行）仅在你请求解释时才会发送。",
 	"Model": "模型",
 	"Don't ask again": "不再询问",
 	"Explain": "解释",
@@ -1274,5 +1274,14 @@
 	"The API returned an error: {0}": "API 返回错误：{0}",
 	"Unable to call the API at {0}: {1}": "无法调用位于 {0} 的 API：{1}",
 	"The message of the commit and its changes (up to 3,000 lines) are sent to {0} ({1}) at {2}. Git Map doesn't send them anywhere else.": "提交说明及其更改（最多 3,000 行）会发送到 {2} 的 {0}（{1}）。Git Map 不会将其发送到其他任何地方。",
-	"Set API Key": "设置 API Key"
+	"Set API Key": "设置 API Key",
+	"No AI API keys are stored in Git Map.": "Git Map 中未保存任何 AI API Key。",
+	"All Stored AI API Keys": "全部已保存的 AI API Key",
+	"Select the AI API key to delete": "选择要删除的 AI API Key",
+	"All stored AI API keys were deleted.": "已删除全部已保存的 AI API Key。",
+	"The model returned an empty response.": "模型返回了空响应。",
+	"The API at {0} timed out without responding.": "位于 {0} 的 API 响应超时。",
+	"The AI provider or API URL changed. Review the updated destination and try again.": "AI 提供方或 API 地址已更改。请先确认更新后的发送目标，然后重试。",
+	"Stopped": "已停止",
+	"Stop": "停止"
 }

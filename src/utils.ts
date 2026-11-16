@@ -364,7 +364,15 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 };
 
 /**
- * Update one of the Extension Settings that can be changed from the Repository Settings Widget (globally, for all repositories).
+ * Get the scope in which an Extension Setting should be updated (the workspace if it's already set there, otherwise user settings).
+ */
+export function getSettingTarget(config: vscode.WorkspaceConfiguration, key: string) {
+	const values = config.inspect(key);
+	return typeof values !== 'undefined' && typeof values.workspaceValue !== 'undefined' ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
+}
+
+/**
+ * Update one of the Extension Settings that can be changed from the Repository Settings Widget (globally, or in the workspace if overridden there).
  * @param key The key of the Extension Setting (without the `git-map.` prefix).
  * @param value The new value of the Extension Setting.
  * @returns A promise resolving to the ErrorInfo of the executed command.
@@ -374,7 +382,8 @@ export function updateExtensionSetting(key: string, value: string | boolean): Th
 	if (typeof values === 'undefined' || !values.includes(value)) {
 		return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
 	}
-	return vscode.workspace.getConfiguration('git-map').update(key, value, vscode.ConfigurationTarget.Global).then(
+	const config = vscode.workspace.getConfiguration('git-map');
+	return config.update(key, value, getSettingTarget(config, key)).then(
 		() => null,
 		() => t('Visual Studio Code was unable to update the Extension Setting "{0}".', 'git-map.' + key)
 	);
@@ -656,12 +665,30 @@ export function evalPromises<X, Y>(data: X[], maxParallel: number, createPromise
 	});
 }
 
+export interface SpawnOutputOptions {
+	readonly maxBytes?: number;
+	readonly cancellation?: {
+		readonly isCancellationRequested: boolean;
+		onCancellationRequested: (listener: () => any) => { dispose: () => any };
+	} | null;
+}
+
 /**
  * Resolve the output of a spawned child process.
  * @param cmd The Child Process.
+ * @param options Optional byte limit & cancellation token.
  * @returns Promise that resolves to [{code, error}, stdout, stderr]
  */
-export function resolveSpawnOutput(cmd: cp.ChildProcess) {
+export function resolveSpawnOutput(cmd: cp.ChildProcess, options?: SpawnOutputOptions) {
+	const maxBytes = options && typeof options.maxBytes === 'number' ? options.maxBytes : 0;
+	const cancellation = options && options.cancellation ? options.cancellation : null;
+	const killProcess = () => {
+		if (typeof cmd.kill === 'function') cmd.kill();
+	};
+	let capped = false;
+	const cancelDisposable = cancellation !== null ? cancellation.onCancellationRequested(killProcess) : null;
+	if (cancellation !== null && cancellation.isCancellationRequested) killProcess();
+
 	return Promise.all([
 		new Promise<{ code: number | null, error: Error | null }>((resolve) => {
 			// status promise
@@ -673,23 +700,38 @@ export function resolveSpawnOutput(cmd: cp.ChildProcess) {
 			});
 			cmd.on('exit', (code) => {
 				if (resolved) return;
-				resolve({ code: code, error: null });
+				resolve({ code: capped && code === null ? 0 : code, error: null });
 				resolved = true;
 			});
 		}),
 		new Promise<Buffer>((resolve) => {
 			// stdout promise
-			let buffers: Buffer[] = [];
-			cmd.stdout!.on('data', (b: Buffer) => { buffers.push(b); });
+			let buffers: Buffer[] = [], total = 0;
+			cmd.stdout!.on('data', (b: Buffer) => {
+				if (capped) return;
+				if (maxBytes > 0 && total + b.length >= maxBytes) {
+					buffers.push(b.subarray(0, maxBytes - total));
+					total = maxBytes;
+					capped = true;
+					killProcess();
+				} else {
+					buffers.push(b);
+					total += b.length;
+				}
+			});
 			cmd.stdout!.on('close', () => resolve(Buffer.concat(buffers)));
 		}),
 		new Promise<string>((resolve) => {
 			// stderr promise
 			let stderr = '';
-			cmd.stderr!.on('data', (d) => { stderr += d; });
+			cmd.stderr!.on('data', (d) => {
+				if (stderr.length < 65536) stderr += d;
+			});
 			cmd.stderr!.on('close', () => resolve(stderr));
 		})
-	]);
+	]).finally(() => {
+		if (cancelDisposable !== null) cancelDisposable.dispose();
+	});
 }
 
 

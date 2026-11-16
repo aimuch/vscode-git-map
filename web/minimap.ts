@@ -69,6 +69,8 @@ class Minimap {
 	private firstBucketKey: number = 0;
 	private chartElem: HTMLElement | null = null;
 	private viewportElem: HTMLElement | null = null;
+	private barElems: HTMLElement[] = [];
+	private lastViewportKey: string = '';
 	private viewport: { first: number, last: number } | null = null; // The indices of the first & last commits in view
 	private axisWidth: number = -1;
 	private findMatches: ReadonlySet<string> = new Set(); // The hashes of the commits that match the Find Widget's criteria
@@ -127,6 +129,8 @@ class Minimap {
 			this.buckets = [];
 			this.chartElem = null;
 			this.viewportElem = null;
+			this.barElems = [];
+			this.lastViewportKey = '';
 			this.elem.innerHTML = '';
 			return;
 		}
@@ -250,6 +254,8 @@ class Minimap {
 			+ '<div class="minimapResize" title="' + t('Drag to resize the minimap, double-click to reset its height') + '"></div>';
 		this.chartElem = <HTMLElement>this.elem.querySelector('.minimapChart');
 		this.viewportElem = document.getElementById('minimapViewport');
+		this.barElems = Array.from(this.elem.querySelectorAll<HTMLElement>('.minimapBar'));
+		this.lastViewportKey = '';
 		this.renderAxis();
 		if (this.viewport !== null) this.setViewport(this.viewport.first, this.viewport.last, false);
 	}
@@ -312,19 +318,23 @@ class Minimap {
 				this.scheduleRender();
 			} else {
 				this.viewportElem.style.display = 'none';
-				this.elem.querySelectorAll<HTMLElement>('.minimapBar.visible').forEach((barElem) => barElem.classList.remove('visible'));
+				this.lastViewportKey = 'hidden';
+				for (let i = 0; i < this.barElems.length; i++) this.barElems[i].classList.remove('visible');
 			}
 			return;
 		}
 
 		newestBucket = Math.min(newestBucket, lastBucket);
 		oldestBucket = Math.max(oldestBucket, 0);
+		const count = lastIndex - firstIndex + 1, key = oldestBucket + ':' + newestBucket + ':' + count;
+		if (key === this.lastViewportKey) return;
+		this.lastViewportKey = key;
 		this.viewportElem.style.display = '';
 		this.viewportElem.style.left = (oldestBucket / this.buckets.length * 100).toFixed(3) + '%';
 		this.viewportElem.style.width = ((newestBucket - oldestBucket + 1) / this.buckets.length * 100).toFixed(3) + '%';
-		const count = lastIndex - firstIndex + 1, oldest = this.getBucketLabel(this.buckets[oldestBucket], false), newest = this.getBucketLabel(this.buckets[newestBucket], false);
+		const oldest = this.getBucketLabel(this.buckets[oldestBucket], false), newest = this.getBucketLabel(this.buckets[newestBucket], false);
 		this.viewportElem.title = t('The commits in view: {0}', (oldest === newest ? oldest : oldest + ' – ' + newest) + ' (' + (count !== 1 ? t('{0} commits', count) : t('{0} commit', count)) + ')') + '\n' + t('Drag to scroll through the commits.');
-		this.elem.querySelectorAll<HTMLElement>('.minimapBar').forEach((barElem, i) => alterClass(barElem, 'visible', i >= oldestBucket && i <= newestBucket));
+		for (let i = 0; i < this.barElems.length; i++) alterClass(this.barElems[i], 'visible', i >= oldestBucket && i <= newestBucket);
 	}
 
 

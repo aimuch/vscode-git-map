@@ -18,6 +18,7 @@ export class AvatarManager extends Disposable {
 	private readonly avatarEventEmitter: EventEmitter<AvatarEvent>;
 
 	private avatars: AvatarCache;
+	private imageDataCache = new Map<string, string>();
 	private queue: AvatarRequestQueue;
 	private remoteSourceCache: { [repo: string]: RemoteSource } = {};
 	private interval: NodeJS.Timeout | null = null;
@@ -105,8 +106,23 @@ export class AvatarManager extends Disposable {
 	public getAvatarImage(email: string) {
 		return new Promise<string | null>((resolve) => {
 			if (typeof this.avatars[email] !== 'undefined' && this.avatars[email].image !== null) {
+				const cached = this.imageDataCache.get(email);
+				if (typeof cached === 'string') {
+					resolve(cached);
+					return;
+				}
 				fs.readFile(this.avatarStorageFolder + '/' + this.avatars[email].image, (err, data) => {
-					resolve(err ? null : 'data:image/' + this.avatars[email].image.split('.')[1] + ';base64,' + data.toString('base64'));
+					if (err) {
+						resolve(null);
+						return;
+					}
+					const dataUri = 'data:image/' + this.avatars[email].image.split('.')[1] + ';base64,' + data.toString('base64');
+					if (this.imageDataCache.size >= 200) {
+						const oldest = this.imageDataCache.keys().next().value;
+						if (typeof oldest === 'string') this.imageDataCache.delete(oldest);
+					}
+					this.imageDataCache.set(email, dataUri);
+					resolve(dataUri);
 				});
 			} else {
 				resolve(null);
@@ -128,6 +144,7 @@ export class AvatarManager extends Disposable {
 	 */
 	private removeAvatarFromCache(email: string) {
 		delete this.avatars[email];
+		this.imageDataCache.delete(email);
 		this.extensionState.removeAvatarFromCache(email);
 	}
 
@@ -137,6 +154,7 @@ export class AvatarManager extends Disposable {
 	 */
 	public clearCache() {
 		this.avatars = {};
+		this.imageDataCache.clear();
 		return this.extensionState.clearAvatarCache();
 	}
 
@@ -225,7 +243,7 @@ export class AvatarManager extends Disposable {
 			}
 		};
 
-		https.get({
+		const req = https.get({
 			hostname: 'api.github.com', path: '/repos/' + owner + '/' + repo + '/commits/' + avatarRequest.commits[commitIndex],
 			headers: { 'User-Agent': 'vscode-git-graph' },
 			agent: false, timeout: 15000
@@ -267,7 +285,12 @@ export class AvatarManager extends Disposable {
 				this.fetchFromGravatar(avatarRequest); // Fallback to Gravatar
 			});
 			res.on('error', onError);
-		}).on('error', onError);
+		});
+		req.on('error', onError);
+		req.on('timeout', () => {
+			if (typeof req.destroy === 'function') req.destroy();
+			onError();
+		});
 	}
 
 	/**
@@ -296,7 +319,7 @@ export class AvatarManager extends Disposable {
 		};
 
 		// GitLab's Avatar API doesn't require authentication. The email address is encoded (e.g. it may contain "+" or "&").
-		https.get({
+		const req = https.get({
 			hostname: 'gitlab.com', path: '/api/v4/avatar?email=' + encodeURIComponent(avatarRequest.email).replace(/%40/g, '@') + '&size=162',
 			headers: { 'User-Agent': 'vscode-git-graph' },
 			agent: false, timeout: 15000
@@ -340,7 +363,12 @@ export class AvatarManager extends Disposable {
 				this.fetchFromGravatar(avatarRequest); // Fallback to Gravatar
 			});
 			res.on('error', onError);
-		}).on('error', onError);
+		});
+		req.on('error', onError);
+		req.on('timeout', () => {
+			if (typeof req.destroy === 'function') req.destroy();
+			onError();
+		});
 	}
 
 	/**
@@ -383,7 +411,7 @@ export class AvatarManager extends Disposable {
 				}
 			};
 
-			https.get({
+			const req = https.get({
 				hostname: imgUrl.hostname, path: imgUrl.pathname + imgUrl.search,
 				headers: { 'User-Agent': 'vscode-git-graph' },
 				agent: false, timeout: 15000
@@ -403,7 +431,12 @@ export class AvatarManager extends Disposable {
 					}
 				});
 				res.on('error', complete);
-			}).on('error', complete);
+			});
+			req.on('error', complete);
+			req.on('timeout', () => {
+				if (typeof req.destroy === 'function') req.destroy();
+				complete();
+			});
 		})).catch(() => null);
 	}
 
@@ -439,6 +472,7 @@ export class AvatarManager extends Disposable {
 	 * @param identicon Whether this avatar is an identicon.
 	 */
 	private saveAvatar(email: string, image: string, identicon: boolean) {
+		this.imageDataCache.delete(email);
 		if (typeof this.avatars[email] !== 'undefined') {
 			if (!identicon || this.avatars[email].identicon) {
 				this.avatars[email].image = image;

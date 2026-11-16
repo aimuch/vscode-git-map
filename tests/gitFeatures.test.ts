@@ -1,3 +1,6 @@
+import * as vscode from './mocks/vscode';
+jest.mock('vscode', () => vscode, { virtual: true });
+
 import * as cp from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -5,6 +8,7 @@ import * as path from 'path';
 
 import { GitFeatures } from '../src/gitFeatures';
 import { GitProcessRunner } from '../src/historyRewrite';
+import { UndoManager } from '../src/undoManager';
 
 // These tests run Git itself, in repositories created in a temporary directory
 jest.setTimeout(60000);
@@ -17,7 +21,7 @@ const GIT_ENV = Object.assign({}, process.env, {
 	GIT_TERMINAL_PROMPT: '0'
 });
 
-let directory: string, repo: string, repoIndex = 0, features: GitFeatures;
+let directory: string, repo: string, repoIndex = 0, features: GitFeatures, undoManager: UndoManager;
 
 function gitIn(cwd: string, ...args: string[]) {
 	return cp.execFileSync('git', args, { cwd: cwd, env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] }).toString().trim();
@@ -59,12 +63,18 @@ function createRepo(name: string) {
 
 beforeAll(() => {
 	directory = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'git-map-features-'));
-	const runner: GitProcessRunner = {
+	const runner: GitProcessRunner & { execGit: (args: string[], cwd: string) => Promise<string> } = {
 		spawnGitProcess: (args, cwd, env) => cp.spawn('git', args, { cwd: cwd, env: Object.assign({}, GIT_ENV, env) }),
 		getGitVersion: () => gitIn(directory, '--version').replace('git version ', ''),
-		getOperationInProgress: () => Promise.resolve(null)
+		getOperationInProgress: () => Promise.resolve(null),
+		execGit: (args, cwd) => new Promise((resolve, reject) => {
+			cp.execFile('git', args, { cwd: cwd, env: GIT_ENV }, (err, stdout, stderr) => {
+				if (err) reject(stderr || err.message); else resolve(stdout);
+			});
+		})
 	};
 	features = new GitFeatures(runner);
+	undoManager = new UndoManager(runner as any);
 });
 
 afterAll(() => {
@@ -663,5 +673,74 @@ describe('getCommitForExplanation', () => {
 
 		// Assert
 		expect(result).toStrictEqual({ text: '', truncated: false, error: 'Invalid commit hash: HEAD' });
+	});
+
+	it('Should include the first-parent diff for a clean merge commit, and truncate minified single-line files', async () => {
+		// Setup: merge commit without conflicts (git show without -m would omit its diff)
+		commit('Base', { 'base.txt': '1\n' });
+		git('checkout', '-q', '-b', 'feature');
+		commit('Feature work', { 'feature.txt': 'merged line\n' });
+		git('checkout', '-q', 'main');
+		commit('Main work', { 'main.txt': 'main line\n' });
+		git('merge', '--no-ff', '-q', 'feature', '-m', 'Merge branch feature');
+		const mergeHash = git('rev-parse', 'HEAD');
+
+		// Run & Assert: merge commit diff against first parent
+		const mergeExplain = await features.getCommitForExplanation(repo, mergeHash);
+		expect(mergeExplain.error).toBeNull();
+		expect(mergeExplain.text).toContain('Subject: Merge branch feature');
+		expect(mergeExplain.text).toContain('+merged line');
+
+		// Single-line minified file exceeding per-line character limit
+		const minifiedHash = commit('Add minified bundle', { 'bundle.min.js': 'var a=' + 'x'.repeat(2000) + ';\n' });
+		const minifiedExplain = await features.getCommitForExplanation(repo, minifiedHash);
+		expect(minifiedExplain.error).toBeNull();
+		expect(minifiedExplain.truncated).toBe(true);
+		expect(minifiedExplain.text.split('\n').every((line) => line.length <= 502)).toBe(true);
+	});
+});
+
+describe('Undo Commit (mixed / soft) & duplicate-subject fixup', () => {
+	it('Should restore both HEAD and the index when undoing Undo Commit (mixed), without leaving inverse staged deletions', async () => {
+		const first = commit('Initial', { 'base.txt': 'base\n' });
+		const second = commit('Add foo', { 'foo.ts': 'export const x = 1;\n' });
+
+		// Undo Commit (mixed): HEAD=first, Index=first, Worktree keeps foo.ts untracked
+		const undoCommitError = await undoManager.trackHead(repo, 'Undo Commit', () => features.undoCommit(repo, 'mixed'), (err) => err === null, 'mixed');
+		expect(undoCommitError).toBeNull();
+		expect(git('rev-parse', 'HEAD')).toBe(first);
+		expect(git('status', '--porcelain')).toBe('?? foo.ts');
+
+		// Undo the Undo Commit: HEAD=second AND Index=second, working tree clean
+		const redoError = await undoManager.undo(repo);
+		expect(redoError).toBeNull();
+		expect(git('rev-parse', 'HEAD')).toBe(second);
+		expect(git('status', '--porcelain')).toBe('');
+		expect(read('foo.ts')).toBe('export const x = 1;\n');
+	});
+
+	it('Should fix up the targeted commit SHA even when another commit has the same subject', async () => {
+		commit('Base', { 'a.txt': '0\n', 'b.txt': '0\n' });
+		const firstWip = commit('WIP', { 'a.txt': '1\n' });
+		const secondWip = commit('WIP', { 'b.txt': '1\n' });
+		expect(firstWip).not.toBe(secondWip);
+
+		// Stage a fix intended specifically for secondWip (not firstWip!)
+		write('b.txt', '2\n');
+		git('add', 'b.txt');
+		const err = await features.fixupCommit(repo, secondWip, false);
+		expect(err).toBeNull();
+		expect(git('rev-parse', 'HEAD~1')).toBe(firstWip);
+		expect(read('b.txt')).toBe('2\n');
+	});
+
+	it('Should reject restoring stash files outside the repository', async () => {
+		commit('Base', { 'a.txt': 'a\n' });
+		write('a.txt', 'stashed\n');
+		git('stash', 'push', '-q');
+		const stash = git('rev-parse', 'stash@{0}');
+
+		const escaped = await features.restoreFileFromStash(repo, stash, '../outside.txt', false, true);
+		expect(escaped.error).toContain('Invalid file path');
 	});
 });

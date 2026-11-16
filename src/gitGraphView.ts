@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { getDirectAiConfig, getHost, onDidChangeAiApiKey } from './aiProviders';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource, GitConfigKey } from './dataSource';
@@ -45,7 +46,9 @@ export class GitGraphView extends Disposable {
 	private readonly logger: Logger;
 	private readonly undoManager: UndoManager;
 	private readonly gitFeatures: GitFeatures;
+	private readonly retainContextWhenHidden: boolean;
 	private explainCancellation: vscode.CancellationTokenSource | null = null;
+	private searchCancellation: vscode.CancellationTokenSource | null = null;
 	private isGraphViewLoaded: boolean = false;
 	private fileIconThemeWatcher: vscode.Disposable | null = null;
 	private fileIconThemeWatched: string | null = null; // The path of the definition of the file icon theme that's watched
@@ -53,6 +56,8 @@ export class GitGraphView extends Disposable {
 	private fileIconThemeRetries: number = 0;
 	private isPanelVisible: boolean = true;
 	private currentRepo: string | null = null;
+	private lastHiddenRepo: string | null = null;
+	private needsFullUpdate: boolean = false;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
 
 	private loadRepoInfoRefreshId: number = 0;
@@ -113,6 +118,7 @@ export class GitGraphView extends Disposable {
 		this.gitFeatures = new GitFeatures(dataSource);
 
 		const config = getConfig();
+		this.retainContextWhenHidden = config.retainContextWhenHidden;
 		this.panel = vscode.window.createWebviewPanel('git-map', 'Git Map', column || vscode.ViewColumn.One, {
 			enableScripts: true,
 			localResourceRoots: this.getLocalResourceRoots(extensionPath),
@@ -130,6 +136,12 @@ export class GitGraphView extends Disposable {
 			// Dispose Git Map View resources when disposed
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
+				this.cancelExplain();
+				if (this.searchCancellation !== null) {
+					this.searchCancellation.cancel();
+					this.searchCancellation.dispose();
+					this.searchCancellation = null;
+				}
 				this.repoFileWatcher.stop();
 				this.watchFileIconTheme(null);
 				if (this.fileIconThemeRetry !== null) clearTimeout(this.fileIconThemeRetry);
@@ -142,8 +154,22 @@ export class GitGraphView extends Disposable {
 			this.panel.onDidChangeViewState(() => {
 				if (this.panel.visible !== this.isPanelVisible) {
 					if (this.panel.visible) {
-						this.update();
+						const repos = this.repoManager.getRepos();
+						if (this.retainContextWhenHidden && this.isGraphViewLoaded && this.panel.webview.html !== '' && !this.needsFullUpdate && Object.keys(repos).length > 0) {
+							const loadViewTo = this.loadViewTo;
+							this.loadViewTo = null;
+							if (this.lastHiddenRepo !== null && typeof repos[this.lastHiddenRepo] !== 'undefined') {
+								this.currentRepo = this.lastHiddenRepo;
+								this.repoFileWatcher.start(this.currentRepo);
+							}
+							this.respondLoadRepos(repos, loadViewTo);
+							if (loadViewTo === null) this.sendMessage({ command: 'refresh' });
+						} else {
+							this.needsFullUpdate = false;
+							this.update();
+						}
 					} else {
+						this.lastHiddenRepo = this.currentRepo;
 						this.currentRepo = null;
 						this.repoFileWatcher.stop();
 					}
@@ -151,19 +177,41 @@ export class GitGraphView extends Disposable {
 				}
 			}),
 
-			// Re-render the view when the appearance of the graph, or the language, is changed
+			// Re-render the view when the appearance of the graph, the language, or AI commit explanation availability is changed
 			vscode.workspace.onDidChangeConfiguration((event) => {
-				if (this.panel.visible && (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language'))) {
-					this.update();
+				if (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language') || event.affectsConfiguration('git-map.ai.explainCommit.enabled')) {
+					if (this.panel.visible) {
+						this.needsFullUpdate = false;
+						this.update();
+					} else {
+						this.needsFullUpdate = true;
+					}
+				} else if (event.affectsConfiguration('git-map.ai.provider') || event.affectsConfiguration('git-map.ai.baseUrl') || event.affectsConfiguration('git-map.ai.model')) {
+					if (this.panel.visible && this.isGraphViewLoaded) {
+						this.sendLanguageModels();
+					}
 				} else if (this.panel.visible && this.isGraphViewLoaded && event.affectsConfiguration('workbench.iconTheme')) {
 					this.fileIconThemeRetries = 0;
 					this.sendFileIconTheme();
 				}
 			}),
 
+			// Refresh the available language models when an AI API key is stored or cleared
+			onDidChangeAiApiKey(() => {
+				if (this.panel.visible && this.isGraphViewLoaded) {
+					this.sendLanguageModels();
+				}
+			}),
+
 			// Subscribe to events triggered when a repository is added or deleted from Git Map
 			repoManager.onDidChangeRepos((event) => {
-				if (!this.panel.visible) return;
+				if (!this.panel.visible) {
+					if (event.loadRepo !== null) this.loadViewTo = { repo: event.loadRepo };
+					if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
+						this.needsFullUpdate = true;
+					}
+					return;
+				}
 				const loadViewTo = event.loadRepo !== null ? { repo: event.loadRepo } : null;
 				if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
 					this.loadViewTo = loadViewTo;
@@ -508,18 +556,33 @@ export class GitGraphView extends Disposable {
 					undo: this.undoManager.getUndo(msg.repo)
 				});
 				if (msg.repo !== this.currentRepo) {
+					if (this.currentRepo !== null) this.cancelExplain();
 					this.currentRepo = msg.repo;
 					this.extensionState.setLastActiveRepo(msg.repo);
 					this.repoFileWatcher.start(msg.repo);
 				}
 				break;
-			case 'searchCommits':
-				this.sendMessage({
-					command: 'searchCommits',
-					id: msg.id,
-					...await this.dataSource.searchCommits(msg.repo, msg.files, msg.changes, msg.isRegex, msg.isCaseSensitive, msg.since)
-				});
+			case 'searchCommits': {
+				if (this.searchCancellation !== null) {
+					this.searchCancellation.cancel();
+					this.searchCancellation.dispose();
+				}
+				const cancellation = this.searchCancellation = new vscode.CancellationTokenSource();
+				try {
+					const searchResult = await this.dataSource.searchCommits(msg.repo, msg.files, msg.changes, msg.isRegex, msg.isCaseSensitive, msg.since, cancellation.token);
+					if (!cancellation.token.isCancellationRequested) {
+						this.sendMessage({
+							command: 'searchCommits',
+							id: msg.id,
+							...searchResult
+						});
+					}
+				} finally {
+					cancellation.dispose();
+					if (this.searchCancellation === cancellation) this.searchCancellation = null;
+				}
 				break;
+			}
 			case 'loadCommitStats':
 				this.sendMessage({
 					command: 'loadCommitStats',
@@ -846,14 +909,21 @@ export class GitGraphView extends Disposable {
 			}
 			case 'deleteBranches': {
 				const errors: ErrorInfo[] = [];
+				const deletedBranches = new Set<string>();
 				let deleted = 0;
 				await this.undoManager.trackDeleteBranches(msg.repo, t('Delete {0} Branches', msg.branches.length), msg.branches, async () => {
 					for (const branch of msg.branches) {
 						const error = await this.dataSource.deleteBranch(msg.repo, branch, true);
-						if (error === null) deleted++; else errors.push(error);
+						if (error === null) {
+							deleted++;
+							deletedBranches.add(branch);
+						} else {
+							errors.push(error);
+						}
 					}
 				});
 				for (const remoteBranch of msg.remoteBranches) {
+					if (msg.branches.includes(remoteBranch.branch) && !deletedBranches.has(remoteBranch.branch)) continue;
 					const error = await this.dataSource.deleteRemoteBranch(msg.repo, remoteBranch.branch, remoteBranch.remote);
 					if (error !== null) errors.push(error);
 				}
@@ -875,7 +945,7 @@ export class GitGraphView extends Disposable {
 			case 'undoCommit':
 				this.sendMessage({
 					command: 'undoCommit',
-					error: await this.undoManager.trackHead(msg.repo, t('Undo Commit'), () => this.gitFeatures.undoCommit(msg.repo, msg.mode), (error) => error === null, true)
+					error: await this.undoManager.trackHead(msg.repo, t('Undo Commit'), () => this.gitFeatures.undoCommit(msg.repo, msg.mode), (error) => error === null, msg.mode === 'soft' ? 'soft' : 'mixed')
 				});
 				break;
 			case 'fixupCommit':
@@ -935,22 +1005,24 @@ export class GitGraphView extends Disposable {
 				break;
 			}
 			case 'viewVisualFileHistory':
-				vscode.commands.executeCommand('git-map.visualFileHistory', { repo: msg.repo, filePath: msg.filePath }).then(() => { }, () => { });
+				vscode.commands.executeCommand('git-map.visualFileHistory', { repo: msg.repo, filePath: msg.filePath, commitHash: msg.commitHash }).then(() => { }, () => { });
 				break;
-			case 'loadLanguageModels': {
-				const result = await getLanguageModels();
-				this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
+			case 'loadLanguageModels':
+				await this.sendLanguageModels();
 				break;
-			}
-			case 'setAiApiKey': {
+			case 'setAiApiKey':
 				// Ask for the API key (from the Explain tab), then load the models again
 				await vscode.commands.executeCommand('git-map.ai.setApiKey');
-				const result = await getLanguageModels();
-				this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
+				await this.sendLanguageModels();
 				break;
-			}
+			case 'cancelExplainCommit':
+				this.cancelExplain();
+				break;
 			case 'explainCommit':
-				await this.explainCommit(msg.repo, msg.commitHash, msg.modelId);
+				this.explainCommit(msg.repo, msg.commitHash, msg.modelId, msg.endpoint).catch((error) => {
+					const reason = error instanceof Error ? error.message : String(error);
+					this.logger.logError('Unable to explain commit "' + msg.commitHash + '": ' + reason);
+				});
 				break;
 		}
 	}
@@ -975,24 +1047,28 @@ export class GitGraphView extends Disposable {
 	 * Save a patch to a file (chosen by the person), or copy it to the clipboard.
 	 */
 	private async savePatch(repo: string, kind: 'commits' | 'stash' | 'uncommitted', hashes: ReadonlyArray<string>, name: string, copy: boolean): Promise<ErrorInfo> {
+		let targetPath: string | null = null;
+		if (!copy) {
+			const uri = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(repo, name.replace(/[\\/:*?"<>|]/g, '-'))), saveLabel: t('Save Patch'), filters: { [t('Patches')]: ['patch'] } });
+			if (typeof uri === 'undefined') return null;
+			targetPath = uri.fsPath;
+		}
 		const result = kind === 'commits' ? await this.gitFeatures.getCommitsPatch(repo, hashes)
 			: kind === 'stash' ? await this.gitFeatures.getStashPatch(repo, hashes[0])
 				: await this.gitFeatures.getUncommittedPatch(repo);
 		if (result.error !== null) return result.error;
 		if (result.patch === '') return t('There are no changes to save as a patch.');
-		if (copy) {
+		if (copy || targetPath === null) {
 			const error = await copyToClipboard(result.patch);
 			if (error === null) vscode.window.setStatusBarMessage(t('Copied the patch to the clipboard.'), 4000);
 			return error;
 		}
-		const uri = await vscode.window.showSaveDialog({ defaultUri: vscode.Uri.file(path.join(repo, name.replace(/[\\/:*?"<>|]/g, '-'))), saveLabel: t('Save Patch'), filters: { [t('Patches')]: ['patch'] } });
-		if (typeof uri === 'undefined') return null;
 		try {
-			await fs.promises.writeFile(uri.fsPath, result.patch);
+			await fs.promises.writeFile(targetPath, result.patch);
 		} catch (error) {
 			return t('Unable to save the patch: {0}', String(error));
 		}
-		vscode.window.setStatusBarMessage(t('Saved the patch to {0}.', uri.fsPath), 4000);
+		vscode.window.setStatusBarMessage(t('Saved the patch to {0}.', targetPath), 4000);
 		return null;
 	}
 
@@ -1014,30 +1090,67 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Send the available language models (and whether an API key is missing) to the front-end.
+	 */
+	private async sendLanguageModels() {
+		const result = await getLanguageModels();
+		this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
+	}
+
+	/**
+	 * Cancel an in-progress commit explanation, if any.
+	 */
+	private cancelExplain() {
+		if (this.explainCancellation !== null) {
+			this.explainCancellation.cancel();
+			this.explainCancellation.dispose();
+			this.explainCancellation = null;
+		}
+	}
+
+	/**
 	 * Explain a commit with a language model, sending the explanation to the front-end as it's received.
 	 */
-	private async explainCommit(repo: string, hash: string, modelId: string | null) {
-		if (this.explainCancellation !== null) this.explainCancellation.cancel();
+	private async explainCommit(repo: string, hash: string, modelId: string | null, expectedEndpoint?: string | null) {
+		this.cancelExplain();
 		const cancellation = this.explainCancellation = new vscode.CancellationTokenSource();
-		const send = (text: string, done: boolean, model: string | null, truncated: boolean, error: ErrorInfo) => this.sendMessage({ command: 'explainCommit', commitHash: hash, text: text, done: done, model: model, truncated: truncated, error: error });
-		if (!getConfig().explainCommit) {
-			send('', true, null, false, t('Explaining commits is turned off (the "git-map.ai.explainCommit.enabled" setting).'));
-			return;
+		const send = (text: string, done: boolean, model: string | null, truncated: boolean, error: ErrorInfo, cancelled?: boolean) => this.sendMessage({ command: 'explainCommit', commitHash: hash, text: text, done: done, model: model, truncated: truncated, error: error, cancelled: cancelled });
+		try {
+			if (!getConfig().explainCommit) {
+				send('', true, null, false, t('Explaining commits is turned off (the "git-map.ai.explainCommit.enabled" setting).'));
+				return;
+			}
+			if (typeof expectedEndpoint !== 'undefined') {
+				const direct = getDirectAiConfig();
+				const actualEndpoint = direct !== null ? getHost(direct.baseUrl) : null;
+				if (expectedEndpoint !== actualEndpoint) {
+					void this.sendLanguageModels();
+					send('', true, null, false, t('The AI provider or API URL changed. Review the updated destination and try again.'));
+					return;
+				}
+			}
+			const commit = await this.gitFeatures.getCommitForExplanation(repo, hash);
+			if (cancellation.token.isCancellationRequested) {
+				send('', true, null, false, null, true);
+				return;
+			}
+			if (commit.error !== null) {
+				send('', true, null, false, commit.error);
+				return;
+			}
+			let lastSent = 0;
+			const result = await explainCommit(commit.text, modelId, getLanguage(), (text, model) => {
+				if (cancellation.token.isCancellationRequested || Date.now() - lastSent < 150) return;
+				lastSent = Date.now();
+				send(text, false, model, commit.truncated, null);
+			}, cancellation.token);
+			const cancelled = cancellation.token.isCancellationRequested;
+			// Also sent when it was cancelled (by stopping or explaining another commit), so that it doesn't look like it's still being explained
+			send(result.text, true, result.model, commit.truncated, cancelled ? null : result.error, cancelled);
+		} finally {
+			cancellation.dispose();
+			if (this.explainCancellation === cancellation) this.explainCancellation = null;
 		}
-		const commit = await this.gitFeatures.getCommitForExplanation(repo, hash);
-		if (commit.error !== null) {
-			send('', true, null, false, commit.error);
-			return;
-		}
-		let lastSent = 0;
-		const result = await explainCommit(commit.text, modelId, getLanguage(), (text, model) => {
-			if (Date.now() - lastSent < 150) return;
-			lastSent = Date.now();
-			send(text, false, model, commit.truncated, null);
-		}, cancellation.token);
-		// Also sent when it was cancelled (by explaining another commit), so that it doesn't look like it's still being explained
-		send(result.text, true, result.model, commit.truncated, result.error);
-		if (this.explainCancellation === cancellation) this.explainCancellation = null;
 	}
 
 	/**

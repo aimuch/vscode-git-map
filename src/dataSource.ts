@@ -9,7 +9,7 @@ import { getConfig } from './config';
 import { getBaseRange, getRangeDiff, mapLines } from './lineMapping';
 import { Logger } from './logger';
 import { CommitOrdering, DateType, DeepWriteable, ErrorInfo, ErrorInfoExtensionPrefix, GitBlameCommit, GitBranchUpstream, GitBranchUpstreams, GitCommit, GitCommitDetails, GitCommitStash, GitCommitStats, GitConfigLocation, GitFileBlame, GitFileChange, GitFileHistory, GitFileHistoryCommit, GitFileStatus, GitLineBlame, GitLineHistory, GitLineHistoryEntry, GitLineRange, GitOperation, GitPushBranchMode, GitRebaseCommit, GitRebaseTodoItem, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitStashStats, GitTagDetails, GitWorktree, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType, Writeable } from './types';
-import { GitExecutable, GitVersionRequirement, UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, getPathFromStr, getPathFromUri, openGitTerminal, pathWithTrailingSlash, realpath, resolveSpawnOutput, showErrorMessage } from './utils';
+import { GitExecutable, GitVersionRequirement, SpawnOutputOptions, UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, constructIncompatibleGitVersionMessage, doesVersionMeetRequirement, evalPromises, getPathFromStr, getPathFromUri, openGitTerminal, pathWithTrailingSlash, realpath, resolveSpawnOutput, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 import { t } from './l10n';
@@ -172,24 +172,27 @@ export class DataSource extends Disposable {
 			const files = line.match(/(\d+) files? changed/), additions = line.match(/(\d+) insertions?\(\+\)/), deletions = line.match(/(\d+) deletions?\(-\)/);
 			return files !== null ? { files: parseInt(files[1]), additions: additions !== null ? parseInt(additions[1]) : 0, deletions: deletions !== null ? parseInt(deletions[1]) : 0 } : null;
 		};
-		const commits = hashes.filter((hash) => hash !== UNCOMMITTED), batches: string[][] = [];
-		for (let i = 0; i < commits.length; i += 100) batches.push(commits.slice(i, i + 100));
-		return Promise.all(batches.map((batch) => this.spawnGit(['-c', 'log.showSignature=false', 'log', '--no-walk=unsorted', '-m', '--first-parent', '--format=' + GIT_LOG_SEPARATOR + '%H', '--shortstat', ...batch, '--'], repo, (stdout) => {
-			const stats: { [hash: string]: GitCommitStats | null } = {};
-			let hash: string | null = null;
-			stdout.split(LF_REGEX).forEach((line) => {
-				if (line.startsWith(GIT_LOG_SEPARATOR)) {
-					hash = line.substring(GIT_LOG_SEPARATOR.length);
-					stats[hash] = null;
-				} else if (hash !== null && line.trim() !== '') {
-					stats[hash] = parseShortstat(line);
-				}
-			});
-			return stats;
-		})).concat(hashes.includes(UNCOMMITTED)
-			? [this.spawnGit(['diff', '--shortstat', 'HEAD', '--'], repo, (stdout) => ({ [UNCOMMITTED]: parseShortstat(stdout) }))]
-			: []
-		)).then((results) => ({ stats: Object.assign({}, ...results), error: null }), (errorMessage: string) => ({ stats: {}, error: errorMessage }));
+		const commits = hashes.filter((hash) => hash !== UNCOMMITTED);
+		const tasks: Promise<{ [hash: string]: GitCommitStats | null }>[] = [];
+		if (commits.length > 0) {
+			tasks.push(this._spawnGit(['-c', 'log.showSignature=false', 'log', '--no-walk=unsorted', '--stdin', '-m', '--first-parent', '--format=' + GIT_LOG_SEPARATOR + '%H', '--shortstat'], repo, (stdout) => {
+				const stats: { [hash: string]: GitCommitStats | null } = {};
+				let hash: string | null = null;
+				stdout.toString().split(LF_REGEX).forEach((line) => {
+					if (line.startsWith(GIT_LOG_SEPARATOR)) {
+						hash = line.substring(GIT_LOG_SEPARATOR.length);
+						stats[hash] = null;
+					} else if (hash !== null && line.trim() !== '') {
+						stats[hash] = parseShortstat(line);
+					}
+				});
+				return stats;
+			}, false, commits.join('\n') + '\n'));
+		}
+		if (hashes.includes(UNCOMMITTED)) {
+			tasks.push(this.spawnGit(['diff', '--shortstat', 'HEAD', '--'], repo, (stdout) => ({ [UNCOMMITTED]: parseShortstat(stdout) })));
+		}
+		return Promise.all(tasks).then((results) => ({ stats: Object.assign({}, ...results), error: null }), (errorMessage: string) => ({ stats: {}, error: errorMessage }));
 	}
 
 	/**
@@ -199,7 +202,7 @@ export class DataSource extends Disposable {
 	 * @returns The stats of each stash (stashes whose stats couldn't be read are omitted).
 	 */
 	public getStashStats(repo: string, stashes: ReadonlyArray<{ hash: string, baseHash: string, untrackedFilesHash: string | null }>): Promise<{ stats: { [hash: string]: GitStashStats }, error: ErrorInfo }> {
-		return Promise.all(stashes.map((stash) => Promise.all([
+		return evalPromises(stashes.slice(), 4, (stash) => Promise.all([
 			this.spawnGit(['diff', '--numstat', '--no-renames', '--no-ext-diff', stash.baseHash, stash.hash, '--'], repo, (stdout) => {
 				let files = 0, additions = 0, deletions = 0;
 				stdout.split(LF_REGEX).forEach((line) => {
@@ -214,7 +217,7 @@ export class DataSource extends Disposable {
 			stash.untrackedFilesHash !== null
 				? this.spawnGit(['ls-tree', '-r', '--name-only', stash.untrackedFilesHash, '--'], repo, (stdout) => stdout.split(LF_REGEX).filter((line) => line !== '').length)
 				: Promise.resolve(0)
-		]).then((results) => ({ hash: stash.hash, stats: <GitStashStats>{ files: results[0].files + results[1], additions: results[0].additions, deletions: results[0].deletions, untrackedFiles: results[1] } }), () => null))).then((results) => {
+		]).then((results) => ({ hash: stash.hash, stats: <GitStashStats>{ files: results[0].files + results[1], additions: results[0].additions, deletions: results[0].deletions, untrackedFiles: results[1] } }), () => null)).then((results) => {
 			const stats: { [hash: string]: GitStashStats } = {};
 			results.forEach((result) => {
 				if (result !== null) stats[result.hash] = result.stats;
@@ -231,9 +234,10 @@ export class DataSource extends Disposable {
 	 * @param isRegex Is the text of the changes a regular expression.
 	 * @param isCaseSensitive Is the search case sensitive.
 	 * @param since Only commits committed on or after this unix timestamp are searched (0 => all commits).
+	 * @param cancellation Optional token cancelling in-flight Git searches.
 	 * @returns The hashes of the commits that match.
 	 */
-	public searchCommits(repo: string, files: ReadonlyArray<string>, changes: ReadonlyArray<string>, isRegex: boolean, isCaseSensitive: boolean, since: number): Promise<{ hashes: string[], error: ErrorInfo }> {
+	public searchCommits(repo: string, files: ReadonlyArray<string>, changes: ReadonlyArray<string>, isRegex: boolean, isCaseSensitive: boolean, since: number, cancellation?: vscode.CancellationToken): Promise<{ hashes: string[], error: ErrorInfo }> {
 		const pathspecs = files.map((file) => (isCaseSensitive ? '' : ':(icase)') + '*' + file.replace(/[*?[\\]/g, '\\$&') + '*');
 		const search = (change: string | null) => {
 			const args = ['-c', 'log.showSignature=false', 'log', '--format=%H', '--branches', '--remotes', '--tags', 'HEAD'];
@@ -243,7 +247,7 @@ export class DataSource extends Disposable {
 				if (!isCaseSensitive) args.push('--regexp-ignore-case');
 			}
 			args.push('--', ...pathspecs);
-			return this.spawnGit(args, repo, (stdout) => stdout.split(LF_REGEX).filter((hash) => hash !== ''));
+			return this._spawnGit(args, repo, (stdout) => stdout.toString().split(LF_REGEX).filter((hash) => hash !== ''), false, null, null, { cancellation: cancellation || null });
 		};
 		// Git only supports one -G option, so each change is searched for separately (and commits that match all of them are returned)
 		return Promise.all(changes.length > 0 ? changes.map((change) => search(change)) : [search(null)]).then((results) => {
@@ -252,7 +256,7 @@ export class DataSource extends Disposable {
 				return matched.filter((hash) => set.has(hash));
 			});
 			return { hashes: hashes, error: null };
-		}).catch((errorMessage: string) => ({ hashes: <string[]>[], error: errorMessage }));
+		}).catch((errorMessage: string) => ({ hashes: <string[]>[], error: cancellation && cancellation.isCancellationRequested ? null : errorMessage }));
 	}
 
 	/**
@@ -1907,8 +1911,11 @@ export class DataSource extends Disposable {
 	 * @param contents The contents of the file.
 	 * @returns The blame of the line, or NULL if it couldn't be determined (e.g. the file isn't tracked).
 	 */
-	public getLineBlame(repo: string, filePath: string, line: number, contents: string): Promise<GitLineBlame | null> {
-		return this._spawnGit(['blame', '--porcelain', ...this.getBlameOptions(repo), '-L', line + ',' + line, '--contents', '-', '--', filePath], repo, (stdout) => {
+	public getLineBlame(repo: string, filePath: string, line: number, contents: string | null = null, cancellation?: vscode.CancellationToken): Promise<GitLineBlame | null> {
+		const args = ['-c', 'core.quotepath=false', 'blame', '--porcelain', ...this.getBlameOptions(repo), '-L', line + ',' + line];
+		if (contents !== null) args.push('--contents', '-');
+		args.push('--', filePath);
+		return this._spawnGit(args, repo, (stdout) => {
 			const lines = stdout.toString().split(LF_REGEX), header = lines.length > 0 ? lines[0].match(/^([0-9a-f]{40,64}) (\d+) /) : null;
 			if (header === null) return null;
 			const field = (name: string) => {
@@ -1925,19 +1932,23 @@ export class DataSource extends Disposable {
 				originalLine: parseInt(header[2]),
 				originalFilePath: field('filename') || filePath
 			};
-		}, false, contents).catch(() => null);
+		}, false, contents, null, { cancellation: cancellation || null }).catch(() => null);
 	}
 
 	/**
-	 * Get the commit that last changed each line of a file. The contents of the file are blamed (rather than the committed file), so that
-	 * the line numbers of a file with uncommitted changes match.
+	 * Get the commit that last changed each line of a file. The contents of the file are blamed when dirty (rather than the committed file),
+	 * so that the line numbers of a file with uncommitted changes match.
 	 * @param repo The path of the repository.
 	 * @param filePath The path of the file (relative to the repository).
-	 * @param contents The contents of the file.
+	 * @param contents The contents of the file (NULL => read from the working tree on disk).
+	 * @param cancellation Optional token cancelling the blame process.
 	 * @returns The blame of the file, or NULL if it couldn't be determined (e.g. the file isn't tracked).
 	 */
-	public getFileBlame(repo: string, filePath: string, contents: string): Promise<GitFileBlame | null> {
-		return this._spawnGit(['blame', '--porcelain', ...this.getBlameOptions(repo), '--contents', '-', '--', filePath], repo, (stdout) => {
+	public getFileBlame(repo: string, filePath: string, contents: string | null = null, cancellation?: vscode.CancellationToken): Promise<GitFileBlame | null> {
+		const args = ['-c', 'core.quotepath=false', 'blame', '--porcelain', ...this.getBlameOptions(repo)];
+		if (contents !== null) args.push('--contents', '-');
+		args.push('--', filePath);
+		return this._spawnGit(args, repo, (stdout) => {
 			const lines: { hash: string, originalLine: number }[] = [], commits: { [hash: string]: Writeable<GitBlameCommit> } = {};
 			let commit: Writeable<GitBlameCommit> | null = null, hash = '', match: RegExpMatchArray | null;
 			stdout.toString().split(LF_REGEX).forEach((line) => {
@@ -1955,12 +1966,14 @@ export class DataSource extends Disposable {
 				}
 			});
 			return lines.length > 0 ? { lines: lines, commits: commits } : null;
-		}, false, contents).catch(() => null);
+		}, false, contents, null, { cancellation: cancellation || null }).catch(() => null);
 	}
+
+	private realRepoCache: { [repoRoot: string]: string } = {};
 
 	/**
 	 * Get the options of `git blame` set by the Extension Settings: ignoring changes to whitespace (`git-map.blame.ignoreWhitespace`),
-	 * and the file listing the commits to ignore (`git-map.blame.ignoreRevsFile`, used if it exists in the repository).
+	 * and the file listing the commits to ignore (`git-map.blame.ignoreRevsFile`, used if it exists inside the repository).
 	 * @param repo The path of the repository.
 	 * @returns The options.
 	 */
@@ -1968,9 +1981,17 @@ export class DataSource extends Disposable {
 		const config = getConfig(repo), options: string[] = [];
 		if (config.blameIgnoreWhitespace) options.push('-w');
 		const ignoreRevsFile = config.blameIgnoreRevsFile;
-		if (ignoreRevsFile !== '' && this.gitExecutable !== null && doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.IgnoreRevsFile)) {
-			const absolutePath = path.isAbsolute(ignoreRevsFile) ? ignoreRevsFile : path.join(repo, ignoreRevsFile);
-			if (fs.existsSync(absolutePath)) options.push('--ignore-revs-file', absolutePath);
+		if (ignoreRevsFile !== '' && !path.isAbsolute(ignoreRevsFile) && this.gitExecutable !== null && doesVersionMeetRequirement(this.gitExecutable.version, GitVersionRequirement.IgnoreRevsFile)) {
+			const repoRoot = path.resolve(repo), absolutePath = path.resolve(repoRoot, ignoreRevsFile);
+			if (absolutePath.startsWith(repoRoot + path.sep) && fs.existsSync(absolutePath)) {
+				try {
+					const realRepo = this.realRepoCache[repoRoot] || (this.realRepoCache[repoRoot] = fs.realpathSync(repoRoot));
+					const realTarget = fs.realpathSync(absolutePath);
+					if (realTarget.startsWith(realRepo + path.sep) && fs.statSync(realTarget).isFile()) {
+						options.push('--ignore-revs-file', absolutePath);
+					}
+				} catch (_) { }
+			}
 		}
 		return options;
 	}
@@ -2037,8 +2058,8 @@ export class DataSource extends Disposable {
 	 * @param line The line in the commit (1-based).
 	 * @returns The change (the diff of the line, and the paths of the file), or NULL if it couldn't be determined.
 	 */
-	public getLineChange(repo: string, hash: string, filePath: string, line: number) {
-		return this.spawnGit(['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--max-count=1', '--format=', '-L', line + ',' + line + ':' + filePath, hash, '--'], repo, (stdout) => parseLineHistoryDiff(stdout, filePath)).catch(() => null);
+	public getLineChange(repo: string, hash: string, filePath: string, line: number, cancellation?: vscode.CancellationToken) {
+		return this._spawnGit(['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--max-count=1', '--format=', '-L', line + ',' + line + ':' + filePath, hash, '--'], repo, (stdout) => parseLineHistoryDiff(stdout.toString(), filePath), false, null, null, { maxBytes: 256 * 1024, cancellation: cancellation || null }).catch(() => null);
 	}
 
 	/**
@@ -2092,8 +2113,11 @@ export class DataSource extends Disposable {
 	 * @param maxCommits The maximum number of commits to return.
 	 * @returns The history of the lines.
 	 */
-	public async getLineHistory(repo: string, filePath: string, range: GitLineRange, contents: string, maxCommits: number): Promise<GitLineHistory> {
-		const base = await this.spawnGit(['-c', 'core.quotepath=false', 'show', 'HEAD:' + filePath], repo, (stdout) => stdout).catch(() => null);
+	public async getLineHistory(repo: string, filePath: string, range: GitLineRange, contents: string, maxCommits: number, cancellation?: vscode.CancellationToken): Promise<GitLineHistory> {
+		const base = await this._spawnGit(['-c', 'core.quotepath=false', 'show', 'HEAD:' + filePath], repo, (stdout) => stdout.toString(), false, null, null, { cancellation: cancellation || null }).catch(() => null);
+		if (cancellation && cancellation.isCancellationRequested) {
+			return { repo: repo, filePath: filePath, range: range, headRange: null, entries: [], moreAvailable: false, error: null };
+		}
 		const current = contents.split(LF_REGEX), baseLines = base !== null ? base.split(LF_REGEX) : [];
 		const map = mapLines(baseLines, current);
 		const first = Math.max(Math.min(range.start, current.length), 1) - 1, last = Math.max(Math.min(range.end, current.length), first + 1) - 1;
@@ -2115,8 +2139,8 @@ export class DataSource extends Disposable {
 		}
 
 		const args = ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--max-count=' + (maxCommits + 1), '--format=' + GIT_LOG_SEPARATOR + '%H%x1f%P%x1f%an%x1f%ae%x1f%at%x1f%s%x1f%b%x1e', '-L', headRange.start + ',' + headRange.end + ':' + filePath, 'HEAD', '--'];
-		return this.spawnGit(args, repo, (stdout) => {
-			stdout.split(GIT_LOG_SEPARATOR).slice(1).forEach((record) => {
+		return this._spawnGit(args, repo, (stdout) => {
+			stdout.toString().split(GIT_LOG_SEPARATOR).slice(1).forEach((record) => {
 				const headerEnd = record.indexOf('\x1e');
 				if (headerEnd === -1) return;
 				const fields = record.substring(0, headerEnd).split('\x1f');
@@ -2129,7 +2153,7 @@ export class DataSource extends Disposable {
 			const numCommits = entries.filter((entry) => entry.hash !== UNCOMMITTED).length;
 			if (numCommits > maxCommits) entries.pop();
 			return { repo: repo, filePath: filePath, range: range, headRange: headRange, entries: entries, moreAvailable: numCommits > maxCommits, error: null };
-		}).catch((errorMessage: string) => ({ repo: repo, filePath: filePath, range: range, headRange: headRange, entries: entries, moreAvailable: false, error: errorMessage }));
+		}, false, null, null, { cancellation: cancellation || null }).catch((errorMessage: string) => ({ repo: repo, filePath: filePath, range: range, headRange: headRange, entries: entries, moreAvailable: false, error: cancellation && cancellation.isCancellationRequested ? null : errorMessage }));
 	}
 
 	/**
@@ -2143,7 +2167,10 @@ export class DataSource extends Disposable {
 	 */
 	public getFileDiff(repo: string, commitHash: string, parentHash: string | null, oldFilePath: string, newFilePath: string): Promise<{ diff: string, error: ErrorInfo }> {
 		const paths = oldFilePath !== newFilePath ? [oldFilePath, newFilePath] : [newFilePath];
-		return this.spawnGit(['-c', 'core.quotepath=false', 'diff', '--no-color', '--no-ext-diff', '-M', parentHash !== null ? parentHash : EMPTY_TREE_HASH, commitHash, '--', ...paths], repo, (stdout) => stdout.length > 200000 ? stdout.substring(0, 200000) : stdout).then(
+		return this._spawnGit(['-c', 'core.quotepath=false', 'diff', '--no-color', '--no-ext-diff', '-M', parentHash !== null ? parentHash : EMPTY_TREE_HASH, commitHash, '--', ...paths], repo, (stdout) => {
+			const text = stdout.toString();
+			return text.length > 200000 ? text.substring(0, 200000) : text;
+		}, false, null, null, { maxBytes: 200000 }).then(
 			(diff) => ({ diff: diff, error: null }),
 			(errorMessage: string) => ({ diff: '', error: errorMessage })
 		);
@@ -2457,6 +2484,8 @@ export class DataSource extends Disposable {
 		return this.resolveCommitHash(repo, base).then((baseHash) => {
 			const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'git-map-rebase-')), lines: string[] = [];
 			(this.rebaseDirectories[repo] = this.rebaseDirectories[repo] || []).push(directory);
+			const signCommits = getConfig(repo).signCommits;
+			const gitCmd = quoteForShell(this.gitExecutable !== null ? this.gitExecutable.path : 'git');
 			todo.forEach((item, index) => {
 				if (!/^[0-9a-f]{7,64}$/.test(item.hash)) throw new Error('Invalid commit hash: ' + item.hash);
 				lines.push((item.action === 'reword' ? 'pick' : item.action) + ' ' + item.hash);
@@ -2464,13 +2493,13 @@ export class DataSource extends Disposable {
 					// The new message is read from a file, so that it's never included in the command run by the shell
 					const messageFile = path.join(directory, 'message-' + index + '.txt').replace(/\\/g, '/');
 					fs.writeFileSync(messageFile, item.message);
-					lines.push('exec git commit --amend --allow-empty --cleanup=strip -F ' + quoteForShell(messageFile));
+					lines.push('exec ' + gitCmd + ' commit --amend --no-verify --allow-empty --cleanup=strip' + (signCommits ? ' -S' : '') + ' -F ' + quoteForShell(messageFile));
 				}
 			});
 			const todoFile = path.join(directory, 'git-rebase-todo').replace(/\\/g, '/');
 			fs.writeFileSync(todoFile, lines.join('\n') + '\n');
-			const args = ['rebase', '--interactive'];
-			if (getConfig().signCommits) args.push('-S');
+			const args = ['rebase', '--interactive', '--autostash'];
+			if (signCommits) args.push('-S');
 			args.push(baseHash);
 			// The sequence editor replaces the todo list written by Git with the chosen one (Git runs it with sh, including on Windows), and
 			// the editor ":" isn't run by Git (so the combined messages of squashed commits are used)
@@ -2501,9 +2530,20 @@ export class DataSource extends Disposable {
 	public async getOperationInProgress(repo: string): Promise<GitOperation | null> {
 		// A patch applied with "git am" also uses the rebase-apply directory (with an "applying" file in it)
 		const operations: [string, GitOperation][] = [['rebase-merge', 'rebase'], ['rebase-apply/applying', 'am'], ['rebase-apply', 'rebase'], ['MERGE_HEAD', 'merge'], ['CHERRY_PICK_HEAD', 'cherry-pick'], ['REVERT_HEAD', 'revert']];
-		for (const [file, operation] of operations) {
-			const gitPath = await this.spawnGit(['rev-parse', '--git-path', file], repo, (stdout) => stdout.trim()).catch(() => '');
-			if (gitPath !== '' && fs.existsSync(path.resolve(repo, gitPath))) return operation;
+		try {
+			const dotGit = path.join(repo, '.git');
+			if (fs.statSync(dotGit).isDirectory()) {
+				for (const [file, operation] of operations) {
+					if (fs.existsSync(path.join(dotGit, file))) return operation;
+				}
+				return null;
+			}
+		} catch (_) { }
+		const pathArgs: string[] = [];
+		operations.forEach(([file]) => pathArgs.push('--git-path', file));
+		const gitPaths = await this.spawnGit(['rev-parse', ...pathArgs], repo, (stdout) => stdout.split(LF_REGEX).filter((line) => line !== '')).catch(() => <string[]>[]);
+		for (let i = 0; i < operations.length && i < gitPaths.length; i++) {
+			if (fs.existsSync(path.resolve(repo, gitPaths[i]))) return operations[i][1];
 		}
 		return null;
 	}
@@ -2601,6 +2641,17 @@ export class DataSource extends Disposable {
 		return this.spawnGit(args, repo, (stdout) => stdout);
 	}
 
+	private getGitEnv(env: { [name: string]: string } | null = null) {
+		const merged: NodeJS.ProcessEnv = Object.assign({}, process.env, this.askpassEnv);
+		if (typeof merged.LC_ALL === 'string' && merged.LC_ALL !== '') {
+			if (typeof merged.LC_CTYPE === 'undefined') merged.LC_CTYPE = merged.LC_ALL;
+			delete merged.LC_ALL;
+		}
+		merged.LC_MESSAGES = 'C';
+		merged.LANGUAGE = 'C';
+		return env !== null ? Object.assign(merged, env) : merged;
+	}
+
 	/**
 	 * Spawn Git, returning its process. Used for long-running commands whose input & output are streamed, and which can be cancelled
 	 * (see HistoryRewriter).
@@ -2615,7 +2666,7 @@ export class DataSource extends Disposable {
 		this.logger.logCmd('git', args);
 		return cp.spawn(this.gitExecutable.path, args, {
 			cwd: repo,
-			env: Object.assign({}, process.env, this.askpassEnv, env)
+			env: this.getGitEnv(env)
 		});
 	}
 
@@ -2654,7 +2705,7 @@ export class DataSource extends Disposable {
 	 * @param resolveValue A callback invoked to resolve the data from `stdout` and `stderr`.
 	 * @param ignoreExitCode Ignore the exit code returned by Git (default: `FALSE`).
 	 */
-	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, input: string | null = null, env: { [name: string]: string } | null = null) {
+	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, input: string | null = null, env: { [name: string]: string } | null = null, options?: SpawnOutputOptions) {
 		return new Promise<T>((resolve, reject) => {
 			if (this.gitExecutable === null) {
 				return reject(UNABLE_TO_FIND_GIT_MSG);
@@ -2662,14 +2713,14 @@ export class DataSource extends Disposable {
 
 			const gitProcess = cp.spawn(this.gitExecutable.path, args, {
 				cwd: repo,
-				env: Object.assign({}, process.env, this.askpassEnv, env)
+				env: this.getGitEnv(env)
 			});
 			if (input !== null && gitProcess.stdin) {
 				// The input is written to the standard input of Git (if Git exits before reading it, the error is ignored)
 				gitProcess.stdin.on('error', () => { });
 				gitProcess.stdin.end(input);
 			}
-			resolveSpawnOutput(gitProcess).then((values) => {
+			resolveSpawnOutput(gitProcess, options).then((values) => {
 				const status = values[0], stdout = values[1], stderr = values[2];
 				if (status.code === 0 || ignoreExitCode) {
 					resolve(resolveValue(stdout, stderr));

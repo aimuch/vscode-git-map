@@ -4,13 +4,13 @@ import * as vscode from 'vscode';
 import { Logger } from './logger';
 import { getPathFromUri } from './utils';
 
-const FILE_CHANGE_REGEX = /(^\.git\/(config|index|HEAD|packed-refs|refs\/stash|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
-const GIT_DIRECTORY_FILE_CHANGE_GLOB = '{config,index,HEAD,packed-refs,refs/**}';
+const FILE_CHANGE_REGEX = /(^\.git\/(config|index|HEAD|packed-refs|BISECT_START|MERGE_HEAD|CHERRY_PICK_HEAD|REVERT_HEAD|rebase-merge.*|rebase-apply.*|refs\/stash|refs\/bisect\/.*|refs\/heads\/.*|refs\/remotes\/.*|refs\/tags\/.*)$)|(^(?!\.git).*$)|(^\.git[^\/]+$)/;
+const GIT_DIRECTORY_FILE_CHANGE_GLOB = '{config,index,HEAD,packed-refs,BISECT_START,MERGE_HEAD,CHERRY_PICK_HEAD,REVERT_HEAD,rebase-merge/**,rebase-apply/**,refs/**}';
 
 /**
  * The maximum number of changed files that are reported (if more files change, which files changed isn't reported).
  */
-const MAX_CHANGED_PATHS = 200;
+const MAX_CHANGED_PATHS = 5000;
 
 /**
  * Watches a Git repository for file events.
@@ -25,6 +25,7 @@ export class RepoFileWatcher {
 	private watchId: number = 0;
 	private refreshTimeout: NodeJS.Timeout | null = null;
 	private muted: boolean = false;
+	private muteCount: number = 0;
 	private resumeAt: number = 0;
 
 	/**
@@ -96,6 +97,7 @@ export class RepoFileWatcher {
 	 * Mute file events - Used to prevent many file events from being triggered when a Git action is executed by the Git Map View.
 	 */
 	public mute() {
+		this.muteCount++;
 		this.muted = true;
 	}
 
@@ -103,8 +105,11 @@ export class RepoFileWatcher {
 	 * Unmute file events - Used to resume normal watching after a Git action executed by the Git Map View has completed.
 	 */
 	public unmute() {
-		this.muted = false;
-		this.resumeAt = (new Date()).getTime() + 1500;
+		if (this.muteCount > 0) this.muteCount--;
+		if (this.muteCount === 0) {
+			this.muted = false;
+			this.resumeAt = (new Date()).getTime() + 1500;
+		}
 	}
 
 

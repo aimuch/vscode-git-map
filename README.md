@@ -212,6 +212,7 @@ This extension contributes the following commands:
 * `git-map.restoreHistoryBackup`: Git Map: Restore History from Backup... _(restores the branches & tags from the backup created before files were removed from the history)_
 * `git-map.resumeWorkspaceCodeReview`: Git Map: Resume a specific Code Review in Workspace... _(used to open the Git Map View to a Code Review that is already in progress)_
 * `git-map.selectGraphColourPreset`: Git Map: Select Graph Colour Preset...
+* `git-map.setAiApiKey` / `git-map.clearAiApiKey`: Git Map: Set AI API Key... / Git Map: Clear AI API Key
 * `git-map.toggleFileBlame`: Git Map: Toggle File Blame
 * `git-map.toggleLineBlame`: Git Map: Toggle Current Line Blame
 * `git-map.version`: Git Map: Get Version Information
@@ -229,7 +230,7 @@ Detailed Release Notes are available [here](CHANGELOG.md).
 ## Installation
 
 This fork isn't published on the Visual Studio Marketplace. Get the VSIX (offline installation package) in one of the following ways:
-* Download `git-map-<version>.vsix` from the [GitHub Releases](https://github.com/aimuch/vscode-git-map/releases) of the repository: the `dev` pre-release is the latest build of the main branch (updated on every push), and each tagged version has its own release. Every [Build & Test](https://github.com/aimuch/vscode-git-map/actions/workflows/build-and-test.yml) workflow run also has the VSIX as its `git-graph-vsix` artifact.
+* Download `git-map-<version>.vsix` from the [GitHub Releases](https://github.com/aimuch/vscode-git-map/releases) of the repository: the `dev` pre-release is the latest build of the main branch (updated on every push), and each tagged version has its own release. Every [Build & Test](https://github.com/aimuch/vscode-git-map/actions/workflows/build-and-test.yml) workflow run also has the VSIX as its `git-map-vsix` artifact.
 * Build it: run `npm install`, then `npm run package` to create `git-map-<version>.vsix`.
 
 Install the VSIX, either with `code --install-extension git-map-<version>.vsix --force`, or from the Extensions View in Visual Studio Code (`...` > Install from VSIX...).

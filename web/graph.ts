@@ -36,13 +36,15 @@ type VertexOrNull = Vertex | null;
 /* Branch Class */
 
 class Branch {
+	public readonly index: number;
 	private readonly colour: number;
 	private end: number = 0;
 	private lines: Line[] = [];
 	private numUncommitted: number = 0;
 
-	constructor(colour: number) {
+	constructor(colour: number, index: number) {
 		this.colour = colour;
+		this.index = index;
 	}
 
 	public addLine(p1: Point, p2: Point, isCommitted: boolean, lockedFirst: boolean) {
@@ -72,7 +74,7 @@ class Branch {
 
 	/* Rendering */
 
-	public draw(svg: SVGElement, config: GG.GraphConfig, expandAt: number, branchIndex: number) {
+	public draw(svg: SVGElement, config: GG.GraphConfig, expandAt: number, branchElems: SVGElement[]) {
 		let colour = config.colours[this.colour % config.colours.length], i, x1, y1, x2, y2, lines: PlacedLine[] = [], curPath = '', d = config.grid.y * (config.style === GG.GraphStyle.Angular ? 0.38 : 0.8), line, nextLine;
 
 		// Convert branch lines into pixel coordinates, respecting expanded commit extensions
@@ -123,7 +125,7 @@ class Branch {
 
 			// If the new point belongs to a different path, render the current path and reset it for the new path
 			if (curPath !== '' && i > 0 && line.isCommitted !== lines[i - 1].isCommitted) {
-				Branch.drawPath(svg, curPath, lines[i - 1].isCommitted, colour, config.uncommittedChanges, branchIndex);
+				Branch.drawPath(svg, curPath, lines[i - 1].isCommitted, colour, config.uncommittedChanges, this.index, branchElems);
 				curPath = '';
 			}
 
@@ -142,11 +144,11 @@ class Branch {
 		}
 
 		if (curPath !== '') {
-			Branch.drawPath(svg, curPath, lines[lines.length - 1].isCommitted, colour, config.uncommittedChanges, branchIndex); // Draw the remaining path
+			Branch.drawPath(svg, curPath, lines[lines.length - 1].isCommitted, colour, config.uncommittedChanges, this.index, branchElems); // Draw the remaining path
 		}
 	}
 
-	private static drawPath(svg: SVGElement, path: string, isCommitted: boolean, colour: string, uncommittedChanges: GG.GraphUncommittedChangesStyle, branchIndex: number) {
+	private static drawPath(svg: SVGElement, path: string, isCommitted: boolean, colour: string, uncommittedChanges: GG.GraphUncommittedChangesStyle, branchIndex: number, branchElems: SVGElement[]) {
 		const shadow = svg.appendChild(document.createElementNS(SVG_NAMESPACE, 'path')), line = svg.appendChild(document.createElementNS(SVG_NAMESPACE, 'path'));
 		shadow.setAttribute('class', 'shadow');
 		shadow.setAttribute('d', path);
@@ -157,6 +159,7 @@ class Branch {
 		if (!isCommitted && uncommittedChanges === GG.GraphUncommittedChangesStyle.OpenCircleAtTheCheckedOutCommit) {
 			line.setAttribute('stroke-dasharray', '2px');
 		}
+		branchElems.push(line);
 	}
 }
 
@@ -296,8 +299,9 @@ class Vertex {
 
 	/* Rendering */
 
-	public draw(svg: SVGElement, config: GG.GraphConfig, expandOffset: boolean, branchIndex: number, overListener: (event: MouseEvent) => void, outListener: (event: MouseEvent) => void, avatar: VertexAvatar | null) {
+	public draw(svg: SVGElement, config: GG.GraphConfig, expandOffset: boolean, highlighted: boolean, branchElems: SVGElement[] | null, avatar: VertexAvatar | null) {
 		if (this.onBranch === null) return;
+		const branchIndex = this.onBranch.index;
 
 		const colour = this.isCommitted ? config.colours[this.onBranch.getColour() % config.colours.length] : '#808080';
 		const cx = (this.x * config.grid.x + config.grid.offsetX).toString();
@@ -333,12 +337,22 @@ class Vertex {
 		} else {
 			circle.setAttribute('fill', colour);
 		}
-		svg.appendChild(circle);
-		if (avatarElem !== null) svg.appendChild(avatarElem);
-
 		if (this.isStash && !this.isCurrent) {
 			circle.setAttribute('r', '4.5');
 			circle.setAttribute('class', 'stashOuter');
+		}
+		if (highlighted) {
+			circle.classList.add('highlight');
+			if (avatarElem !== null) avatarElem.classList.add('highlight');
+		}
+		svg.appendChild(circle);
+		if (avatarElem !== null) svg.appendChild(avatarElem);
+		if (branchElems !== null) {
+			branchElems.push(circle);
+			if (avatarElem !== null) branchElems.push(avatarElem);
+		}
+
+		if (this.isStash && !this.isCurrent) {
 			const innerCircle = document.createElementNS(SVG_NAMESPACE, 'circle');
 			innerCircle.setAttribute('cx', cx);
 			innerCircle.setAttribute('cy', cy);
@@ -346,9 +360,6 @@ class Vertex {
 			innerCircle.setAttribute('class', 'stashInner');
 			svg.appendChild(innerCircle);
 		}
-
-		circle.addEventListener('mouseover', overListener);
-		circle.addEventListener('mouseout', outListener);
 	}
 }
 
@@ -411,11 +422,17 @@ class Graph {
 	private readonly gradientStop1: SVGStopElement;
 	private readonly gradientStop2: SVGStopElement;
 	private group: SVGGElement | null = null;
+	private vertexGroup: SVGGElement | null = null;
+	private pathElemsByBranch: SVGElement[][] = [];
+	private vertexElemsByBranch: SVGElement[][] = [];
+	private highlightedBranch: number | null = null;
+	private visibleRange: { start: number, end: number } | null = null;
+	private pinnedIndices: ReadonlySet<number> | null = null;
 
 	private tooltipId: number = -1;
 	private tooltipElem: HTMLElement | null = null;
 	private tooltipTimeout: number | null = null;
-	private tooltipVertex: HTMLElement | null = null;
+	private tooltipVertex: SVGElement | null = null;
 
 	constructor(id: string, viewElem: HTMLElement, config: GG.GraphConfig, muteConfig: GG.MuteCommitsConfig) {
 		this.viewElem = viewElem;
@@ -427,6 +444,14 @@ class Graph {
 		const elem = document.getElementById(id)!;
 		this.contentElem = elem.parentElement!;
 		this.svg = document.createElementNS(SVG_NAMESPACE, 'svg');
+		this.svg.addEventListener('mouseover', (e) => {
+			const circle = e.target instanceof Element ? <SVGElement | null>e.target.closest('circle[data-id]') : null;
+			if (circle !== null) this.vertexOver(circle);
+		});
+		this.svg.addEventListener('mouseout', (e) => {
+			const circle = e.target instanceof Element ? <SVGElement | null>e.target.closest('circle[data-id]') : null;
+			if (circle !== null && e.relatedTarget !== circle) this.closeTooltip();
+		});
 		let defs = this.svg.appendChild(document.createElementNS(SVG_NAMESPACE, 'defs'));
 
 		let linearGradient = defs.appendChild(document.createElementNS(SVG_NAMESPACE, 'linearGradient'));
@@ -499,21 +524,25 @@ class Graph {
 		}
 	}
 
-	public render(expandedCommit: ExpandedCommit | null) {
+	public render(expandedCommit: ExpandedCommit | null, visibleRange: { start: number, end: number } | null = this.visibleRange, pinned: ReadonlySet<number> | null = this.pinnedIndices) {
 		this.renderedExpandedCommit = expandedCommit;
 		this.expandedCommitIndex = expandedCommit !== null ? expandedCommit.index : -1;
+		this.visibleRange = visibleRange;
+		this.pinnedIndices = pinned;
+		this.highlightedBranch = null;
+		this.svg.classList.remove('branchHighlight');
 		let group = document.createElementNS(SVG_NAMESPACE, 'g'), i, contentWidth = this.getContentWidth();
 		group.setAttribute('mask', 'url(#GraphMask)');
 
+		this.pathElemsByBranch = this.branches.map(() => []);
 		for (i = 0; i < this.branches.length; i++) {
-			this.branches[i].draw(group, this.config, this.expandedCommitIndex, i);
+			this.branches[i].draw(group, this.config, this.expandedCommitIndex, this.pathElemsByBranch[i]);
 		}
 
-		const overListener = (e: MouseEvent) => this.vertexOver(e), outListener = (e: MouseEvent) => this.vertexOut(e), avatars = this.config.nodeStyle === GG.GraphNodeStyle.Avatar;
-		for (i = 0; i < this.vertices.length; i++) {
-			const branch = this.vertices[i].getBranch(), commit = avatars && i < this.commits.length ? this.commits[i] : null;
-			this.vertices[i].draw(group, this.config, expandedCommit !== null && i > expandedCommit.index, branch !== null ? this.branches.indexOf(branch) : -1, overListener, outListener, commit !== null ? { author: commit.author, email: commit.email, pattern: this.getAvatarPattern(commit.email, null) } : null);
-		}
+		const vertexGroup = document.createElementNS(SVG_NAMESPACE, 'g');
+		group.appendChild(vertexGroup);
+		this.vertexGroup = vertexGroup;
+		this.renderVertices(visibleRange, pinned);
 
 		if (this.group !== null) this.svg.removeChild(this.group);
 		this.svg.appendChild(group);
@@ -523,6 +552,42 @@ class Graph {
 		this.closeTooltip();
 	}
 
+	/**
+	 * Update the vertices rendered when the virtualised window of rows changes on scroll.
+	 */
+	public updateVisibleVertices(visibleRange: { start: number, end: number } | null, pinned: ReadonlySet<number> | null) {
+		this.visibleRange = visibleRange;
+		this.pinnedIndices = pinned;
+		if (this.vertexGroup === null) return;
+		this.closeTooltip();
+		this.renderVertices(visibleRange, pinned);
+	}
+
+	private renderVertices(visibleRange: { start: number, end: number } | null, pinned: ReadonlySet<number> | null) {
+		if (this.vertexGroup === null) return;
+		this.vertexGroup.innerHTML = '';
+		this.vertexElemsByBranch = this.branches.map(() => []);
+		const avatars = this.config.nodeStyle === GG.GraphNodeStyle.Avatar;
+		const drawVertex = (i: number) => {
+			if (i < 0 || i >= this.vertices.length) return;
+			const branch = this.vertices[i].getBranch();
+			if (branch === null) return;
+			const commit = avatars && i < this.commits.length ? this.commits[i] : null;
+			this.vertices[i].draw(this.vertexGroup!, this.config, this.expandedCommitIndex > -1 && i > this.expandedCommitIndex, this.highlightedBranch === branch.index, this.vertexElemsByBranch[branch.index], commit !== null ? { author: commit.author, email: commit.email, pattern: this.getAvatarPattern(commit.email, null) } : null);
+		};
+		if (visibleRange === null) {
+			for (let i = 0; i < this.vertices.length; i++) drawVertex(i);
+		} else {
+			const start = Math.max(0, visibleRange.start), end = Math.min(this.vertices.length, visibleRange.end);
+			for (let i = start; i < end; i++) drawVertex(i);
+			if (pinned !== null) {
+				pinned.forEach((index) => {
+					if (index < start || index >= end) drawVertex(index);
+				});
+			}
+		}
+	}
+
 
 	/**
 	 * Highlight the branch (line) of the graph that a commit is on, dimming the other branches.
@@ -530,12 +595,21 @@ class Graph {
 	 */
 	public highlightBranchOfCommit(id: number | null) {
 		if (this.group === null) return;
-		const branch = id !== null && id < this.vertices.length ? this.vertices[id].getBranch() : null;
-		const branchIndex = branch !== null ? this.branches.indexOf(branch).toString() : null;
-		this.svg.classList.toggle('branchHighlight', branchIndex !== null);
-		this.group.querySelectorAll<SVGElement>('path.line, circle[data-branch], text[data-branch]').forEach((elem) => {
-			elem.classList.toggle('highlight', branchIndex !== null && elem.dataset.branch === branchIndex);
-		});
+		const branch = id !== null && id >= 0 && id < this.vertices.length ? this.vertices[id].getBranch() : null;
+		const nextBranch = branch !== null ? branch.index : null;
+		if (nextBranch === this.highlightedBranch) return;
+		if (this.highlightedBranch !== null) {
+			const prevPaths = this.pathElemsByBranch[this.highlightedBranch], prevVertices = this.vertexElemsByBranch[this.highlightedBranch];
+			if (prevPaths) for (let i = 0; i < prevPaths.length; i++) prevPaths[i].classList.remove('highlight');
+			if (prevVertices) for (let i = 0; i < prevVertices.length; i++) prevVertices[i].classList.remove('highlight');
+		}
+		if (nextBranch !== null) {
+			const nextPaths = this.pathElemsByBranch[nextBranch], nextVertices = this.vertexElemsByBranch[nextBranch];
+			if (nextPaths) for (let i = 0; i < nextPaths.length; i++) nextPaths[i].classList.add('highlight');
+			if (nextVertices) for (let i = 0; i < nextVertices.length; i++) nextVertices[i].classList.add('highlight');
+		}
+		this.highlightedBranch = nextBranch;
+		this.svg.classList.toggle('branchHighlight', nextBranch !== null);
 	}
 
 
@@ -785,6 +859,11 @@ class Graph {
 			avatarElem.dataset.branch = elem.dataset.branch;
 			avatarElem.dataset.email = email;
 			if (elem.classList.contains('highlight')) avatarElem.classList.add('highlight');
+			const branchIndex = typeof elem.dataset.branch === 'string' ? parseInt(elem.dataset.branch) : -1;
+			if (branchIndex >= 0 && branchIndex < this.vertexElemsByBranch.length) {
+				const idx = this.vertexElemsByBranch[branchIndex].indexOf(elem);
+				if (idx > -1) this.vertexElemsByBranch[branchIndex][idx] = avatarElem;
+			}
 			elem.replaceWith(avatarElem);
 		});
 	}
@@ -887,7 +966,7 @@ class Graph {
 			}
 		} else {
 			// Branch is normal
-			let branch = new Branch(this.getAvailableColour(startAt));
+			let branch = new Branch(this.getAvailableColour(startAt), this.branches.length);
 			vertex.addToBranch(branch, lastPoint.x);
 			vertex.registerUnavailablePoint(lastPoint.x, vertex, branch);
 			for (i = startAt + 1; i < this.vertices.length; i++) {
@@ -933,11 +1012,9 @@ class Graph {
 
 	/* Vertex Info */
 
-	private vertexOver(event: MouseEvent) {
-		if (event.target === null) return;
+	private vertexOver(vertexElem: SVGElement) {
 		this.closeTooltip();
 
-		const vertexElem = <HTMLElement>event.target;
 		const id = parseInt(vertexElem.dataset.id!);
 		this.tooltipId = id;
 		const commitElem = findCommitElemWithId(getCommitElems(), id);
@@ -955,11 +1032,6 @@ class Graph {
 				}
 			}, 100);
 		}
-	}
-
-	private vertexOut(event: MouseEvent) {
-		if (event.target === null) return;
-		this.closeTooltip();
 	}
 
 	private showTooltip(id: number, vertexScreenY: number) {

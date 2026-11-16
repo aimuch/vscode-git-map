@@ -4,13 +4,11 @@ on:
   push:
     branches:
       - main
-      - develop
     tags:
       - 'v*'
   pull_request:
     branches:
       - main
-      - develop
   workflow_dispatch:
 
 permissions:
@@ -41,7 +39,7 @@ jobs:
       run: npm run package
     - uses: actions/upload-artifact@v4
       with:
-        name: git-graph-vsix
+        name: git-map-vsix
         path: '*.vsix'
         if-no-files-found: error
 
@@ -58,7 +56,7 @@ jobs:
     steps:
     - uses: actions/download-artifact@v4
       with:
-        name: git-graph-vsix
+        name: git-map-vsix
     - name: Replace the dev pre-release with this build
       env:
         GH_TOKEN: ${{ github.token }}
@@ -78,8 +76,13 @@ jobs:
     steps:
     - uses: actions/download-artifact@v4
       with:
-        name: git-graph-vsix
-    - name: Create the release with the VSIX attached
+        name: git-map-vsix
+    - name: Create or update the release with the VSIX attached
       env:
         GH_TOKEN: ${{ github.token }}
-      run: gh release create "$GITHUB_REF_NAME" *.vsix --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+      run: |
+        if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          gh release upload "$GITHUB_REF_NAME" *.vsix --clobber --repo "$GITHUB_REPOSITORY"
+        else
+          gh release create "$GITHUB_REF_NAME" *.vsix --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        fi

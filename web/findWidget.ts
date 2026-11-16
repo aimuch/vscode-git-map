@@ -139,10 +139,12 @@ class FindWidget {
 		let keyupTimeout: number | null = null;
 		this.inputElem.addEventListener('keyup', () => {
 			if (keyupTimeout !== null) clearTimeout(keyupTimeout);
+			const combined = this.chips.concat(this.inputElem.value).join(' ');
+			const delay = /(?:^|\s)(?:file:|\?:|change:|~:)\S/.test(combined) ? 450 : 200;
 			keyupTimeout = setTimeout(() => {
 				keyupTimeout = null;
 				this.textChanged();
-			}, 200);
+			}, delay);
 		});
 
 		this.caseSensitiveElem = document.getElementById('findCaseSensitive')!;
@@ -448,22 +450,23 @@ class FindWidget {
 		return {
 			matches: (commit) => {
 				if (commit.hash === UNCOMMITTED) return false;
-				const branchLabels = getBranchLabels(commit.heads, commit.remotes);
-				return (findPattern === null || (
-					(colVisibility.author && findPattern.test(commit.author))
+				if (typeof searchHashes !== 'undefined' && !searchHashes.has(commit.hash)) return false;
+				if (!after.every((date) => commit.date >= date) || !before.every((date) => commit.date < date)) return false;
+				if (!authorPatterns.every((pattern) => pattern.test(commit.author) || pattern.test(commit.email))) return false;
+				if (!messagePatterns.every((pattern) => pattern.test(commit.message))) return false;
+				if (!commitPatterns.every((pattern) => pattern.test(commit.hash))) return false;
+				if (findPattern === null) return true;
+				if ((colVisibility.author && findPattern.test(commit.author))
 					|| (colVisibility.commit && (commit.hash.search(findPattern) === 0 || findPattern.test(abbrevCommit(commit.hash))))
 					|| findPattern.test(commit.message)
-					|| branchLabels.heads.some(head => findPattern!.test(head.name) || head.remotes.some(remote => findPattern!.test(remote)))
-					|| branchLabels.remotes.some(remote => findPattern!.test(remote.name))
 					|| commit.tags.some(tag => findPattern!.test(tag.name))
-					|| (colVisibility.date && findPattern.test(formatShortDate(commit.date).formatted))
-					|| (commit.stash !== null && findPattern.test(commit.stash.selector))
-				)) && authorPatterns.every((pattern) => pattern.test(commit.author) || pattern.test(commit.email))
-					&& messagePatterns.every((pattern) => pattern.test(commit.message))
-					&& commitPatterns.every((pattern) => pattern.test(commit.hash))
-					&& after.every((date) => commit.date >= date)
-					&& before.every((date) => commit.date < date)
-					&& (typeof searchHashes === 'undefined' || searchHashes.has(commit.hash));
+					|| (commit.stash !== null && findPattern.test(commit.stash.selector))) {
+					return true;
+				}
+				const branchLabels = getBranchLabels(commit.heads, commit.remotes);
+				return branchLabels.heads.some(head => findPattern!.test(head.name) || head.remotes.some(remote => findPattern!.test(remote)))
+					|| branchLabels.remotes.some(remote => findPattern!.test(remote.name))
+					|| (colVisibility.date && findPattern.test(formatShortDate(commit.date).formatted));
 			},
 			findPattern: findPattern,
 			highlight: highlight
@@ -757,7 +760,7 @@ class FindWidget {
 	private static createMatchElem(text: string) {
 		const span = document.createElement('span');
 		span.className = CLASS_FIND_MATCH;
-		span.innerHTML = text;
+		span.textContent = text;
 		return span;
 	}
 }
