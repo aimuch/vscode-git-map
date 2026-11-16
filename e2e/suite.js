@@ -1086,7 +1086,7 @@ async function run() {
 		const { respond } = undoHelpers(view, main);
 		const config = () => vscode.workspace.getConfiguration('git-map');
 		const commands = await vscode.commands.getCommands(true);
-		assert(commands.includes('git-map.ai.setApiKey') && commands.includes('git-map.ai.clearApiKey'), 'AI API key commands aren\'t registered');
+		assert(commands.includes('git-map.ai.setApiKey') && commands.includes('git-map.ai.clearApiKey') && commands.includes('git-map.ai.generateCommitMessage'), 'AI commands aren\'t registered');
 
 		let receivedAuth = '', receivedBody = null, receivedUrl = '';
 		const server = http.createServer((req, res) => {
@@ -1126,13 +1126,31 @@ async function run() {
 			assert(receivedBody && receivedBody.model === 'deepseek-chat' && receivedBody.stream === true && receivedBody.messages[0].content.includes('First commit'), 'Unexpected request body');
 			assert(explained.error === null && explained.model === 'deepseek-chat (DeepSeek)' && explained.text === '## Summary\nExplained directly by DeepSeek.', 'Unexpected explanation: ' + JSON.stringify(explained));
 
+			// Generate Commit Message (both Webview request and git-map.ai.generateCommitMessage SCM command) sharing the same direct provider
+			const aiRepo = createScratchRepo('ai-commit-msg', { 'hello.ts': 'export const n = 1;\n' });
+			fs.writeFileSync(path.join(aiRepo, 'hello.ts'), 'export const n = 2;\n');
+			git(aiRepo, 'add', 'hello.ts');
+			const generatedView = await respond({ command: 'generateCommitMessage', repo: aiRepo, modelId: 'deepseek-chat', endpoint: host }, 'generateCommitMessage', (msg) => msg.done);
+			assert(generatedView.error === null && generatedView.scope === 'staged' && generatedView.text.includes('Explained directly by DeepSeek.'), 'Unexpected generated view message: ' + JSON.stringify(generatedView));
+			assert(receivedBody.messages[0].content.includes('export const n = 2;'), 'Staged diff wasn\'t sent in commit message prompt');
+
+			await respond({ command: 'setGlobalViewState', state: { alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false, explainCommitAccepted: true, explainCommitAcceptedTarget: 'direct:DeepSeek:' + host, explainCommitModel: 'deepseek-chat' } }, 'setGlobalViewState');
+			const fakeInputBox = { value: '' };
+			const scmMsg = await vscode.commands.executeCommand('git-map.ai.generateCommitMessage', { rootUri: vscode.Uri.file(aiRepo), inputBox: fakeInputBox });
+			assert(scmMsg === '## Summary\nExplained directly by DeepSeek.' && fakeInputBox.value === scmMsg, 'SCM inputBox wasn\'t populated: ' + JSON.stringify({ scmMsg, value: fakeInputBox.value }));
+
+			// updateExtensionSetting supports AI settings (ai.provider, ai.model, ai.baseUrl, ai.commitMessage.enabled)
+			const badUrl = await respond({ command: 'updateExtensionSetting', key: 'ai.baseUrl', value: 'ftp://bad.example.com' }, 'updateExtensionSetting');
+			assert(badUrl.error !== null && badUrl.error.includes('https://'), 'Expected invalid URL error: ' + JSON.stringify(badUrl));
+
 			await vscode.commands.executeCommand('git-map.ai.clearApiKey');
 			const cleared = await respond({ command: 'loadLanguageModels' }, 'loadLanguageModels');
 			assert(cleared.needsApiKey === true, 'The API key wasn\'t cleared: ' + JSON.stringify(cleared));
-			return 'needsApiKey → stored in Secret Storage → streamed from ' + host + ' → cleared';
+			return 'needsApiKey → stored in Secret Storage → explained & generated commit message from ' + host + ' → cleared';
 		} finally {
+			await respond({ command: 'setGlobalViewState', state: { alwaysAcceptCheckoutCommit: false, issueLinkingConfig: null, pushTagSkipRemoteCheck: false, explainCommitAccepted: false, explainCommitAcceptedTarget: null, explainCommitModel: null } }, 'setGlobalViewState');
 			await vscode.commands.executeCommand('git-map.ai.clearApiKey');
-			for (const setting of ['ai.explainCommit.enabled', 'ai.provider', 'ai.baseUrl', 'ai.model']) {
+			for (const setting of ['ai.explainCommit.enabled', 'ai.commitMessage.enabled', 'ai.provider', 'ai.baseUrl', 'ai.model']) {
 				await config().update(setting, undefined, vscode.ConfigurationTarget.Global);
 			}
 			await new Promise((resolve) => server.close(resolve));

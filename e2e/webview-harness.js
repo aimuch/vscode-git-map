@@ -188,11 +188,19 @@
 				return { command: 'viewBisectLog', error: null };
 			case 'loadLanguageModels':
 				return { command: 'loadLanguageModels', models: [{ id: 'm1', name: 'Model One', vendor: 'copilot', endpoint: null }, { id: 'm2', name: 'Model Two', vendor: 'copilot', endpoint: null }], needsApiKey: false, error: null };
+			case 'loadAiConfig':
+				return { command: 'updateAiConfig', ai: initialState.config.ai };
 			case 'setAiApiKey':
 				return { command: 'loadLanguageModels', models: [{ id: 'deepseek-chat', name: 'deepseek-chat', vendor: 'DeepSeek', endpoint: 'api.deepseek.com' }], needsApiKey: false, error: null };
+			case 'clearAiApiKey':
+				return { command: 'updateAiConfig', ai: Object.assign({}, initialState.config.ai, { hasApiKey: false }) };
 			case 'explainCommit':
 				// The first part of the explanation (the rest is sent by the check)
 				return { command: 'explainCommit', commitHash: msg.commitHash, text: '## Summary\nThis commit **fixes** a bug', done: false, model: 'Model One', truncated: false, error: null };
+			case 'generateCommitMessage':
+				return { command: 'generateCommitMessage', text: 'feat: draft ', done: false, model: 'Model Two', scope: 'staged', truncated: false, error: null };
+			case 'useGeneratedCommitMessage':
+				return { command: 'useGeneratedCommitMessage', copiedToClipboard: false, error: null };
 			case 'loadStashableFiles':
 				return {
 					command: 'loadStashableFiles', filePath: msg.filePath, stagedSupported: true, error: null,
@@ -368,7 +376,7 @@
 			mouse(document.getElementById('settingsBtn'), 'click');
 			const widget = await waitFor('the Repository Settings Widget to load', () => document.getElementById('editIssueLinking') ? document.getElementById('settingsWidget') : null);
 			const sections = Array.from(widget.querySelectorAll('h3, h4')).map((elem) => elem.textContent.trim());
-			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
+			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', 'AI · 所有仓库', '大模型配置', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
 			assert(widget.querySelector('#settingsHeader h2').textContent === '设置', 'Unexpected title: ' + widget.querySelector('#settingsHeader h2').textContent);
 			mouse(document.getElementById('editIssueLinking'), 'click');
 			await waitFor('the Issue Linking dialog', () => document.getElementById('dialogInput1'));
@@ -1028,9 +1036,41 @@
 			assert(JSON.stringify(sent) === JSON.stringify(['graph.colourPreset=Tokyo Subway', 'graph.style=angular', 'statusBarItemDisplay=Icon', 'graph.density=Compact', 'graph.nodeStyle=Avatar', 'graph.freezeColumnHeaders=false', 'graph.freezeFooter=false', 'language=English']), 'Unexpected updates: ' + JSON.stringify(sent));
 			assert(typeof requestsOf('updateExtensionSetting').find((msg) => msg.key === 'graph.freezeFooter').value === 'boolean', 'The freeze settings should be sent as booleans');
 			assert(document.querySelector('.settingsStatusBarPreview svg') !== null && !document.querySelector('.settingsStatusBarPreview').textContent.includes('Git Map'), 'The Status Bar Item preview wasn\'t updated');
+
+			// AI · All Repositories section: toggles, provider selector, model & baseUrl inputs, and Set API Key… button
+			const aiSection = document.getElementById('settingsAiSection');
+			assert(aiSection !== null, 'The AI settings section is missing');
+			const aiBefore = updates().length;
+			const explainBox = document.getElementById('settingsAiExplainCommitCheckbox');
+			explainBox.checked = true;
+			explainBox.dispatchEvent(new Event('change', { bubbles: true }));
+			const providerSelect = document.getElementById('settingsAiProvider');
+			providerSelect.value = 'DeepSeek';
+			providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+			const modelInput = await waitFor('the AI model input', () => document.getElementById('settingsAiModel'));
+			const baseUrlInput = document.getElementById('settingsAiBaseUrl');
+			modelInput.value = 'deepseek-reasoner';
+			modelInput.dispatchEvent(new Event('change', { bubbles: true }));
+			baseUrlInput.value = 'https://api.deepseek.com/v1';
+			baseUrlInput.dispatchEvent(new Event('change', { bubbles: true }));
+			const setKeyBefore = requestsOf('setAiApiKey').length;
+			mouse(document.getElementById('settingsSetAiApiKey'), 'click');
+			const aiSent = await waitFor('the AI settings to be sent', () => updates().length >= aiBefore + 4 && requestsOf('setAiApiKey').length > setKeyBefore ? updates().slice(aiBefore) : null);
+			assert(JSON.stringify(aiSent) === JSON.stringify(['ai.explainCommit.enabled=true', 'ai.provider=DeepSeek', 'ai.model=deepseek-reasoner', 'ai.baseUrl=https://api.deepseek.com/v1']), 'Unexpected AI updates: ' + JSON.stringify(aiSent));
+			await sleep(30); // Let the async setAiApiKey mock response arrive before resetting back to VS Code
+			// Reset back to defaults for subsequent checks (switching provider calls setAiConfig -> invalidateModels)
+			explainBox.checked = false;
+			explainBox.dispatchEvent(new Event('change', { bubbles: true }));
+			modelInput.value = '';
+			modelInput.dispatchEvent(new Event('change', { bubbles: true }));
+			baseUrlInput.value = '';
+			baseUrlInput.dispatchEvent(new Event('change', { bubbles: true }));
+			providerSelect.value = 'VS Code';
+			providerSelect.dispatchEvent(new Event('change', { bubbles: true }));
+
 			mouse(document.getElementById('settingsClose'), 'click');
 			await waitFor('the panel to close', () => !document.getElementById('settingsWidget').classList.contains('active'));
-			return 'Sent: ' + sent.join(', ');
+			return 'Sent: ' + sent.join(', ') + '; AI: ' + aiSent.join(', ');
 		});
 
 		await check('ui-find-operators', '[GitLens] The Find Widget supports the author:, message: & commit: search operators, shown alongside the scrollbar', async () => {
@@ -1762,6 +1802,7 @@
 			} finally {
 				globalState.explainCommitAccepted = false;
 				globalState.explainCommitAcceptedTarget = null;
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'loadLanguageModels', models: [{ id: 'm1', name: 'Model One', vendor: 'copilot', endpoint: null }, { id: 'm2', name: 'Model Two', vendor: 'copilot', endpoint: null }], needsApiKey: false, error: null } }));
 				if (document.querySelector('.cdvTab[data-tab="files"]') !== null) mouse(document.querySelector('.cdvTab[data-tab="files"]'), 'click');
 				initialState.config.explainCommit = false;
 				await closeDetails();
@@ -1787,6 +1828,41 @@
 		uncommittedFixture = true;
 		mouse(document.getElementById('refreshBtn'), 'click');
 		await waitFor('the uncommitted changes & the stash to be loaded', () => document.getElementById('uncommittedChanges') !== null && commitRow(1) !== null && commitRow(1).textContent.includes('WIP on main: Experiment'));
+
+		await check('ui-ai-commit-message', '[AI] "Generate Commit Message with AI…" on Uncommitted Changes asks for destination consent, streams the generated message into an editable textarea, and fills Source Control', async () => {
+			globalState.explainCommitAccepted = false;
+			globalState.explainCommitAcceptedTarget = null;
+			try {
+				await clickMenuItem(document.getElementById('uncommittedChanges'), 'Generate Commit Message with AI…');
+				const consent = await waitFor('the AI commit message consent modal', () => document.getElementById('aiCommitConsentText'));
+				assert(consent.textContent.includes('GitHub Copilot'), 'Unexpected consent text: ' + consent.textContent);
+				const select = document.getElementById('aiCommitModel');
+				select.value = 'm2';
+				select.dispatchEvent(new Event('change', { bubbles: true }));
+				const genBefore = requestsOf('generateCommitMessage').length;
+				mouse(document.querySelector('#aiCommitModal [data-ai-commit="generate"]'), 'click');
+				const genReq = await waitFor('the generateCommitMessage request', () => requestsOf('generateCommitMessage').length > genBefore ? requestsOf('generateCommitMessage').slice(-1)[0] : null);
+				assert(genReq.repo === REPO && genReq.modelId === 'm2', 'Unexpected generateCommitMessage request: ' + JSON.stringify(genReq));
+
+				window.dispatchEvent(new MessageEvent('message', { data: { command: 'generateCommitMessage', done: true, model: 'Model Two', scope: 'staged', truncated: false, error: null, text: 'feat: add AI settings & commit message generation\n\n- Add AI section in Settings drawer' } }));
+				const textarea = await waitFor('the generated commit message in textarea', () => {
+					const el = document.getElementById('aiCommitTextarea');
+					return el && el.value.includes('feat: add AI settings') && document.querySelector('#aiCommitModal [data-ai-commit="use"]') ? el : null;
+				});
+				textarea.value = textarea.value + '\n- Verified in E2E';
+				const useBefore = requestsOf('useGeneratedCommitMessage').length;
+				mouse(document.querySelector('#aiCommitModal [data-ai-commit="use"]'), 'click');
+				const useReq = await waitFor('the useGeneratedCommitMessage request & modal close', () => requestsOf('useGeneratedCommitMessage').length > useBefore && !document.getElementById('aiCommitModal').classList.contains('active') ? requestsOf('useGeneratedCommitMessage').slice(-1)[0] : null);
+				assert(useReq.message.endsWith('- Verified in E2E'), 'Edited commit message wasn\'t sent: ' + JSON.stringify(useReq));
+				return 'Consented, streamed into textarea, edited, and filled Source Control';
+			} finally {
+				globalState.explainCommitAccepted = false;
+				globalState.explainCommitAcceptedTarget = null;
+				if (document.getElementById('aiCommitModal').classList.contains('active')) {
+					mouse(document.querySelector('#aiCommitModal [data-ai-commit="close"]'), 'click');
+				}
+			}
+		});
 
 		await check('ui-stash-partial', '[GitLens] "Stash uncommitted changes…" lists the changed files (so that only some of them are stashed), and can stash only the staged changes', async () => {
 			await clickMenuItem(document.getElementById('uncommittedChanges'), 'Stash uncommitted changes…');

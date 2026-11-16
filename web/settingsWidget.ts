@@ -15,6 +15,7 @@ class SettingsWidget {
 	private loading: boolean = false;
 	private scrollTop: number = 0;
 	private appearance: GG.AppearanceConfig = initialState.config.appearance;
+	private ai: GG.AiSettingsConfig = initialState.config.ai;
 
 	private readonly widgetElem: HTMLElement;
 	private readonly repoNameElem: HTMLElement;
@@ -69,7 +70,29 @@ class SettingsWidget {
 		this.refresh();
 		if (isInitialLoad) {
 			this.view.requestLoadConfig();
+			sendMessage({ command: 'loadAiConfig' });
 		}
+	}
+
+	/**
+	 * Update the AI settings displayed in the Settings Widget, preserving focus if the user is typing in an AI input.
+	 */
+	public setAiConfig(ai: GG.AiSettingsConfig) {
+		this.ai = ai;
+		if (!this.isVisible()) return;
+		const active = document.activeElement;
+		if (active instanceof HTMLInputElement && (active.id === 'settingsAiModel' || active.id === 'settingsAiBaseUrl')) {
+			const activeId = active.id, draft = active.value, start = active.selectionStart, end = active.selectionEnd;
+			this.render();
+			const restored = <HTMLInputElement | null>document.getElementById(activeId);
+			if (restored !== null) {
+				restored.value = draft;
+				restored.focus();
+				if (start !== null && end !== null) restored.setSelectionRange(start, end);
+			}
+			return;
+		}
+		this.render();
 	}
 
 	/**
@@ -182,6 +205,55 @@ class SettingsWidget {
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
 				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div></div>';
+
+			const ai = this.ai;
+			const activePreset = ai.presets.find((p) => p.id === ai.provider) || ai.presets[0];
+			const isDirectAi = ai.provider !== 'VS Code';
+			const aiButtons = isDirectAi
+				? button('settingsSetAiApiKey', 'addBtn', t('Set API Key') + ELLIPSIS) + (ai.hasApiKey ? button('settingsClearAiApiKey', 'removeBtn', t('Clear API Key')) : '')
+				: '';
+			const providerLabel = (preset: GG.AiProviderPresetInfo) => {
+				switch (preset.id) {
+					case 'VS Code': return t('VS Code (Built-in / Copilot)');
+					case 'Ollama': return t('Ollama (Local)');
+					case 'OpenAI Compatible': return t('OpenAI Compatible');
+					default: return preset.name;
+				}
+			};
+			const modelPlaceholder = activePreset && activePreset.defaultModel !== ''
+				? t('Default: {0}', activePreset.defaultModel)
+				: ai.provider === 'Kimi' ? 'moonshot-v1-8k'
+					: ai.provider === 'Doubao' ? 'doubao-seed-1-6-250615 / ep-...'
+						: ai.provider === 'OpenAI' ? 'gpt-4o-mini'
+							: ai.provider === 'Ollama' ? 'qwen2.5-coder:7b'
+								: t('Model or endpoint ID');
+			const baseUrlPlaceholder = activePreset && activePreset.defaultBaseUrl !== ''
+				? activePreset.defaultBaseUrl
+				: 'https://api.example.com/v1';
+			const apiKeyStatus = ai.hasApiKey
+				? '<span class="settingsAiKeyStatus ok">' + escapeHtml(t('Saved in Visual Studio Code Secret Storage')) + '</span>'
+				: (activePreset && activePreset.requiresApiKey
+					? '<span class="settingsAiKeyStatus missing">' + escapeHtml(t('Not set — click "Set API Key…" above')) + '</span>'
+					: '<span class="settingsAiKeyStatus optional">' + escapeHtml(t('Not set (optional)')) + '</span>');
+			const aiCardBody = '<div class="settingsGrid two settingsAiGrid">' +
+				'<label class="settingsKey" for="settingsAiProvider">' + t('Provider:') + '</label>' +
+				'<select id="settingsAiProvider" class="settingsSelect">' + ai.presets.map((preset) => '<option value="' + escapeHtml(preset.id) + '"' + (preset.id === ai.provider ? ' selected' : '') + '>' + escapeHtml(providerLabel(preset)) + '</option>').join('') + '</select>' +
+				(isDirectAi
+					? '<label class="settingsKey" for="settingsAiModel">' + t('Model:') + '</label>' +
+					'<input id="settingsAiModel" type="text" class="settingsInput mono" value="' + escapeHtml(ai.model) + '" placeholder="' + escapeHtml(modelPlaceholder) + '" spellcheck="false">' +
+					'<label class="settingsKey" for="settingsAiBaseUrl">' + t('Base URL:') + '</label>' +
+					'<input id="settingsAiBaseUrl" type="text" class="settingsInput mono" value="' + escapeHtml(ai.baseUrl) + '" placeholder="' + escapeHtml(baseUrlPlaceholder) + '" spellcheck="false">' +
+					'<span class="settingsKey">' + t('API Key:') + '</span><span class="settingsValue">' + apiKeyStatus + '</span>'
+					: '') +
+				'</div>' +
+				(!isDirectAi ? '<p class="settingsDescription">' + t('Uses the language models provided in Visual Studio Code (e.g. GitHub Copilot Chat). No API URL or API key is needed.') + '</p>' : '');
+			html += '<div class="settingsSection" id="settingsAiSection"><h3>' + t('AI · All Repositories') + '</h3>' +
+				'<div class="settingsCheckboxes two">' +
+				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +
+				'<span>' + checkbox('settingsAiExplainCommit', t('Explain Commits'), t('Shows an "Explain" tab in the Commit Details View, where a language model explains the selected commit.')) + '</span>' +
+				'</div>' +
+				card(t('Language Model'), aiButtons, aiCardBody) +
+				'</div>';
 
 			html += '<div class="settingsSection"><h3>' + t('This Repository') + '</h3>' +
 				'<div class="settingsCheckboxes">' +
@@ -622,6 +694,92 @@ class SettingsWidget {
 				update('language', elem.value);
 			});
 		});
+
+		const aiCommitMsgCheckbox = <HTMLInputElement | null>document.getElementById('settingsAiCommitMessageCheckbox');
+		if (aiCommitMsgCheckbox !== null) {
+			aiCommitMsgCheckbox.checked = this.ai.commitMessage;
+			aiCommitMsgCheckbox.addEventListener('change', () => {
+				this.ai = Object.assign({}, this.ai, { commitMessage: aiCommitMsgCheckbox.checked });
+				this.view.setAiConfig(this.ai);
+				update('ai.commitMessage.enabled', aiCommitMsgCheckbox.checked);
+			});
+		}
+
+		const aiExplainCheckbox = <HTMLInputElement | null>document.getElementById('settingsAiExplainCommitCheckbox');
+		if (aiExplainCheckbox !== null) {
+			aiExplainCheckbox.checked = this.ai.explainCommit;
+			aiExplainCheckbox.addEventListener('change', () => {
+				this.ai = Object.assign({}, this.ai, { explainCommit: aiExplainCheckbox.checked });
+				this.view.setAiConfig(this.ai);
+				update('ai.explainCommit.enabled', aiExplainCheckbox.checked);
+			});
+		}
+
+		const aiProviderSelect = <HTMLSelectElement | null>document.getElementById('settingsAiProvider');
+		if (aiProviderSelect !== null) {
+			aiProviderSelect.addEventListener('change', () => {
+				const provider = aiProviderSelect.value;
+				if (provider === this.ai.provider) return;
+				this.ai = Object.assign({}, this.ai, { provider: provider, hasApiKey: false });
+				this.view.setAiConfig(this.ai);
+				update('ai.provider', provider);
+			});
+		}
+
+		const aiModelInput = <HTMLInputElement | null>document.getElementById('settingsAiModel');
+		const aiBaseUrlInput = <HTMLInputElement | null>document.getElementById('settingsAiBaseUrl');
+		const flushAiTextInputs = () => {
+			let changed = false;
+			if (aiModelInput !== null) {
+				const model = aiModelInput.value.trim();
+				if (model !== this.ai.model) {
+					this.ai = Object.assign({}, this.ai, { model: model });
+					changed = true;
+					update('ai.model', model);
+				}
+			}
+			if (aiBaseUrlInput !== null) {
+				const baseUrl = aiBaseUrlInput.value.trim();
+				if (baseUrl !== this.ai.baseUrl) {
+					this.ai = Object.assign({}, this.ai, { baseUrl: baseUrl });
+					changed = true;
+					update('ai.baseUrl', baseUrl);
+				}
+			}
+			if (changed) this.view.setAiConfig(this.ai);
+		};
+		if (aiModelInput !== null) {
+			aiModelInput.addEventListener('change', flushAiTextInputs);
+			aiModelInput.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					aiModelInput.blur();
+				}
+			});
+		}
+		if (aiBaseUrlInput !== null) {
+			aiBaseUrlInput.addEventListener('change', flushAiTextInputs);
+			aiBaseUrlInput.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
+					aiBaseUrlInput.blur();
+				}
+			});
+		}
+
+		const setApiKeyBtn = document.getElementById('settingsSetAiApiKey');
+		if (setApiKeyBtn !== null) {
+			setApiKeyBtn.addEventListener('click', () => {
+				flushAiTextInputs();
+				sendMessage({ command: 'setAiApiKey' });
+			});
+		}
+		const clearApiKeyBtn = document.getElementById('settingsClearAiApiKey');
+		if (clearApiKeyBtn !== null) {
+			clearApiKeyBtn.addEventListener('click', () => {
+				sendMessage({ command: 'clearAiApiKey' });
+			});
+		}
 	}
 
 

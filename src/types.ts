@@ -513,7 +513,26 @@ export interface AppearanceConfig {
 	readonly statusBarItemDisplay: StatusBarItemDisplay;
 }
 
+export interface AiProviderPresetInfo {
+	readonly id: string;
+	readonly name: string;
+	readonly defaultBaseUrl: string;
+	readonly defaultModel: string;
+	readonly requiresApiKey: boolean;
+}
+
+export interface AiSettingsConfig {
+	readonly explainCommit: boolean;
+	readonly commitMessage: boolean;
+	readonly provider: string;
+	readonly baseUrl: string;
+	readonly model: string;
+	readonly hasApiKey: boolean;
+	readonly presets: ReadonlyArray<AiProviderPresetInfo>;
+}
+
 export interface GitGraphViewConfig {
+	readonly ai: AiSettingsConfig;
 	readonly appearance: AppearanceConfig;
 	readonly commitDetailsView: CommitDetailsViewConfig;
 	readonly commitOrdering: CommitOrdering;
@@ -726,6 +745,7 @@ export interface ContextMenuActionsVisibility {
 		readonly openSourceControlView: boolean;
 		readonly savePatch: boolean;
 		readonly applyPatch: boolean;
+		readonly generateCommitMessage: boolean;
 	};
 }
 
@@ -1508,7 +1528,7 @@ export interface ResponseMerge extends ResponseWithErrorInfo {
 
 export interface RequestUpdateExtensionSetting extends BaseMessage {
 	readonly command: 'updateExtensionSetting';
-	readonly key: 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'language' | 'statusBarItemDisplay';
+	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'language' | 'statusBarItemDisplay';
 	readonly value: string | boolean;
 }
 export interface ResponseUpdateExtensionSetting extends ResponseWithErrorInfo {
@@ -1979,6 +1999,19 @@ export interface RequestSetAiApiKey extends BaseMessage {
 	readonly command: 'setAiApiKey';
 }
 
+export interface RequestClearAiApiKey extends BaseMessage {
+	readonly command: 'clearAiApiKey';
+}
+
+export interface RequestLoadAiConfig extends BaseMessage {
+	readonly command: 'loadAiConfig';
+}
+
+export interface ResponseUpdateAiConfig extends BaseMessage {
+	readonly command: 'updateAiConfig';
+	readonly ai: AiSettingsConfig;
+}
+
 export interface RequestCancelExplainCommit extends BaseMessage {
 	readonly command: 'cancelExplainCommit';
 }
@@ -1997,6 +2030,34 @@ export interface ResponseExplainCommit extends ResponseWithErrorInfo {
 	readonly model: string | null;
 	readonly truncated: boolean;
 	readonly cancelled?: boolean;
+}
+
+export interface RequestCancelGenerateCommitMessage extends BaseMessage {
+	readonly command: 'cancelGenerateCommitMessage';
+}
+
+export interface RequestGenerateCommitMessage extends RepoRequest {
+	readonly command: 'generateCommitMessage';
+	readonly modelId: string | null;
+	readonly endpoint?: string | null;
+}
+export interface ResponseGenerateCommitMessage extends ResponseWithErrorInfo {
+	readonly command: 'generateCommitMessage';
+	readonly text: string;
+	readonly done: boolean;
+	readonly model: string | null;
+	readonly scope: 'staged' | 'unstaged' | 'none';
+	readonly truncated: boolean;
+	readonly cancelled?: boolean;
+}
+
+export interface RequestUseGeneratedCommitMessage extends RepoRequest {
+	readonly command: 'useGeneratedCommitMessage';
+	readonly message: string;
+}
+export interface ResponseUseGeneratedCommitMessage extends ResponseWithErrorInfo {
+	readonly command: 'useGeneratedCommitMessage';
+	readonly copiedToClipboard: boolean;
 }
 
 export type RequestMessage =
@@ -2093,6 +2154,8 @@ export type RequestMessage =
 	| RequestLoadBisectState
 	| RequestViewBisectLog
 	| RequestSetAiApiKey
+	| RequestClearAiApiKey
+	| RequestLoadAiConfig
 	| RequestSavePatch
 	| RequestCheckPatch
 	| RequestApplyPatch
@@ -2101,7 +2164,10 @@ export type RequestMessage =
 	| RequestViewVisualFileHistory
 	| RequestLoadLanguageModels
 	| RequestCancelExplainCommit
-	| RequestExplainCommit;
+	| RequestExplainCommit
+	| RequestCancelGenerateCommitMessage
+	| RequestGenerateCommitMessage
+	| RequestUseGeneratedCommitMessage;
 
 export type ResponseMessage =
 	ResponseAddRemote
@@ -2197,7 +2263,10 @@ export type ResponseMessage =
 	| ResponseLoadStashableFiles
 	| ResponseRestoreFileFromStash
 	| ResponseLoadLanguageModels
-	| ResponseExplainCommit;
+	| ResponseUpdateAiConfig
+	| ResponseExplainCommit
+	| ResponseGenerateCommitMessage
+	| ResponseUseGeneratedCommitMessage;
 
 
 /** Helper Types */

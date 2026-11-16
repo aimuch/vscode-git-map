@@ -1,12 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getDirectAiConfig, getHost, onDidChangeAiApiKey } from './aiProviders';
+import { getDirectAiConfig, getHost, loadAiSettingsSnapshot, onDidChangeAiApiKey } from './aiProviders';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource, GitConfigKey } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
-import { explainCommit, getLanguageModels } from './explainCommit';
+import { explainCommit, generateCommitMessage, getLanguageModels } from './explainCommit';
 import { ExtensionState } from './extensionState';
 import { buildFileIconTheme, findFileIconTheme, getFileIconThemeExtensionPaths, getLanguageFiles } from './fileIconTheme';
 import { GitFeatures } from './gitFeatures';
@@ -15,7 +15,7 @@ import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
-import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
+import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, fillScmCommitMessage, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 import { getL10nBundle, getLanguage, t } from './l10n';
 
@@ -48,6 +48,7 @@ export class GitGraphView extends Disposable {
 	private readonly gitFeatures: GitFeatures;
 	private readonly retainContextWhenHidden: boolean;
 	private explainCancellation: vscode.CancellationTokenSource | null = null;
+	private commitMessageCancellation: vscode.CancellationTokenSource | null = null;
 	private searchCancellation: vscode.CancellationTokenSource | null = null;
 	private isGraphViewLoaded: boolean = false;
 	private fileIconThemeWatcher: vscode.Disposable | null = null;
@@ -58,6 +59,7 @@ export class GitGraphView extends Disposable {
 	private currentRepo: string | null = null;
 	private lastHiddenRepo: string | null = null;
 	private needsFullUpdate: boolean = false;
+	private needsAiSync: boolean = false;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
 
 	private loadRepoInfoRefreshId: number = 0;
@@ -137,6 +139,7 @@ export class GitGraphView extends Disposable {
 			toDisposable(() => {
 				GitGraphView.currentPanel = undefined;
 				this.cancelExplain();
+				this.cancelGenerateCommitMessage();
 				if (this.searchCancellation !== null) {
 					this.searchCancellation.cancel();
 					this.searchCancellation.dispose();
@@ -162,10 +165,15 @@ export class GitGraphView extends Disposable {
 								this.currentRepo = this.lastHiddenRepo;
 								this.repoFileWatcher.start(this.currentRepo);
 							}
+							if (this.needsAiSync) {
+								this.needsAiSync = false;
+								void this.sendAiState();
+							}
 							this.respondLoadRepos(repos, loadViewTo);
 							if (loadViewTo === null) this.sendMessage({ command: 'refresh' });
 						} else {
 							this.needsFullUpdate = false;
+							this.needsAiSync = false;
 							this.update();
 						}
 					} else {
@@ -177,18 +185,20 @@ export class GitGraphView extends Disposable {
 				}
 			}),
 
-			// Re-render the view when the appearance of the graph, the language, or AI commit explanation availability is changed
+			// Re-render the view when the appearance of the graph or language is changed; sync AI settings in place so open drawers stay open
 			vscode.workspace.onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language') || event.affectsConfiguration('git-map.ai.explainCommit.enabled')) {
+				if (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language')) {
 					if (this.panel.visible) {
 						this.needsFullUpdate = false;
 						this.update();
 					} else {
 						this.needsFullUpdate = true;
 					}
-				} else if (event.affectsConfiguration('git-map.ai.provider') || event.affectsConfiguration('git-map.ai.baseUrl') || event.affectsConfiguration('git-map.ai.model')) {
+				} else if (event.affectsConfiguration('git-map.ai.explainCommit.enabled') || event.affectsConfiguration('git-map.ai.commitMessage.enabled') || event.affectsConfiguration('git-map.ai.provider') || event.affectsConfiguration('git-map.ai.baseUrl') || event.affectsConfiguration('git-map.ai.model')) {
 					if (this.panel.visible && this.isGraphViewLoaded) {
-						this.sendLanguageModels();
+						void this.sendAiState();
+					} else {
+						this.needsAiSync = true;
 					}
 				} else if (this.panel.visible && this.isGraphViewLoaded && event.affectsConfiguration('workbench.iconTheme')) {
 					this.fileIconThemeRetries = 0;
@@ -196,10 +206,12 @@ export class GitGraphView extends Disposable {
 				}
 			}),
 
-			// Refresh the available language models when an AI API key is stored or cleared
+			// Refresh the AI settings & available language models when an AI API key is stored or cleared
 			onDidChangeAiApiKey(() => {
 				if (this.panel.visible && this.isGraphViewLoaded) {
-					this.sendLanguageModels();
+					void this.sendAiState();
+				} else {
+					this.needsAiSync = true;
 				}
 			}),
 
@@ -556,7 +568,10 @@ export class GitGraphView extends Disposable {
 					undo: this.undoManager.getUndo(msg.repo)
 				});
 				if (msg.repo !== this.currentRepo) {
-					if (this.currentRepo !== null) this.cancelExplain();
+					if (this.currentRepo !== null) {
+						this.cancelExplain();
+						this.cancelGenerateCommitMessage();
+					}
 					this.currentRepo = msg.repo;
 					this.extensionState.setLastActiveRepo(msg.repo);
 					this.repoFileWatcher.start(msg.repo);
@@ -1010,10 +1025,17 @@ export class GitGraphView extends Disposable {
 			case 'loadLanguageModels':
 				await this.sendLanguageModels();
 				break;
+			case 'loadAiConfig':
+				await this.sendAiConfig();
+				break;
 			case 'setAiApiKey':
-				// Ask for the API key (from the Explain tab), then load the models again
+				// Ask for the API key (from the Explain tab or Settings), then refresh AI config & models
 				await vscode.commands.executeCommand('git-map.ai.setApiKey');
-				await this.sendLanguageModels();
+				await this.sendAiState();
+				break;
+			case 'clearAiApiKey':
+				await vscode.commands.executeCommand('git-map.ai.clearApiKey');
+				await this.sendAiState();
 				break;
 			case 'cancelExplainCommit':
 				this.cancelExplain();
@@ -1024,6 +1046,31 @@ export class GitGraphView extends Disposable {
 					this.logger.logError('Unable to explain commit "' + msg.commitHash + '": ' + reason);
 				});
 				break;
+			case 'cancelGenerateCommitMessage':
+				this.cancelGenerateCommitMessage();
+				break;
+			case 'generateCommitMessage':
+				this.generateCommitMessageForView(msg.repo, msg.modelId, msg.endpoint).catch((error) => {
+					const reason = error instanceof Error ? error.message : String(error);
+					this.logger.logError('Unable to generate commit message: ' + reason);
+				});
+				break;
+			case 'useGeneratedCommitMessage': {
+				const trimmed = msg.message.trim();
+				if (trimmed === '') {
+					this.sendMessage({ command: 'useGeneratedCommitMessage', copiedToClipboard: false, error: t('The message can\'t be empty.') });
+					break;
+				}
+				const scmResult = await fillScmCommitMessage(msg.repo, trimmed, true);
+				if (scmResult.filled) {
+					this.sendMessage({ command: 'useGeneratedCommitMessage', copiedToClipboard: false, error: scmResult.error });
+				} else {
+					const copyError = await copyToClipboard(trimmed);
+					if (copyError === null) vscode.window.setStatusBarMessage(t('Copied the generated commit message to the clipboard.'), 4000);
+					this.sendMessage({ command: 'useGeneratedCommitMessage', copiedToClipboard: copyError === null, error: copyError });
+				}
+				break;
+			}
 		}
 	}
 
@@ -1090,6 +1137,21 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Send the current AI settings (including whether an API key is stored) to the front-end.
+	 */
+	private async sendAiConfig() {
+		const ai = await loadAiSettingsSnapshot();
+		this.sendMessage({ command: 'updateAiConfig', ai: ai });
+	}
+
+	/**
+	 * Refresh both AI settings and available language models in the front-end.
+	 */
+	private async sendAiState() {
+		await Promise.all([this.sendAiConfig(), this.sendLanguageModels()]);
+	}
+
+	/**
 	 * Send the available language models (and whether an API key is missing) to the front-end.
 	 */
 	private async sendLanguageModels() {
@@ -1105,6 +1167,17 @@ export class GitGraphView extends Disposable {
 			this.explainCancellation.cancel();
 			this.explainCancellation.dispose();
 			this.explainCancellation = null;
+		}
+	}
+
+	/**
+	 * Cancel an in-progress commit message generation, if any.
+	 */
+	private cancelGenerateCommitMessage() {
+		if (this.commitMessageCancellation !== null) {
+			this.commitMessageCancellation.cancel();
+			this.commitMessageCancellation.dispose();
+			this.commitMessageCancellation = null;
 		}
 	}
 
@@ -1154,6 +1227,54 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Generate a commit message for a repository's uncommitted changes, streaming updates to the front-end.
+	 */
+	private async generateCommitMessageForView(repo: string, modelId: string | null, expectedEndpoint?: string | null) {
+		this.cancelGenerateCommitMessage();
+		const cancellation = this.commitMessageCancellation = new vscode.CancellationTokenSource();
+		const send = (text: string, done: boolean, model: string | null, scope: 'staged' | 'unstaged' | 'none', truncated: boolean, error: ErrorInfo, cancelled?: boolean) => this.sendMessage({ command: 'generateCommitMessage', text: text, done: done, model: model, scope: scope, truncated: truncated, error: error, cancelled: cancelled });
+		try {
+			if (!getConfig().aiCommitMessage) {
+				send('', true, null, 'none', false, t('Generating commit messages with AI is turned off (the "git-map.ai.commitMessage.enabled" setting).'));
+				return;
+			}
+			if (typeof expectedEndpoint !== 'undefined') {
+				const direct = getDirectAiConfig();
+				const actualEndpoint = direct !== null ? getHost(direct.baseUrl) : null;
+				if (expectedEndpoint !== actualEndpoint) {
+					void this.sendAiState();
+					send('', true, null, 'none', false, t('The AI provider or API URL changed. Review the updated destination and try again.'));
+					return;
+				}
+			}
+			const changes = await this.gitFeatures.getChangesForCommitMessage(repo);
+			if (cancellation.token.isCancellationRequested) {
+				send('', true, null, 'none', false, null, true);
+				return;
+			}
+			if (changes.error !== null) {
+				send('', true, null, 'none', false, changes.error);
+				return;
+			}
+			if (changes.scope === 'none' || changes.text.trim() === '') {
+				send('', true, null, 'none', false, t('There are no uncommitted changes to generate a commit message for.'));
+				return;
+			}
+			let lastSent = 0;
+			const result = await generateCommitMessage(changes.text, changes.recentSubjects, '', modelId, getLanguage(), (text, model) => {
+				if (cancellation.token.isCancellationRequested || Date.now() - lastSent < 120) return;
+				lastSent = Date.now();
+				send(text, false, model, changes.scope, changes.truncated, null);
+			}, cancellation.token);
+			const cancelled = cancellation.token.isCancellationRequested;
+			send(result.text, true, result.model, changes.scope, changes.truncated, cancelled ? null : result.error, cancelled);
+		} finally {
+			cancellation.dispose();
+			if (this.commitMessageCancellation === cancellation) this.commitMessageCancellation = null;
+		}
+	}
+
+	/**
 	 * Send a message to the front-end.
 	 * @param msg The message to be sent.
 	 */
@@ -1189,6 +1310,7 @@ export class GitGraphView extends Disposable {
 		const config = getConfig(), nonce = getNonce();
 		const initialState: GitGraphViewInitialState = {
 			config: {
+				ai: config.ai,
 				appearance: config.appearance,
 				commitDetailsView: config.commitDetailsView,
 				commitOrdering: config.commitOrder,

@@ -419,8 +419,9 @@
 	"command.visualFileHistory.title": "Visual File History",
 	"command.cleanUpBranches.title": "Clean Up Branches...",
 	"config.editorContextMenu.visualFileHistory": "Visual File History",
+	"config.ai.commitMessage.enabled.description": "Enable generating commit messages from uncommitted changes with a language model (adds an action in the Source Control view, and an action on Uncommitted Changes in the Git Map View, using the model configured by \"git-map.ai.provider\"). Uncommitted changes are only sent when you ask to generate a message.",
 	"config.ai.explainCommit.enabled.description": "Show an \"Explain\" tab in the Commit Details View, where a language model explains the commit (provided in Visual Studio Code, e.g. by GitHub Copilot, or called directly via \"git-map.ai.provider\"). The message & changes of a commit are only sent when you ask for an explanation.",
-	"config.ai.provider.description": "The provider of the language model that explains commits (when \"git-map.ai.explainCommit.enabled\" is on). \"VS Code\" uses the models provided in Visual Studio Code (requires Visual Studio Code 1.90 or later). The other providers call an OpenAI-compatible Chat Completions API directly; set the API key with the \"Git Map: Set AI API Key...\" command (stored in Visual Studio Code's Secret Storage, never in settings).",
+	"config.ai.provider.description": "The provider of the language model used for explaining commits and generating commit messages. \"VS Code\" uses the models provided in Visual Studio Code (requires Visual Studio Code 1.90 or later). The other providers call an OpenAI-compatible Chat Completions API directly; set the API key with the \"Git Map: Set AI API Key...\" command or in Git Map's Settings panel (stored in Visual Studio Code's Secret Storage, never in settings).",
 	"config.ai.provider.enumDescriptions.0": "Use a language model provided in Visual Studio Code (e.g. by GitHub Copilot Chat; requires Visual Studio Code 1.90 or later).",
 	"config.ai.provider.enumDescriptions.1": "Call the DeepSeek API directly (default base URL: https://api.deepseek.com, default model: deepseek-chat).",
 	"config.ai.provider.enumDescriptions.2": "Call the Kimi (Moonshot AI) API directly (default base URL: https://api.moonshot.cn/v1; set the model in \"git-map.ai.model\").",
@@ -431,6 +432,7 @@
 	"config.ai.provider.enumDescriptions.7": "Call any OpenAI-compatible Chat Completions API (set both \"git-map.ai.baseUrl\" and \"git-map.ai.model\"; set an API key with \"Git Map: Set AI API Key...\" if required).",
 	"config.ai.baseUrl.description": "The base URL of the OpenAI-compatible API (\"/chat/completions\" is appended), overriding the default of the provider selected in \"git-map.ai.provider\". Required when the provider is \"OpenAI Compatible\". Leave it empty to use the provider's default URL.",
 	"config.ai.model.description": "The model ID (or endpoint ID) sent to the API when \"git-map.ai.provider\" isn't \"VS Code\", overriding the provider's default model (DeepSeek defaults to \"deepseek-chat\", and Qwen to \"qwen-plus\"; other providers require this setting).",
+	"command.ai.generateCommitMessage.title": "Generate Commit Message with AI",
 	"command.ai.setApiKey.title": "Set AI API Key...",
 	"command.ai.clearApiKey.title": "Clear AI API Key",
 	"config.blame.ignoreRevsFile.description": "The file (relative to the root of the repository) listing the commits that blame ignores, e.g. commits that only reformat code. It's used when it exists (requires Git 2.23.0 or later). Leave it empty to not ignore any commits.",
@@ -448,5 +450,6 @@
 	"config.contextMenuActionsVisibility.commitDetailsViewFile.restoreFromStash.title": "Restore File from this Stash...",
 	"config.contextMenuActionsVisibility.stash.savePatch.title": "Save as Patch...",
 	"config.contextMenuActionsVisibility.uncommittedChanges.savePatch.title": "Save Changes as Patch...",
-	"config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title": "Apply Patch..."
+	"config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title": "Apply Patch...",
+	"config.contextMenuActionsVisibility.uncommittedChanges.generateCommitMessage.title": "Generate Commit Message with AI..."
 }

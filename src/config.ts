@@ -1,6 +1,7 @@
-import { AiProvider } from './aiProviders';
+import { AI_PROVIDER_VALUES, AiProvider, getAiSettingsSnapshot } from './aiProviders';
 import * as vscode from 'vscode';
 import {
+	AiSettingsConfig,
 	AppearanceConfig,
 	CommitDetailsViewConfig,
 	CommitDetailsViewLocation,
@@ -112,7 +113,7 @@ class Config {
 			remoteBranch: { checkout: true, delete: true, fetch: true, merge: true, pull: true, viewIssue: true, createPullRequest: true, createArchive: true, selectInBranchesDropdown: true, unselectInBranchesDropdown: true, copyName: true, compare: true },
 			stash: { apply: true, createBranch: true, pop: true, drop: true, copyName: true, copyHash: true, savePatch: true },
 			tag: { viewDetails: true, delete: true, push: true, createArchive: true, copyName: true },
-			uncommittedChanges: { stash: true, reset: true, clean: true, openSourceControlView: true, savePatch: true, applyPatch: true }
+			uncommittedChanges: { stash: true, reset: true, clean: true, openSourceControlView: true, savePatch: true, applyPatch: true, generateCommitMessage: true }
 		};
 		mergeConfigObjects(config, userConfig);
 		return config;
@@ -450,11 +451,18 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-map.ai.commitMessage.enabled` Extension Setting.
+	 */
+	get aiCommitMessage() {
+		return !!this.config.get('ai.commitMessage.enabled', true);
+	}
+
+	/**
 	 * Get the value of the `git-map.ai.provider` Extension Setting.
 	 */
 	get aiProvider(): AiProvider {
 		const value = this.config.get('ai.provider', 'VS Code');
-		return typeof value === 'string' && (<string[]>['VS Code', 'DeepSeek', 'Kimi', 'Doubao', 'Qwen', 'OpenAI', 'Ollama', 'OpenAI Compatible']).includes(value) ? <AiProvider>value : AiProvider.VsCode;
+		return typeof value === 'string' && AI_PROVIDER_VALUES.includes(value) ? <AiProvider>value : AiProvider.VsCode;
 	}
 
 	/**
@@ -471,6 +479,13 @@ class Config {
 	get aiModel() {
 		const value = this.config.get('ai.model', '');
 		return typeof value === 'string' ? value.trim() : '';
+	}
+
+	/**
+	 * Get the AI settings snapshot for the Git Map View.
+	 */
+	get ai(): AiSettingsConfig {
+		return getAiSettingsSnapshot(this.explainCommit, this.aiCommitMessage, this.aiProvider, this.aiBaseUrl, this.aiModel);
 	}
 
 	/**

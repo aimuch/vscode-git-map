@@ -234,6 +234,9 @@
 	grid-template-columns:repeat(3, minmax(0, 1fr));
 	gap:8px 12px;
 }
+.settingsCheckboxes.two{
+	grid-template-columns:repeat(2, minmax(0, 1fr));
+}
 .settingsCheckboxes > span.wide{
 	grid-column:1 / -1;
 }
@@ -316,6 +319,46 @@
 }
 .settingsGrid.two{
 	grid-template-columns:max-content minmax(0, 1fr);
+}
+.settingsGrid.settingsAiGrid{
+	gap:8px 12px;
+}
+.settingsSelect, .settingsInput{
+	box-sizing:border-box;
+	width:100%;
+	min-width:0;
+	height:28px;
+	padding:0 8px;
+	border:1px solid var(--vscode-input-border, var(--vscode-panel-border, rgba(128,128,128,0.35)));
+	border-radius:6px;
+	background-color:var(--vscode-input-background, var(--vscode-editor-background));
+	color:var(--vscode-input-foreground, var(--vscode-foreground));
+	font:inherit;
+	font-size:12.5px;
+	outline:none;
+}
+.settingsInput{
+	-webkit-user-select:text;
+	user-select:text;
+}
+.settingsInput.mono{
+	font-family:var(--vscode-editor-font-family);
+	font-size:12px;
+}
+.settingsInput::placeholder{
+	color:var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground));
+}
+.settingsSelect:focus, .settingsInput:focus{
+	border-color:var(--vscode-focusBorder);
+}
+.settingsAiKeyStatus.ok{
+	color:var(--vscode-testing-iconPassed, #3fb950);
+}
+.settingsAiKeyStatus.missing{
+	color:var(--vscode-editorWarning-foreground, #d29922);
+}
+.settingsAiKeyStatus.optional{
+	color:var(--vscode-descriptionForeground);
 }
 .settingsKey{
 	color:var(--vscode-descriptionForeground);

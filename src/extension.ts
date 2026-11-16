@@ -15,6 +15,7 @@ import { RemoveFromHistory } from './removeFromHistory';
 import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
 import { VisualFileHistory } from './visualFileHistory';
+import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMessage';
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
@@ -85,6 +86,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	setAiSecretStorage(context.secrets);
 
 	context.subscriptions.push(
+		vscode.commands.registerCommand('git-map.ai.generateCommitMessage', (arg?: unknown) => generateScmCommitMessage(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.ai.setApiKey', (key?: unknown) => setApiKey(key)),
 		vscode.commands.registerCommand('git-map.ai.clearApiKey', () => clearApiKey()),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
@@ -111,6 +113,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		}),
 		{
 			dispose: () => {
+				disposeAiCommitMessage();
 				if (gitStateTimeout !== null) clearTimeout(gitStateTimeout);
 				gitStateWatcher.dispose();
 			}

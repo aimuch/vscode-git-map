@@ -414,6 +414,7 @@ class GitGraphView {
 		this.renderSyncButtons();
 		this.stashList.renderStashButton();
 		this.closeCommitDetails(false);
+		this.commitExplainer.closeCommitMessageModal();
 		this.settingsWidget.close();
 		this.saveState();
 		this.refresh(true);
@@ -1035,6 +1036,22 @@ class GitGraphView {
 		this.currentRepoRefreshState.requestingConfig = true;
 		sendMessage({ command: 'loadConfig', repo: this.currentRepo, remotes: this.gitRemotes });
 		this.settingsWidget.refresh();
+	}
+
+	public openSettings() {
+		this.settingsWidget.show(this.currentRepo);
+	}
+
+	public setAiConfig(ai: GG.AiSettingsConfig) {
+		const prev = this.config.ai;
+		const modelChanged = prev.provider !== ai.provider || prev.baseUrl !== ai.baseUrl || prev.model !== ai.model;
+		(<GG.Writeable<GG.GitGraphViewConfig>>this.config).ai = ai;
+		(<GG.Writeable<GG.GitGraphViewConfig>>this.config).explainCommit = ai.explainCommit;
+		if (modelChanged) this.commitExplainer.invalidateModels();
+		this.settingsWidget.setAiConfig(ai);
+		if (this.expandedCommit !== null && !this.expandedCommit.loading) {
+			this.renderCommitDetailsView(true);
+		}
 	}
 
 	public requestCommitDetails(hash: string, refresh: boolean) {
@@ -2228,7 +2245,7 @@ class GitGraphView {
 					dialog.submit();
 					handledEvent(e);
 				}
-			} else if (this.expandedCommit !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !this.rebaseEditor.isOpen() && !this.branchCleanup.isOpen() && !this.settingsWidget.isVisible() && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)) {
+			} else if (this.expandedCommit !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && !this.rebaseEditor.isOpen() && !this.branchCleanup.isOpen() && !this.commitExplainer.isCommitMessageModalOpen() && !this.settingsWidget.isVisible() && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement)) {
 				const curHashIndex = this.commitLookup[this.expandedCommit.commitHash];
 				let newHashIndex = -1;
 
@@ -2285,7 +2302,10 @@ class GitGraphView {
 					possibleChordStart = Date.now();
 				}
 			} else if (e.key === 'Escape') {
-				if (this.rebaseEditor.isOpen()) {
+				if (this.commitExplainer.isCommitMessageModalOpen()) {
+					this.commitExplainer.closeCommitMessageModal();
+					handledEvent(e);
+				} else if (this.rebaseEditor.isOpen()) {
 					this.rebaseEditor.close();
 					handledEvent(e);
 				} else if (this.branchCleanup.isOpen()) {

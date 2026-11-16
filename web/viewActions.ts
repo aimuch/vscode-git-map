@@ -594,6 +594,10 @@ class ViewActions {
 		let visibility = this.view.config.contextMenuActionsVisibility.uncommittedChanges;
 		return [[
 			{
+				title: t('Generate Commit Message with AI') + ELLIPSIS,
+				visible: this.view.config.ai.commitMessage && visibility.generateCommitMessage,
+				onClick: () => this.view.commitExplainer.openCommitMessageModal()
+			}, {
 				title: t('Stash uncommitted changes') + ELLIPSIS,
 				visible: visibility.stash,
 				onClick: () => this.stashUncommittedChangesAction(target)

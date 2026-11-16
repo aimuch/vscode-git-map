@@ -100,8 +100,17 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'loadLanguageModels':
 				gitGraph.commitExplainer.processLoadLanguageModelsResponse(msg);
 				break;
+			case 'updateAiConfig':
+				gitGraph.setAiConfig(msg.ai);
+				break;
 			case 'explainCommit':
 				gitGraph.commitExplainer.processExplainCommitResponse(msg);
+				break;
+			case 'generateCommitMessage':
+				gitGraph.commitExplainer.processGenerateCommitMessageResponse(msg);
+				break;
+			case 'useGeneratedCommitMessage':
+				gitGraph.commitExplainer.processUseGeneratedCommitMessageResponse(msg);
 				break;
 			case 'loadRebaseCommits':
 				gitGraph.rebaseEditor.processLoadRebaseCommitsResponse(msg);

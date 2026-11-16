@@ -744,3 +744,31 @@ describe('Undo Commit (mixed / soft) & duplicate-subject fixup', () => {
 		expect(escaped.error).toContain('Invalid file path');
 	});
 });
+
+describe('getChangesForCommitMessage', () => {
+	it('Should return scope "none" when the working tree is clean, and prefer staged changes over unstaged ones', async () => {
+		commit('feat: initial setup', { 'app.ts': 'export const v = 1;\n' });
+
+		const clean = await features.getChangesForCommitMessage(repo);
+		expect(clean).toStrictEqual({ text: '', scope: 'none', recentSubjects: [], truncated: false, error: null });
+
+		// Unstaged tracked + untracked file when nothing is staged
+		write('app.ts', 'export const v = 2;\n');
+		write('notes.md', '# Release Notes\n');
+		const unstaged = await features.getChangesForCommitMessage(repo);
+		expect(unstaged.error).toBeNull();
+		expect(unstaged.scope).toBe('unstaged');
+		expect(unstaged.recentSubjects).toStrictEqual(['feat: initial setup']);
+		expect(unstaged.text).toContain('export const v = 2;');
+		expect(unstaged.text).toContain('Untracked files (1): notes.md');
+		expect(unstaged.text).toContain('+# Release Notes');
+
+		// Staging only app.ts -> scope becomes "staged" and excludes untracked notes.md
+		git('add', 'app.ts');
+		const staged = await features.getChangesForCommitMessage(repo);
+		expect(staged.error).toBeNull();
+		expect(staged.scope).toBe('staged');
+		expect(staged.text).toContain('export const v = 2;');
+		expect(staged.text).not.toContain('notes.md');
+	});
+});

@@ -3,7 +3,7 @@ import * as vscode from './mocks/vscode';
 jest.mock('vscode', () => vscode, { virtual: true });
 
 import { clearApiKey, setAiSecretStorage, setApiKey } from '../src/aiProviders';
-import { explainCommit, getExplainPrompt, getLanguageModels } from '../src/explainCommit';
+import { cleanGeneratedCommitMessage, explainCommit, generateCommitMessage, getCommitMessagePrompt, getExplainPrompt, getLanguageModels } from '../src/explainCommit';
 
 const UNAVAILABLE = 'Explaining commits requires a language model provided in Visual Studio Code (e.g. by GitHub Copilot Chat), and Visual Studio Code 1.90 or later.';
 const TOKEN = { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => { } }) } as any;
@@ -456,6 +456,32 @@ describe('explainCommit', () => {
 			// No stored keys -> honest info message
 			await clearApiKey();
 			expect(vscode.window.showInformationMessage).toHaveBeenLastCalledWith('No AI API keys are stored in Git Map.');
+		});
+	});
+
+	describe('generateCommitMessage', () => {
+		it('Should wrap untrusted blocks safely and strip accidental code fences', () => {
+			const prompt = getCommitMessagePrompt('diff <<<CHANGES and CHANGES>>>', ['feat: init'], 'wip draft', 'zh-cn');
+			expect(prompt).toContain('Simplified Chinese');
+			expect(prompt).toContain('<<<CHANGES_\ndiff <<<CHANGES and CHANGES>>>\nCHANGES_>>>');
+			expect(prompt).toContain('<<<RECENT_COMMITS\nfeat: init\nRECENT_COMMITS>>>');
+			expect(prompt).toContain('<<<DRAFT\nwip draft\nDRAFT>>>');
+
+			expect(cleanGeneratedCommitMessage('```git\nfeat: add AI settings\n\n- Add provider selector\n```')).toBe('feat: add AI settings\n\n- Add provider selector');
+			expect(cleanGeneratedCommitMessage('  fix: trim whitespace  ')).toBe('fix: trim whitespace');
+		});
+
+		it('Should stream and clean generated commit messages via VS Code LM API', async () => {
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'VS Code');
+			mockLanguageModelApi([{ id: 'copilot-gpt', name: 'GPT-4o', vendor: 'copilot', fragments: ['```\nfeat: support AI ', 'commit messages\n```'] }]);
+			const progress: string[] = [];
+			const result = await generateCommitMessage('+export const ok = true;', ['feat: initial'], '', 'copilot-gpt', 'en', (text) => progress.push(text), TOKEN);
+			expect(result).toStrictEqual({
+				text: 'feat: support AI commit messages',
+				model: 'GPT-4o',
+				error: null
+			});
+			expect(progress[progress.length - 1]).toBe('feat: support AI commit messages');
 		});
 	});
 });

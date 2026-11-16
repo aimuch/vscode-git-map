@@ -95,6 +95,7 @@ The context menus, and the key of each of their actions:
 | | `openSourceControlView` | Open Source Control View |
 | | `savePatch` | Save Changes as Patch... |
 | | `applyPatch` | Apply Patch... |
+| | `generateCommitMessage` | Generate Commit Message with AI... |
 
 ## Blame
 
@@ -102,11 +103,14 @@ The context menus, and the key of each of their actions:
 * `git-map.blame.ignoreWhitespace` (default: `false`) ignores changes to whitespace (`git blame -w`), in the blame of the current line, the Status Bar and the File Blame.
 * `git-map.blame.ignoreRevsFile` (default: `.git-blame-ignore-revs`) is the file, relative to the root of the repository, listing the commits that blame ignores (`git blame --ignore-revs-file`, Git 2.23 or later), e.g. commits that only reformat code. It's only used when it exists, so repositories without it are blamed as usual. An empty value doesn't ignore any commits. The file has a commit hash on each line (lines starting with `#` are comments), the same format as GitHub's.
 
-## Explain Commit
+## AI (Explain Commit & Generate Commit Message)
 
-`git-map.ai.explainCommit.enabled` (default: `false`) shows an "Explain" tab in the Commit Details View, where a language model explains the commit: a summary, its main changes, and what's worth checking.
+All `git-map.ai.*` settings can also be configured directly in the **AI · All Repositories** section of the Settings panel in the Git Map View.
 
-`git-map.ai.provider` (default: `"VS Code"`) chooses how the model is called:
+* `git-map.ai.commitMessage.enabled` (default: `true`) adds an action to the Source Control view (`git-map.ai.generateCommitMessage`) and a `"Generate Commit Message with AI…"` action on Uncommitted Changes in the Git Map View, drafting a commit message from your staged changes (or unstaged & untracked changes when nothing is staged).
+* `git-map.ai.explainCommit.enabled` (default: `false`) shows an `"Explain"` tab in the Commit Details View, where a language model explains the commit: a summary, its main changes, and what's worth checking.
+
+`git-map.ai.provider` (default: `"VS Code"`) chooses how the model is called for both features:
 
 | Provider | Default Base URL | Default Model | API Key Required |
 |---|---|---|---|
@@ -119,9 +123,9 @@ The context menus, and the key of each of their actions:
 | `Ollama` | `http://localhost:11434/v1` | *(set `git-map.ai.model`)* | No |
 | `OpenAI Compatible` | *(set `git-map.ai.baseUrl`)* | *(set `git-map.ai.model`)* | Optional |
 
-* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). All `git-map.ai.*` settings (`explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable commit explanations or redirect requests.
-* API keys are set per provider with `"Git Map: Set AI API Key..."` (or the "Set API Key…" button in the Explain tab when a key hasn't been set) and deleted with `"Git Map: Clear AI API Key"` (which also lets you delete stored keys of other providers). Keys are stored in Visual Studio Code's Secret Storage, never in settings.
-* Nothing is sent until you open the tab and choose "Explain". The first time (and whenever the provider or destination host changes), it says what's sent (the message of the commit, and up to 3,000 lines of its changes) and names the model, provider & destination host. While streaming, a "Stop" button cancels the request; afterwards, "Model…" reopens model selection and resets saved consent.
+* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). All `git-map.ai.*` settings (`commitMessage.enabled`, `explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable AI requests or redirect endpoints.
+* API keys are set per provider in Git Map's Settings panel (`"Set API Key…"`), with `"Git Map: Set AI API Key..."`, or from the prompt when a key hasn't been set, and deleted with `"Clear API Key"` / `"Git Map: Clear AI API Key"`. Keys are stored in Visual Studio Code's Secret Storage, never in settings.
+* Nothing is sent until you ask to explain a commit or generate a commit message. The first time (and whenever the provider or destination host changes), it says what's sent (up to 3,000 lines of changes) and names the model, provider & destination host. While streaming, a "Stop" button cancels the request; afterwards, "Model…" reopens model selection and resets saved consent.
 * The explanation is written in the language Git Map is displayed in (`git-map.language`), and may be inaccurate.
 
 ## Max Depth of Repo Search

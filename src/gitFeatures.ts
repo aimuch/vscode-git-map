@@ -472,7 +472,7 @@ export class GitFeatures {
 	}
 
 
-	/* Explaining a Commit */
+	/* Explaining a Commit & Generating a Commit Message */
 
 	/**
 	 * Get what a language model is given to explain a commit: its message, and its changes (truncated if they're long).
@@ -484,21 +484,80 @@ export class GitFeatures {
 		if (!HASH_REGEXP.test(hash)) return { text: '', truncated: false, error: 'Invalid commit hash: ' + hash };
 		const result = await runGit(this.git, repo, ['-c', 'log.showSignature=false', 'show', '-m', '--first-parent', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=Subject: %s%n%n%b', hash, '--'], null, null, undefined, MAX_EXPLAIN_BYTES);
 		if (result.code !== 0 && !result.truncated) return { text: '', truncated: false, error: errorOf(result) };
-		const rawLines = result.stdout.toString().split(/\r?\n/);
-		let truncated = result.truncated || rawLines.length > MAX_EXPLAIN_DIFF_LINES;
-		const lines = (rawLines.length > MAX_EXPLAIN_DIFF_LINES ? rawLines.slice(0, MAX_EXPLAIN_DIFF_LINES) : rawLines).map((line) => {
-			if (line.length > MAX_EXPLAIN_LINE_CHARS) {
-				truncated = true;
-				return line.substring(0, MAX_EXPLAIN_LINE_CHARS) + ' …';
-			}
-			return line;
-		});
-		let text = lines.join('\n');
-		if (text.length > MAX_EXPLAIN_CHARS) {
-			text = text.substring(0, MAX_EXPLAIN_CHARS);
-			truncated = true;
+		const capped = truncateModelInput(result.stdout.toString(), result.truncated);
+		return { text: capped.text, truncated: capped.truncated, error: null };
+	}
+
+	/**
+	 * Get the uncommitted changes to generate a commit message from: staged changes when anything is staged, otherwise unstaged & untracked changes.
+	 * @param repo The path of the repository.
+	 */
+	public async getChangesForCommitMessage(repo: string): Promise<{ text: string, scope: 'staged' | 'unstaged' | 'none', recentSubjects: string[], truncated: boolean, error: GitFeatureError }> {
+		const staged = await runGit(this.git, repo, ['diff', '--cached', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--'], null, null, undefined, MAX_EXPLAIN_BYTES);
+		if (staged.code !== 0 && !staged.truncated) return { text: '', scope: 'none', recentSubjects: [], truncated: false, error: errorOf(staged) };
+		const getRecentSubjects = async () => {
+			const recent = await this.run(repo, ['-c', 'log.showSignature=false', 'log', '-n', '5', '--format=%s']);
+			return recent.code === 0 ? splitLines(recent.stdout).slice(0, 5) : [];
+		};
+		if (staged.stdout.length > 0) {
+			const capped = truncateModelInput(staged.stdout.toString(), staged.truncated);
+			return { text: capped.text, scope: 'staged', recentSubjects: await getRecentSubjects(), truncated: capped.truncated, error: null };
 		}
-		return { text: text, truncated: truncated, error: null };
+
+		const [unstaged, untracked] = await Promise.all([
+			runGit(this.git, repo, ['diff', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--'], null, null, undefined, MAX_EXPLAIN_BYTES),
+			runGit(this.git, repo, ['ls-files', '--others', '--exclude-standard', '-z'], null, null, undefined, MAX_EXPLAIN_BYTES)
+		]);
+		if (unstaged.code !== 0 && !unstaged.truncated) return { text: '', scope: 'none', recentSubjects: [], truncated: false, error: errorOf(unstaged) };
+		const untrackedPaths = untracked.code === 0 || untracked.truncated ? untracked.stdout.toString().split('\0').filter((p) => p !== '') : [];
+		if (unstaged.stdout.length === 0 && untrackedPaths.length === 0) {
+			return { text: '', scope: 'none', recentSubjects: [], truncated: false, error: null };
+		}
+
+		let combined = unstaged.stdout.toString();
+		let extraTruncated = unstaged.truncated || untracked.truncated;
+		if (untrackedPaths.length > 0) {
+			const sections: string[] = ['Untracked files (' + untrackedPaths.length + '): ' + untrackedPaths.slice(0, 30).join(', ')];
+			if (untrackedPaths.length > 30) extraTruncated = true;
+			const repoResolved = path.resolve(repo);
+			let totalPreviewBytes = 0;
+			for (const relPath of untrackedPaths.slice(0, 15)) {
+				if (totalPreviewBytes >= 32768) {
+					extraTruncated = true;
+					break;
+				}
+				const absPath = path.resolve(repoResolved, relPath);
+				const relCheck = path.relative(repoResolved, absPath);
+				if (relCheck.startsWith('..') || path.isAbsolute(relCheck)) continue;
+				try {
+					const stat = fs.lstatSync(absPath);
+					if (!stat.isFile()) continue;
+					const readLen = Math.min(stat.size, 4096);
+					const fd = fs.openSync(absPath, 'r');
+					let buf: Buffer;
+					try {
+						buf = Buffer.alloc(readLen);
+						fs.readSync(fd, buf, 0, readLen, 0);
+					} finally {
+						fs.closeSync(fd);
+					}
+					if (buf.includes(0)) {
+						sections.push('--- /dev/null\n+++ b/' + relPath + '\n(Binary file)');
+					} else {
+						if (stat.size > readLen) extraTruncated = true;
+						totalPreviewBytes += readLen;
+						const addedLines = buf.toString('utf8').split(/\r?\n/).map((line) => '+' + line).join('\n');
+						sections.push('--- /dev/null\n+++ b/' + relPath + '\n' + addedLines);
+					}
+				} catch (_) {
+					// Ignore unreadable untracked files
+				}
+			}
+			if (untrackedPaths.length > 15) extraTruncated = true;
+			combined = (combined !== '' ? combined + '\n\n' : '') + sections.join('\n\n');
+		}
+		const capped = truncateModelInput(combined, extraTruncated);
+		return { text: capped.text, scope: 'unstaged', recentSubjects: await getRecentSubjects(), truncated: capped.truncated, error: null };
 	}
 
 
@@ -602,4 +661,22 @@ function splitLines(output: Buffer) {
 
 function escapeRegExp(text: string) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function truncateModelInput(raw: string, alreadyTruncated: boolean) {
+	const rawLines = raw.split(/\r?\n/);
+	let truncated = alreadyTruncated || rawLines.length > MAX_EXPLAIN_DIFF_LINES;
+	const lines = (rawLines.length > MAX_EXPLAIN_DIFF_LINES ? rawLines.slice(0, MAX_EXPLAIN_DIFF_LINES) : rawLines).map((line) => {
+		if (line.length > MAX_EXPLAIN_LINE_CHARS) {
+			truncated = true;
+			return line.substring(0, MAX_EXPLAIN_LINE_CHARS) + ' …';
+		}
+		return line;
+	});
+	let text = lines.join('\n');
+	if (text.length > MAX_EXPLAIN_CHARS) {
+		text = text.substring(0, MAX_EXPLAIN_CHARS);
+		truncated = true;
+	}
+	return { text: text, truncated: truncated };
 }

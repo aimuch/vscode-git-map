@@ -381,7 +381,8 @@ describe('Config', () => {
 					clean: true,
 					openSourceControlView: true,
 					savePatch: true,
-					applyPatch: true
+					applyPatch: true,
+					generateCommitMessage: true
 				}
 			});
 		});
@@ -479,7 +480,8 @@ describe('Config', () => {
 					clean: true,
 					openSourceControlView: true,
 					savePatch: true,
-					applyPatch: true
+					applyPatch: true,
+					generateCommitMessage: true
 				}
 			});
 		});
@@ -595,7 +597,8 @@ describe('Config', () => {
 					clean: true,
 					openSourceControlView: true,
 					savePatch: true,
-					applyPatch: true
+					applyPatch: true,
+					generateCommitMessage: true
 				}
 			});
 		});
@@ -2969,11 +2972,16 @@ describe('Config', () => {
 
 	describe('ai', () => {
 		describe('explainCommit', testBooleanExtensionSetting('explainCommit', 'ai.explainCommit.enabled', false));
+		describe('aiCommitMessage', testBooleanExtensionSetting('aiCommitMessage', 'ai.commitMessage.enabled', true));
 
 		it('Should return the configured AI provider, base URL (trimmed) & model (trimmed), falling back to defaults', () => {
 			expect(config.aiProvider).toBe(AiProvider.VsCode);
 			expect(config.aiBaseUrl).toBe('');
 			expect(config.aiModel).toBe('');
+			expect(config.ai.provider).toBe('VS Code');
+			expect(config.ai.commitMessage).toBe(true);
+			expect(config.ai.explainCommit).toBe(false);
+			expect(config.ai.presets.map((p) => p.id)).toContain('DeepSeek');
 
 			vscode.mockExtensionSettingReturnValue('ai.provider', 'DeepSeek');
 			vscode.mockExtensionSettingReturnValue('ai.baseUrl', '  https://example.com/v1  ');

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { t } from './l10n';
+import { AiProviderPresetInfo, AiSettingsConfig } from './types';
 
 /**
  * The providers of the language models that explain commits: the models provided in Visual Studio Code (e.g. by GitHub Copilot), or a
@@ -82,17 +83,30 @@ const ALL_DIRECT_PROVIDERS: ReadonlyArray<AiProvider> = [
 	AiProvider.OpenAICompatible
 ];
 
+export const AI_PROVIDER_VALUES: ReadonlyArray<string> = [AiProvider.VsCode, ...ALL_DIRECT_PROVIDERS];
+
 const STREAM_TIMEOUT_MS = 60000;
 
 /* API Keys (stored in the Secret Storage of Visual Studio Code, never in the Extension Settings) */
 
 let secretStorage: vscode.SecretStorage | null = null;
+const cachedProvidersWithKeys = new Set<AiProvider>();
 
 /**
  * Set the Secret Storage that API keys are stored in (when Git Map is activated).
  */
 export function setAiSecretStorage(secrets: vscode.SecretStorage | null) {
 	secretStorage = secrets;
+	cachedProvidersWithKeys.clear();
+	if (secrets !== null) {
+		for (const provider of ALL_DIRECT_PROVIDERS) {
+			Promise.resolve(secrets.get(getSecretKey(provider))).then((key) => {
+				if (secretStorage === secrets && typeof key === 'string' && key !== '') {
+					cachedProvidersWithKeys.add(provider);
+				}
+			}, () => { });
+		}
+	}
 }
 
 /**
@@ -101,7 +115,18 @@ export function setAiSecretStorage(secrets: vscode.SecretStorage | null) {
 export function onDidChangeAiApiKey(listener: () => void): vscode.Disposable {
 	if (secretStorage === null || typeof secretStorage.onDidChange !== 'function') return { dispose: () => { } };
 	return secretStorage.onDidChange((event) => {
-		if (event && typeof event.key === 'string' && event.key.startsWith('git-map.ai.apiKey.')) listener();
+		if (event && typeof event.key === 'string' && event.key.startsWith('git-map.ai.apiKey.')) {
+			const provider = <AiProvider>event.key.substring('git-map.ai.apiKey.'.length);
+			if (ALL_DIRECT_PROVIDERS.includes(provider) && secretStorage !== null) {
+				Promise.resolve(secretStorage.get(event.key)).then((value) => {
+					if (typeof value === 'string' && value !== '') cachedProvidersWithKeys.add(provider);
+					else cachedProvidersWithKeys.delete(provider);
+					listener();
+				}, () => listener());
+			} else {
+				listener();
+			}
+		}
 	});
 }
 
@@ -116,7 +141,57 @@ function getSecretKey(provider: AiProvider) {
 export async function getApiKey(provider: AiProvider): Promise<string | null> {
 	if (secretStorage === null) return null;
 	const key = await secretStorage.get(getSecretKey(provider));
-	return typeof key === 'string' && key !== '' ? key : null;
+	if (typeof key === 'string' && key !== '') {
+		cachedProvidersWithKeys.add(provider);
+		return key;
+	}
+	cachedProvidersWithKeys.delete(provider);
+	return null;
+}
+
+function getAiProviderPresets(): ReadonlyArray<AiProviderPresetInfo> {
+	return [
+		{ id: AiProvider.VsCode, name: 'VS Code', defaultBaseUrl: '', defaultModel: '', requiresApiKey: false },
+		...ALL_DIRECT_PROVIDERS.map((id) => ({
+			id: id,
+			name: PRESETS[id].name,
+			defaultBaseUrl: PRESETS[id].baseUrl,
+			defaultModel: PRESETS[id].model,
+			requiresApiKey: PRESETS[id].requiresApiKey
+		}))
+	];
+}
+
+/**
+ * Get the current AI configuration synchronously (for the initial state of the Git Map View).
+ */
+export function getAiSettingsSnapshot(explainCommit: boolean, commitMessage: boolean, provider: AiProvider, baseUrl: string, model: string): AiSettingsConfig {
+	return {
+		explainCommit: explainCommit,
+		commitMessage: commitMessage,
+		provider: provider,
+		baseUrl: baseUrl,
+		model: model,
+		hasApiKey: provider !== AiProvider.VsCode && cachedProvidersWithKeys.has(provider),
+		presets: getAiProviderPresets()
+	};
+}
+
+/**
+ * Load the current AI configuration, checking Secret Storage for the active provider's API key.
+ */
+export async function loadAiSettingsSnapshot(): Promise<AiSettingsConfig> {
+	const config = getConfig(), provider = config.aiProvider;
+	const hasKey = provider !== AiProvider.VsCode && (await getApiKey(provider)) !== null;
+	return {
+		explainCommit: config.explainCommit,
+		commitMessage: config.aiCommitMessage,
+		provider: provider,
+		baseUrl: config.aiBaseUrl,
+		model: config.aiModel,
+		hasApiKey: hasKey,
+		presets: getAiProviderPresets()
+	};
 }
 
 /**
@@ -141,6 +216,7 @@ export async function setApiKey(key?: unknown): Promise<boolean> {
 	});
 	if (typeof value !== 'string' || value.trim() === '') return false;
 	await secretStorage.store(getSecretKey(config.provider), value.trim());
+	cachedProvidersWithKeys.add(config.provider);
 	if (typeof key !== 'string') vscode.window.showInformationMessage(t('The API key of {0} was stored.', config.name));
 	return true;
 }
@@ -154,6 +230,7 @@ export async function clearApiKey() {
 	const config = getDirectAiConfig();
 	if (config !== null && await getApiKey(config.provider) !== null) {
 		await secretStorage.delete(getSecretKey(config.provider));
+		cachedProvidersWithKeys.delete(config.provider);
 		vscode.window.showInformationMessage(t('The API key of {0} was deleted.', config.name));
 		return;
 	}
@@ -167,6 +244,7 @@ export async function clearApiKey() {
 	}
 	if (stored.length === 1) {
 		await secretStorage.delete(getSecretKey(stored[0].provider));
+		cachedProvidersWithKeys.delete(stored[0].provider);
 		vscode.window.showInformationMessage(t('The API key of {0} was deleted.', stored[0].name));
 		return;
 	}
@@ -176,7 +254,10 @@ export async function clearApiKey() {
 		? await vscode.window.showQuickPick(items, { placeHolder: t('Select the AI API key to delete'), ignoreFocusOut: true })
 		: undefined;
 	if (typeof picked === 'undefined') return;
-	for (const provider of picked.providers) await secretStorage.delete(getSecretKey(provider));
+	for (const provider of picked.providers) {
+		await secretStorage.delete(getSecretKey(provider));
+		cachedProvidersWithKeys.delete(provider);
+	}
 	vscode.window.showInformationMessage(picked.providers.length === 1 ? t('The API key of {0} was deleted.', picked.label) : t('All stored AI API keys were deleted.'));
 }
 

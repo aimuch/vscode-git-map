@@ -3,6 +3,7 @@ import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { AI_PROVIDER_VALUES } from './aiProviders';
 import { GRAPH_COLOUR_PRESET_NAMES, getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
@@ -353,6 +354,9 @@ export function openExtensionSettings(): Thenable<ErrorInfo> {
 }
 
 const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<string | boolean> } = {
+	'ai.commitMessage.enabled': [true, false],
+	'ai.explainCommit.enabled': [true, false],
+	'ai.provider': AI_PROVIDER_VALUES,
 	'graph.colourPreset': GRAPH_COLOUR_PRESET_NAMES,
 	'graph.density': ['Comfortable', 'Compact'],
 	'graph.freezeColumnHeaders': [true, false],
@@ -367,6 +371,7 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
  * Get the scope in which an Extension Setting should be updated (the workspace if it's already set there, otherwise user settings).
  */
 export function getSettingTarget(config: vscode.WorkspaceConfiguration, key: string) {
+	if (key.startsWith('ai.')) return vscode.ConfigurationTarget.Global;
 	const values = config.inspect(key);
 	return typeof values !== 'undefined' && typeof values.workspaceValue !== 'undefined' ? vscode.ConfigurationTarget.Workspace : vscode.ConfigurationTarget.Global;
 }
@@ -378,12 +383,35 @@ export function getSettingTarget(config: vscode.WorkspaceConfiguration, key: str
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
 export function updateExtensionSetting(key: string, value: string | boolean): Thenable<ErrorInfo> {
-	const values = UPDATABLE_EXTENSION_SETTINGS[key];
-	if (typeof values === 'undefined' || !values.includes(value)) {
-		return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
+	let normalisedValue: string | boolean = value;
+	if (key === 'ai.model' || key === 'ai.baseUrl') {
+		if (typeof value !== 'string' || value.length > 512) {
+			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
+		}
+		const trimmed = value.trim();
+		if (key === 'ai.baseUrl' && trimmed !== '') {
+			let validUrl = /^https?:\/\//i.test(trimmed);
+			if (validUrl) {
+				try {
+					const parsed = new URL(trimmed);
+					validUrl = (parsed.protocol === 'https:' || parsed.protocol === 'http:') && parsed.host !== '';
+				} catch (_) {
+					validUrl = false;
+				}
+			}
+			if (!validUrl) {
+				return Promise.resolve(t('The base URL of the API must start with https:// or http:// (in the "git-map.ai.baseUrl" setting).'));
+			}
+		}
+		normalisedValue = trimmed;
+	} else {
+		const values = UPDATABLE_EXTENSION_SETTINGS[key];
+		if (typeof values === 'undefined' || !values.includes(value)) {
+			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
+		}
 	}
 	const config = vscode.workspace.getConfiguration('git-map');
-	return config.update(key, value, getSettingTarget(config, key)).then(
+	return config.update(key, normalisedValue, getSettingTarget(config, key)).then(
 		() => null,
 		() => t('Visual Studio Code was unable to update the Extension Setting "{0}".', 'git-map.' + key)
 	);
@@ -571,6 +599,55 @@ export function viewScm(): Thenable<ErrorInfo> {
 		() => null,
 		() => t('Visual Studio Code was unable to open the Source Control View.')
 	);
+}
+
+export interface ScmInputBoxTarget {
+	readonly repo: string;
+	readonly inputBox: { value: string };
+}
+
+/**
+ * Get the repositories currently exposed by Visual Studio Code's built-in Git extension (`vscode.git`).
+ */
+export async function getGitExtensionRepositories(): Promise<{ rootUri: vscode.Uri, inputBox: { value: string }, ui?: { selected?: boolean } }[]> {
+	const extensions: any = (vscode as any).extensions;
+	if (typeof extensions !== 'object' || extensions === null || typeof extensions.getExtension !== 'function') return [];
+	const gitExt = extensions.getExtension('vscode.git');
+	if (!gitExt) return [];
+	try {
+		const exports = gitExt.isActive ? gitExt.exports : await gitExt.activate();
+		const api = exports && typeof exports.getAPI === 'function' ? exports.getAPI(1) : null;
+		return api && Array.isArray(api.repositories) ? api.repositories : [];
+	} catch (_) {
+		return [];
+	}
+}
+
+function sameRepoPath(a: string, b: string) {
+	const normA = a.replace(FS_REGEX, '/').replace(/\/+$/, ''), normB = b.replace(FS_REGEX, '/').replace(/\/+$/, '');
+	if (normA === normB || (isWindows() && normA.toLowerCase() === normB.toLowerCase())) return true;
+	try {
+		return fs.realpathSync(normA) === fs.realpathSync(normB);
+	} catch (_) {
+		return false;
+	}
+}
+
+/**
+ * Find the Source Control input box for a repository, set its commit message, and optionally focus the Source Control View.
+ */
+export async function fillScmCommitMessage(repo: string, message: string, openScm: boolean): Promise<{ filled: boolean, error: ErrorInfo }> {
+	const repositories = await getGitExtensionRepositories();
+	const matched = repositories.find((r) => r && r.rootUri && r.inputBox && sameRepoPath(getPathFromUri(r.rootUri), repo));
+	if (!matched) {
+		return { filled: false, error: null };
+	}
+	matched.inputBox.value = message;
+	if (openScm) {
+		const error = await viewScm();
+		return { filled: true, error: error };
+	}
+	return { filled: true, error: null };
 }
 
 /**

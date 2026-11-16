@@ -285,6 +285,12 @@
 			},
 			{
 				"category": "Git Map",
+				"command": "git-map.ai.generateCommitMessage",
+				"title": "%command.ai.generateCommitMessage.title%",
+				"icon": "$(sparkle)"
+			},
+			{
+				"category": "Git Map",
 				"command": "git-map.ai.setApiKey",
 				"title": "%command.ai.setApiKey.title%"
 			},
@@ -302,6 +308,12 @@
 					"type": "string",
 					"default": "",
 					"description": "%config.ai.baseUrl.description%",
+					"scope": "machine"
+				},
+				"git-map.ai.commitMessage.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.ai.commitMessage.enabled.description%",
 					"scope": "machine"
 				},
 				"git-map.ai.explainCommit.enabled": {
@@ -737,6 +749,10 @@
 								"applyPatch": {
 									"type": "boolean",
 									"title": "%config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title%"
+								},
+								"generateCommitMessage": {
+									"type": "boolean",
+									"title": "%config.contextMenuActionsVisibility.uncommittedChanges.generateCommitMessage.title%"
 								}
 							}
 						}
@@ -2249,6 +2265,11 @@
 			],
 			"scm/title": [
 				{
+					"when": "scmProvider == git && config.git-map.ai.commitMessage.enabled",
+					"command": "git-map.ai.generateCommitMessage",
+					"group": "navigation"
+				},
+				{
 					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
 					"command": "git-map.view",
 					"group": "navigation"
@@ -2260,6 +2281,11 @@
 				}
 			],
 			"scm/repository": [
+				{
+					"when": "scmProvider == git && config.git-map.ai.commitMessage.enabled",
+					"command": "git-map.ai.generateCommitMessage",
+					"group": "inline"
+				},
 				{
 					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
 					"command": "git-map.view",

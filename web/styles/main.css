@@ -3530,3 +3530,108 @@ button.operationBarBtn svg{
 .explainSpacer{
 	flex:1 1 auto;
 }
+
+/* AI Commit Message Modal */
+#aiCommitModal{
+	display:none;
+	position:fixed;
+	inset:0;
+	z-index:40;
+	align-items:center;
+	justify-content:center;
+	padding:20px;
+	background-color:rgba(0,0,0,0.45);
+}
+#aiCommitModal.active{
+	display:flex;
+}
+.aiCommitCard{
+	display:flex;
+	flex-direction:column;
+	width:min(560px, calc(100vw - 40px));
+	max-height:calc(100vh - 48px);
+	border:1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
+	border-radius:10px;
+	background-color:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+	box-shadow:0 12px 32px var(--vscode-widget-shadow, rgba(0,0,0,0.4));
+	color:var(--vscode-foreground);
+	overflow:hidden;
+}
+.aiCommitHeader{
+	display:flex;
+	align-items:center;
+	justify-content:space-between;
+	gap:10px;
+	padding:12px 14px 12px 16px;
+	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+}
+.aiCommitTitle{
+	display:inline-flex;
+	align-items:center;
+	gap:8px;
+	font-size:14px;
+	font-weight:600;
+}
+.aiCommitClose{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:26px;
+	height:26px;
+	padding:0;
+	border:none;
+	border-radius:6px;
+	background-color:transparent;
+	color:inherit;
+	fill:currentColor;
+	cursor:pointer;
+}
+.aiCommitClose:hover{
+	background-color:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+}
+.aiCommitClose svg{
+	width:14px !important;
+	height:14px !important;
+}
+.aiCommitBody{
+	display:flex;
+	flex-direction:column;
+	padding:14px 16px 16px;
+	font-size:13px;
+	line-height:1.45;
+	overflow-y:auto;
+}
+.aiCommitConsentText{
+	margin:0 0 10px;
+}
+.aiCommitSelect{
+	margin-top:6px;
+	min-width:220px;
+	height:28px;
+	padding:0 8px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.45));
+	border-radius:4px;
+	background-color:var(--vscode-dropdown-background);
+	color:var(--vscode-dropdown-foreground);
+	font:inherit;
+}
+.aiCommitTextarea{
+	box-sizing:border-box;
+	width:100%;
+	min-height:130px;
+	padding:8px 10px;
+	border:1px solid var(--vscode-input-border, var(--vscode-panel-border, rgba(128,128,128,0.35)));
+	border-radius:6px;
+	background-color:var(--vscode-input-background, var(--vscode-editor-background));
+	color:var(--vscode-input-foreground, var(--vscode-foreground));
+	font-family:var(--vscode-editor-font-family);
+	font-size:12.5px;
+	line-height:1.45;
+	resize:vertical;
+	outline:none;
+	-webkit-user-select:text;
+	user-select:text;
+}
+.aiCommitTextarea:focus{
+	border-color:var(--vscode-focusBorder);
+}
