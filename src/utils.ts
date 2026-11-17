@@ -370,16 +370,24 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 
 function updateConfigResilient(config: vscode.WorkspaceConfiguration, key: string, value: unknown, allowWorkspaceFallback: boolean): Promise<boolean> {
 	if (!config || typeof config.update !== 'function') return Promise.resolve(false);
-	const primaryTarget = getSettingTarget(config, key);
-	return Promise.resolve(config.update(key, value, primaryTarget)).then(
-		() => true,
-		() => {
-			if (allowWorkspaceFallback && primaryTarget === vscode.ConfigurationTarget.Global && Array.isArray(vscode.workspace.workspaceFolders) && vscode.workspace.workspaceFolders.length > 0) {
-				return Promise.resolve(config.update(key, value, vscode.ConfigurationTarget.Workspace)).then(() => true, () => false);
+	try {
+		const primaryTarget = getSettingTarget(config, key);
+		return Promise.resolve(config.update(key, value, primaryTarget)).then(
+			() => true,
+			() => {
+				if (allowWorkspaceFallback && primaryTarget === vscode.ConfigurationTarget.Global && Array.isArray(vscode.workspace.workspaceFolders) && vscode.workspace.workspaceFolders.length > 0) {
+					try {
+						return Promise.resolve(config.update(key, value, vscode.ConfigurationTarget.Workspace)).then(() => true, () => false);
+					} catch (_) {
+						return false;
+					}
+				}
+				return false;
 			}
-			return false;
-		}
-	);
+		);
+	} catch (_) {
+		return Promise.resolve(false);
+	}
 }
 
 function syncEditorHideUnchangedRegions(enabled: boolean): Promise<void> {

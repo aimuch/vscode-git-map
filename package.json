@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.2.0",
+	"version": "2.2.1",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -2325,27 +2325,27 @@
 			"editor/title": [
 				{
 					"command": "git-map.diff.showChangesOnly",
-					"group": "navigation@0",
+					"group": "navigation@-100",
 					"when": "isInDiffEditor && !config.diffEditor.hideUnchangedRegions.enabled"
 				},
 				{
 					"command": "git-map.diff.showFullFile",
-					"group": "navigation@0",
+					"group": "navigation@-100",
 					"when": "isInDiffEditor && config.diffEditor.hideUnchangedRegions.enabled"
 				},
 				{
 					"command": "git-map.openFile",
-					"group": "navigation",
+					"group": "navigation@-99",
 					"when": "isInDiffEditor && resourceScheme == git-map && git-map:codiconsSupported"
 				},
 				{
 					"command": "git-map.openPreviousRevision",
-					"group": "navigation@1",
+					"group": "navigation@-98",
 					"when": "resourceScheme == git-map"
 				},
 				{
 					"command": "git-map.openNextRevision",
-					"group": "navigation@2",
+					"group": "navigation@-97",
 					"when": "resourceScheme == git-map"
 				}
 			],
