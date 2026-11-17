@@ -51,6 +51,46 @@ export const COMMIT_ACTION_IDS: ReadonlyArray<string> = [
 ];
 export const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
 
+const SETTING_FALLBACK_KEY = 'settingFallbacks';
+let fallbackMemento: vscode.Memento | null = null;
+const memoryFallbacks: { [key: string]: unknown } = {};
+
+export function setSettingFallbackStorage(memento: vscode.Memento | null) {
+	fallbackMemento = memento;
+	Object.keys(memoryFallbacks).forEach((k) => delete memoryFallbacks[k]);
+}
+
+export function getSettingFallback<T>(key: string): T | undefined {
+	if (Object.prototype.hasOwnProperty.call(memoryFallbacks, key)) {
+		return <T>memoryFallbacks[key];
+	}
+	if (fallbackMemento !== null && typeof fallbackMemento.get === 'function') {
+		const stored = fallbackMemento.get<{ [k: string]: unknown }>(SETTING_FALLBACK_KEY);
+		if (stored && typeof stored === 'object' && Object.prototype.hasOwnProperty.call(stored, key)) {
+			return <T>stored[key];
+		}
+	}
+	return undefined;
+}
+
+export function saveSettingFallback(key: string, value: unknown): Promise<void> {
+	if (typeof value === 'undefined') {
+		delete memoryFallbacks[key];
+	} else {
+		memoryFallbacks[key] = value;
+	}
+	if (fallbackMemento !== null && typeof fallbackMemento.update === 'function') {
+		const current = Object.assign({}, fallbackMemento.get<{ [k: string]: unknown }>(SETTING_FALLBACK_KEY, {}));
+		if (typeof value === 'undefined') {
+			delete current[key];
+		} else {
+			current[key] = value;
+		}
+		return Promise.resolve(fallbackMemento.update(SETTING_FALLBACK_KEY, current)).then(() => { }, () => { });
+	}
+	return Promise.resolve();
+}
+
 const VIEW_COLUMN_MAPPING: { [column: string]: vscode.ViewColumn } = {
 	'Active': vscode.ViewColumn.Active,
 	'Beside': vscode.ViewColumn.Beside,
@@ -102,7 +142,8 @@ class Config {
 	 * Get the value of the `git-map.commitDetailsView.actions` Extension Setting.
 	 */
 	get cdvActions(): ReadonlyArray<string> {
-		const raw = this.config.get<unknown>('commitDetailsView.actions');
+		const fallback = getSettingFallback<ReadonlyArray<string>>('commitDetailsView.actions');
+		const raw = Array.isArray(fallback) ? fallback : this.config.get<unknown>('commitDetailsView.actions');
 		if (!Array.isArray(raw)) return DEFAULT_CDV_COMMIT_ACTIONS;
 		const seen = new Set<string>(), out: string[] = [];
 		for (let i = 0; i < raw.length; i++) {
@@ -119,6 +160,8 @@ class Config {
 	 * Get whether unchanged regions should be collapsed when viewing diffs (`git-map.diff.hideUnchangedRegions`, falling back to `diffEditor.hideUnchangedRegions.enabled`).
 	 */
 	get hideUnchangedRegions(): boolean {
+		const fallback = getSettingFallback<boolean>('diff.hideUnchangedRegions');
+		if (typeof fallback === 'boolean') return fallback;
 		const inspected = this.config.inspect<boolean>('diff.hideUnchangedRegions');
 		if (typeof inspected !== 'undefined' && (typeof inspected.workspaceFolderValue === 'boolean' || typeof inspected.workspaceValue === 'boolean' || typeof inspected.globalValue === 'boolean')) {
 			return !!this.config.get('diff.hideUnchangedRegions', false);

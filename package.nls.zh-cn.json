@@ -453,5 +453,7 @@
 	"config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title": "应用补丁...",
 	"config.contextMenuActionsVisibility.uncommittedChanges.generateCommitMessage.title": "使用 AI 生成提交说明...",
 	"config.commitDetailsView.actions.description": "指定在提交详情视图快捷操作栏（如“签出...”所在行）中显示哪些提交操作及其排列顺序。也可在提交详情视图的“...”菜单中选择“自定义快捷操作按钮...”或在 Git Map 设置面板中交互式调整。",
-	"config.diff.hideUnchangedRegions.description": "在打开 Visual Studio Code 差异编辑器以及 Git Map 内联差异预览时，仅显示差异部分（折叠未更改的上下文行）。"
+	"config.diff.hideUnchangedRegions.description": "在打开 Visual Studio Code 差异编辑器以及 Git Map 内联差异预览时，仅显示差异部分（折叠未更改的上下文行）。",
+	"command.diff.showChangesOnly.title": "差异视图：仅显示差异部分",
+	"command.diff.showFullFile.title": "差异视图：显示完整文件"
 }

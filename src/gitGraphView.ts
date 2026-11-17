@@ -1152,6 +1152,19 @@ export class GitGraphView extends Disposable {
 	}
 
 	/**
+	 * Notify any active Git Map View that the Commit Details View action bar or diff mode changed.
+	 */
+	public static notifyCdvConfigChanged() {
+		const panel = GitGraphView.currentPanel;
+		if (typeof panel === 'undefined') return;
+		if (panel.panel.visible && panel.isGraphViewLoaded) {
+			panel.sendCdvConfig();
+		} else {
+			panel.needsCdvSync = true;
+		}
+	}
+
+	/**
 	 * Send updated Commit Details View action bar & diff settings to the front-end.
 	 */
 	private sendCdvConfig() {

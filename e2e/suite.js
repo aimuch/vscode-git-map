@@ -2008,7 +2008,15 @@ async function run() {
 			assert(freeze.error === null && config.inspect('graph.freezeFooter').globalValue === false && freezeString.error !== null && config.inspect('graph.freezeColumnHeaders').globalValue === undefined, 'Unexpected boolean settings: ' + freeze.error + ' / ' + freezeString.error);
 			assert(cdvActionsOk.error === null && JSON.stringify(config.inspect('commitDetailsView.actions').globalValue) === JSON.stringify(['savePatch', 'checkout']) && cdvActionsBad.error !== null, 'Unexpected commitDetailsView.actions setting: ' + cdvActionsOk.error + ' / ' + cdvActionsBad.error);
 			assert(hideUnchangedOk.error === null && config.inspect('diff.hideUnchangedRegions').globalValue === true && vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled') === true, 'diff.hideUnchangedRegions didn\'t sync diffEditor.hideUnchangedRegions.enabled');
-			return 'Valid: updated; invalid value: "' + invalidValue.error + '"; other setting: "' + invalidKey.error + '"; boolean & CDV actions & diff hideUnchangedRegions verified';
+			// Diff Editor title bar commands (git-map.diff.showFullFile / git-map.diff.showChangesOnly) toggle both settings and notify the open view
+			const pkg = JSON.parse(fs.readFileSync(path.join(extension.extensionPath, 'package.json'), 'utf8'));
+			const editorTitle = pkg.contributes.menus['editor/title'];
+			assert(editorTitle.some((item) => item.command === 'git-map.diff.showChangesOnly' && item.when.includes('isInDiffEditor')) && editorTitle.some((item) => item.command === 'git-map.diff.showFullFile' && item.when.includes('isInDiffEditor')), 'Diff Editor title bar commands are missing');
+			await vscode.commands.executeCommand('git-map.diff.showFullFile');
+			assert(vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled') === false && vscode.workspace.getConfiguration('git-map').get('diff.hideUnchangedRegions') === false, 'git-map.diff.showFullFile didn\'t disable hideUnchangedRegions');
+			await vscode.commands.executeCommand('git-map.diff.showChangesOnly');
+			assert(vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled') === true && vscode.workspace.getConfiguration('git-map').get('diff.hideUnchangedRegions') === true, 'git-map.diff.showChangesOnly didn\'t enable hideUnchangedRegions');
+			return 'Valid: updated; invalid value: "' + invalidValue.error + '"; other setting: "' + invalidKey.error + '"; CDV actions & Diff Editor toolbar showChangesOnly/showFullFile verified';
 		} finally {
 			await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', undefined, vscode.ConfigurationTarget.Global);
 			await vscode.workspace.getConfiguration('git-map').update('commitDetailsView.actions', undefined, vscode.ConfigurationTarget.Global);

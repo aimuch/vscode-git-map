@@ -1338,5 +1338,7 @@
 	"Customize Action Buttons": "自定义快捷操作按钮",
 	"Customize Commit Action Buttons": "自定义提交快捷操作",
 	"Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.": "勾选要在提交详情栏（如“签出…”所在行）显示的按钮，拖拽或使用上下箭头调整排列顺序。",
-	"Reset to Default": "恢复默认"
+	"Reset to Default": "恢复默认",
+	"Diff View: Changes Only": "差异视图：仅显示差异部分",
+	"Diff View: Full File": "差异视图：显示完整文件"
 }

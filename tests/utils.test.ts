@@ -20,6 +20,7 @@ jest.doMock('fs', () => mockedFileSystemModule);
 import * as cp from 'child_process';
 import * as path from 'path';
 import { ConfigurationChangeEvent } from 'vscode';
+import { getConfig, setSettingFallbackStorage } from '../src/config';
 import { DataSource } from '../src/dataSource';
 import { ExtensionState } from '../src/extensionState';
 import { Logger } from '../src/logger';
@@ -1461,6 +1462,30 @@ describe('updateExtensionSetting (commitDetailsView.actions & diff.hideUnchanged
 			expect(mockUpdate).toHaveBeenNthCalledWith(1, 'diff.hideUnchangedRegions', true, expect.anything());
 			expect(mockUpdate).toHaveBeenNthCalledWith(2, 'hideUnchangedRegions.enabled', true, expect.anything());
 		} finally {
+			delete (vscode.mocks.workspaceConfiguration as any).update;
+		}
+	});
+
+	it('Should gracefully fall back to Memento storage and still sync diffEditor.hideUnchangedRegions.enabled when git-map setting update rejects', async () => {
+		const store: { [k: string]: any } = {};
+		setSettingFallbackStorage({
+			get: (k: string, def?: any) => (k in store ? store[k] : def),
+			update: (k: string, v: any) => { store[k] = v; return Promise.resolve(); },
+			keys: () => Object.keys(store)
+		});
+		const mockUpdate = jest.fn((section: string) => section === 'hideUnchangedRegions.enabled' ? Promise.resolve(undefined) : Promise.reject(new Error('not registered')));
+		(vscode.mocks.workspaceConfiguration as any).update = mockUpdate;
+		try {
+			const hideErr = await updateExtensionSetting('diff.hideUnchangedRegions', true);
+			expect(hideErr).toBe(null);
+			expect(getConfig().commitDetailsView.hideUnchangedRegions).toBe(true);
+			expect(mockUpdate).toHaveBeenCalledWith('hideUnchangedRegions.enabled', true, expect.anything());
+
+			const actionsErr = await updateExtensionSetting('commitDetailsView.actions', ['savePatch', 'checkout']);
+			expect(actionsErr).toBe(null);
+			expect(getConfig().commitDetailsView.actions).toStrictEqual(['savePatch', 'checkout']);
+		} finally {
+			setSettingFallbackStorage(null);
 			delete (vscode.mocks.workspaceConfiguration as any).update;
 		}
 	});

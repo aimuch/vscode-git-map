@@ -2,12 +2,13 @@ import * as vscode from 'vscode';
 import { AvatarManager } from './avatarManager';
 import { GitCodeLens } from './codeLens';
 import { CommandManager } from './commands';
-import { getConfig } from './config';
+import { getConfig, saveSettingFallback, setSettingFallbackStorage } from './config';
 import { DataSource } from './dataSource';
 import { DiffDocProvider } from './diffDocProvider';
 import { EscapeStack } from './escapeStack';
 import { ExtensionState } from './extensionState';
 import { FileBlame } from './fileBlame';
+import { GitGraphView } from './gitGraphView';
 import { LineBlame } from './lineBlame';
 import { LineHistory } from './lineHistory';
 import { Logger } from './logger';
@@ -19,7 +20,7 @@ import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMess
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
-import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, showErrorMessage, showInformationMessage } from './utils';
+import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
 import { EventEmitter } from './utils/event';
 import { t } from './l10n';
 
@@ -84,13 +85,35 @@ export async function activate(context: vscode.ExtensionContext) {
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
 	setAiSecretStorage(context.secrets);
+	setSettingFallbackStorage(context.globalState);
+
+	const applyDiffViewMode = async (onlyChanges: boolean) => {
+		await setDiffHideUnchangedRegions(onlyChanges);
+		GitGraphView.notifyCdvConfigChanged();
+		vscode.window.setStatusBarMessage(onlyChanges ? t('Diff View: Changes Only') : t('Diff View: Full File'), 3000);
+	};
 
 	context.subscriptions.push(
 		vscode.commands.registerCommand('git-map.ai.generateCommitMessage', (arg?: unknown) => generateScmCommitMessage(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.ai.setApiKey', (key?: unknown) => setApiKey(key)),
 		vscode.commands.registerCommand('git-map.ai.clearApiKey', () => clearApiKey()),
+		vscode.commands.registerCommand('git-map.diff.showChangesOnly', () => applyDiffViewMode(true)),
+		vscode.commands.registerCommand('git-map.diff.showFullFile', () => applyDiffViewMode(false)),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
 		vscode.workspace.onDidChangeConfiguration((event) => {
+			if (event.affectsConfiguration('git-map.commitDetailsView.actions')) {
+				void saveSettingFallback('commitDetailsView.actions', undefined);
+			}
+			if (event.affectsConfiguration('git-map.diff.hideUnchangedRegions')) {
+				void saveSettingFallback('diff.hideUnchangedRegions', undefined);
+				const enabled = !!vscode.workspace.getConfiguration('git-map').get('diff.hideUnchangedRegions', false);
+				void setDiffHideUnchangedRegions(enabled);
+			} else if (event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled')) {
+				const enabled = !!vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled', false);
+				if (getConfig().commitDetailsView.hideUnchangedRegions !== enabled) {
+					void setDiffHideUnchangedRegions(enabled).then(() => GitGraphView.notifyCdvConfigChanged());
+				}
+			}
 			if (event.affectsConfiguration('git-map')) {
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {

@@ -315,6 +315,19 @@
 				"command": "git-map.ai.clearApiKey",
 				"title": "%command.ai.clearApiKey.title%",
 				"icon": "$(trash)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.diff.showChangesOnly",
+				"title": "%command.diff.showChangesOnly.title%",
+				"icon": "$(fold)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.diff.showFullFile",
+				"title": "%command.diff.showFullFile.title%",
+				"icon": "$(unfold)",
+				"toggled": "config.diffEditor.hideUnchangedRegions.enabled"
 			}
 		],
 		"configuration": {
@@ -2218,6 +2231,14 @@
 				{
 					"command": "git-map.escape",
 					"when": "false"
+				},
+				{
+					"command": "git-map.diff.showChangesOnly",
+					"when": "!config.diffEditor.hideUnchangedRegions.enabled"
+				},
+				{
+					"command": "git-map.diff.showFullFile",
+					"when": "config.diffEditor.hideUnchangedRegions.enabled"
 				}
 			],
 			"editor/context": [
@@ -2302,6 +2323,16 @@
 				}
 			],
 			"editor/title": [
+				{
+					"command": "git-map.diff.showChangesOnly",
+					"group": "navigation@0",
+					"when": "isInDiffEditor && !config.diffEditor.hideUnchangedRegions.enabled"
+				},
+				{
+					"command": "git-map.diff.showFullFile",
+					"group": "navigation@0",
+					"when": "isInDiffEditor && config.diffEditor.hideUnchangedRegions.enabled"
+				},
 				{
 					"command": "git-map.openFile",
 					"group": "navigation",
