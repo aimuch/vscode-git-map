@@ -3,6 +3,7 @@ const CLASS_CONTEXT_MENU_ACTIVE = 'contextMenuActive';
 interface ContextMenuAction {
 	readonly id?: string; // Identifies the action (e.g. for the buttons of a commit's row, which run the actions of its context menu)
 	readonly title: string;
+	readonly icon?: string; // The HTML of an icon shown before the title
 	readonly visible: boolean;
 	readonly onClick: () => void;
 	readonly checked?: boolean; // Required in checked context menus
@@ -51,11 +52,23 @@ class ContextMenu {
 		let html = '', handlers: (() => void)[] = [], handlerId = 0;
 		this.close();
 
+		let hasIcons = false;
+		for (let i = 0; i < actions.length; i++) {
+			for (let j = 0; j < actions[i].length; j++) {
+				if (actions[i][j].visible && typeof actions[i][j].icon === 'string') {
+					hasIcons = true;
+					break;
+				}
+			}
+			if (hasIcons) break;
+		}
+
 		for (let i = 0; i < actions.length; i++) {
 			let groupHtml = '';
 			for (let j = 0; j < actions[i].length; j++) {
 				if (actions[i][j].visible) {
-					groupHtml += '<li class="contextMenuItem" data-index="' + handlerId++ + '">' + (checked ? '<span class="contextMenuItemCheck">' + (actions[i][j].checked ? SVG_ICONS.check : '') + '</span>' : '') + actions[i][j].title + (typeof actions[i][j].shortcut === 'string' ? '<span class="contextMenuItemShortcut">' + escapeHtml(actions[i][j].shortcut!) + '</span>' : '') + '</li>';
+					const iconHtml = hasIcons ? '<span class="contextMenuItemIcon">' + (actions[i][j].icon || '') + '</span>' : '';
+					groupHtml += '<li class="contextMenuItem" data-index="' + handlerId++ + '">' + (checked ? '<span class="contextMenuItemCheck">' + (actions[i][j].checked ? SVG_ICONS.check : '') + '</span>' : '') + iconHtml + '<span class="contextMenuItemLabel">' + actions[i][j].title + '</span>' + (typeof actions[i][j].shortcut === 'string' ? '<span class="contextMenuItemShortcut">' + escapeHtml(actions[i][j].shortcut!) + '</span>' : '') + '</li>';
 					handlers.push(actions[i][j].onClick);
 				}
 			}

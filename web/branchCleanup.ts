@@ -90,7 +90,7 @@ class BranchCleanup {
 	private render() {
 		const listElem = document.getElementById('branchCleanup');
 		if (listElem === null) return;
-		const header = '<div class="stashListHeader"><b>' + t('Clean Up Branches') + '</b><span>' + (this.candidates === null ? '' : this.candidates.length === 0 ? t('No branches can be cleaned up.') : this.candidates.length !== 1 ? t('{0} local branches can be deleted', this.candidates.length) : t('1 local branch can be deleted')) + '</span><span class="stashListSpacer"></span>' +
+		const header = '<div class="stashListHeader"><b>' + MENU_ICONS.branch + t('Clean Up Branches') + '</b><span>' + (this.candidates === null ? '' : this.candidates.length === 0 ? t('No branches can be cleaned up.') : this.candidates.length !== 1 ? t('{0} local branches can be deleted', this.candidates.length) : t('1 local branch can be deleted')) + '</span><span class="stashListSpacer"></span>' +
 			'<button type="button" class="compareIconBtn" data-action="close" aria-label="' + t('Close') + '" title="' + t('Close') + '">' + SVG_ICONS.close + '</button></div>';
 		if (this.candidates === null || this.candidates.length === 0) {
 			listElem.innerHTML = header + '<div class="branchCleanupMessage">' + (this.error !== null ? escapeHtml(this.error) : this.candidates === null ? SVG_ICONS.loading + t('Loading') + ELLIPSIS : t('Every local branch is either not merged into {0}, or still on its remote.', escapeHtml(this.defaultBranch !== null ? this.defaultBranch : t('the default branch')))) + '</div>';
@@ -114,7 +114,7 @@ class BranchCleanup {
 			'<div class="branchCleanupFooter">' +
 			(remote !== null && merged.some((candidate) => candidate.remotes.includes(remote)) ? '<label class="branchCleanupRemote"><input type="checkbox" data-action="deleteOnRemote"' + (this.deleteOnRemote ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Also delete the merged branches on {0}', escapeHtml(remote)) + '</label>' : '') +
 			'<span class="stashListSpacer"></span><button type="button" class="roundedBtn" data-action="close">' + t('Cancel') + '</button>' +
-			'<button type="button" class="roundedBtn branchCleanupDelete' + (count === 0 ? ' ' + CLASS_DISABLED : '') + '" data-action="delete"' + (count === 0 ? ' disabled' : '') + '>' + (count !== 1 ? t('Delete {0} Branches', count) : t('Delete 1 Branch')) + (this.deleteOnRemote && remoteBranches.length > 0 ? ' (+' + remoteBranches.length + ' ' + t('on {0}', escapeHtml(remote!)) + ')' : '') + '</button></div>';
+			'<button type="button" class="roundedBtn branchCleanupDelete' + (count === 0 ? ' ' + CLASS_DISABLED : '') + '" data-action="delete"' + (count === 0 ? ' disabled' : '') + '>' + MENU_ICONS.trash + (count !== 1 ? t('Delete {0} Branches', count) : t('Delete 1 Branch')) + (this.deleteOnRemote && remoteBranches.length > 0 ? ' (+' + remoteBranches.length + ' ' + t('on {0}', escapeHtml(remote!)) + ')' : '') + '</button></div>';
 	}
 
 	/**

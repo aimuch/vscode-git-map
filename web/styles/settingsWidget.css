@@ -36,11 +36,19 @@
 	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
 }
 #settingsHeader h2{
+	display:flex;
+	align-items:center;
+	gap:7px;
 	flex:1 1 auto;
 	margin:0;
 	font-size:15px;
 	font-weight:600;
 	line-height:28px;
+}
+#settingsHeader h2 svg.uiIcon{
+	width:16px !important;
+	height:16px !important;
+	opacity:0.85;
 }
 #settingsRepoName{
 	min-width:0;
@@ -100,11 +108,19 @@
 	gap:10px;
 }
 .settingsSection h3{
+	display:flex;
+	align-items:center;
+	gap:6px;
 	margin:0;
 	color:var(--vscode-descriptionForeground);
 	font-size:12px;
 	font-weight:700;
 	letter-spacing:0.04em;
+}
+.settingsSection h3 svg.uiIcon{
+	width:13px !important;
+	height:13px !important;
+	opacity:0.85;
 }
 .settingsLabel{
 	font-weight:600;
@@ -270,9 +286,17 @@
 	min-height:26px;
 }
 .settingsCardHeader h4{
+	display:flex;
+	align-items:center;
+	gap:6px;
 	margin:0;
 	font-size:13px;
 	font-weight:600;
+}
+.settingsCardHeader h4 svg.uiIcon{
+	width:14px !important;
+	height:14px !important;
+	opacity:0.85;
 }
 .settingsCardButtons{
 	display:inline-flex;

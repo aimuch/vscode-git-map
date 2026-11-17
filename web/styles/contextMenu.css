@@ -25,12 +25,41 @@ body.vscode-high-contrast .contextMenu{
 }
 
 .contextMenu li.contextMenuItem{
-	padding:5px 14px;
+	display:flex;
+	align-items:center;
+	gap:9px;
+	padding:5px 12px;
 	border-radius:5px;
+	white-space:nowrap;
+}
+.contextMenuItemIcon{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	flex:0 0 15px;
+	width:15px;
+	height:15px;
+	opacity:0.82;
+}
+.contextMenuItemIcon svg{
+	width:14px !important;
+	height:14px !important;
+	stroke:currentColor;
+}
+.contextMenuItemIcon svg:not([fill="none"]){
+	fill:currentColor;
+	stroke:none;
+}
+.contextMenu li.contextMenuItem:hover .contextMenuItemIcon{
+	opacity:1;
+}
+.contextMenuItemLabel{
+	flex:1 1 auto;
 }
 .contextMenuItemShortcut{
-	float:right;
-	margin-left:28px;
+	flex:0 0 auto;
+	margin-left:auto;
+	padding-left:20px;
 	font-size:11.5px;
 	opacity:0.65;
 }
@@ -52,7 +81,7 @@ body.vscode-high-contrast .contextMenu li.contextMenuItem:hover{
 
 .contextMenu.checked li.contextMenuItem{
 	position:relative;
-	padding-left:32px;
+	padding-left:30px;
 }
 
 .contextMenu.checked li.contextMenuItem .contextMenuItemCheck{
@@ -61,7 +90,7 @@ body.vscode-high-contrast .contextMenu li.contextMenuItem:hover{
 	height:16px;
 	top:50%;
 	margin-top:-8px;
-	left:12px;
+	left:10px;
 	-webkit-user-select:none;
 	user-select:none;
 }

@@ -1042,6 +1042,43 @@ class GitGraphView {
 		this.settingsWidget.show(this.currentRepo);
 	}
 
+	public isHideUnchangedRegions() {
+		return !!(this.config.commitDetailsView && this.config.commitDetailsView.hideUnchangedRegions);
+	}
+
+	public getConfiguredCdvActions(): ReadonlyArray<string> {
+		return this.config.commitDetailsView && Array.isArray(this.config.commitDetailsView.actions)
+			? this.config.commitDetailsView.actions
+			: DEFAULT_CDV_COMMIT_ACTIONS;
+	}
+
+	public setHideUnchangedRegions(enabled: boolean, persist: boolean = true) {
+		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).hideUnchangedRegions = enabled;
+		this.cdvFileView.renderCdvHideUnchangedBtn();
+		const diffElem = document.getElementById('cdvFileDiff');
+		if (diffElem !== null && this.expandedCommit !== null && this.expandedCommit.fileChanges !== null) {
+			const index = this.getCdvFileFocus(this.expandedCommit.commitHash, this.expandedCommit.fileChanges);
+			if (index !== null) diffElem.innerHTML = this.generateCdvFileDiffHtml(this.expandedCommit.commitHash, this.expandedCommit.fileChanges[index]);
+		}
+		this.settingsWidget.setHideUnchangedRegions(enabled);
+		if (persist) {
+			sendMessage({ command: 'updateExtensionSetting', key: 'diff.hideUnchangedRegions', value: enabled });
+		}
+	}
+
+	public setCdvConfig(actions: ReadonlyArray<string>, hideUnchangedRegions: boolean) {
+		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = actions;
+		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).hideUnchangedRegions = hideUnchangedRegions;
+		this.renderCdvActions();
+		this.cdvFileView.renderCdvHideUnchangedBtn();
+		const diffElem = document.getElementById('cdvFileDiff');
+		if (diffElem !== null && this.expandedCommit !== null && this.expandedCommit.fileChanges !== null) {
+			const index = this.getCdvFileFocus(this.expandedCommit.commitHash, this.expandedCommit.fileChanges);
+			if (index !== null) diffElem.innerHTML = this.generateCdvFileDiffHtml(this.expandedCommit.commitHash, this.expandedCommit.fileChanges[index]);
+		}
+		this.settingsWidget.setHideUnchangedRegions(hideUnchangedRegions);
+	}
+
 	public setAiConfig(ai: GG.AiSettingsConfig) {
 		const prev = this.config.ai;
 		const modelChanged = prev.provider !== ai.provider || prev.baseUrl !== ai.baseUrl || prev.model !== ai.model;
@@ -1373,7 +1410,7 @@ class GitGraphView {
 		this.footerElem.innerHTML = this.commits.length > 0
 			? '<div id="listFooter"><span class="listFooterCount">' + (loaded !== 1 ? t('{0} commits loaded', loaded) : t('1 commit loaded')) + (shown !== loaded ? ' · ' + t('{0} shown', shown) : '') + '</span>' +
 				'<span class="listFooterLegend">' + t('Scrollbar markers:') + '<span><i style="background-color:var(--vscode-focusBorder)"></i>HEAD</span><span><i style="background-color:' + escapeHtml(this.config.graph.colours[1 % this.config.graph.colours.length]) + '"></i>' + t('Branches') + '</span><span><i style="background-color:var(--vscode-descriptionForeground)"></i>' + t('Tags') + '</span><span><i style="background-color:var(--vscode-editorOverviewRuler-findMatchForeground, #d18616)"></i>' + t('Find Matches') + '</span></span>' +
-				'<span id="listFooterSelection"></span><span class="listFooterSpacer"></span>' + (this.moreCommitsAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + t('Load More Commits') + '</div>' : '') + '</div>'
+				'<span id="listFooterSelection"></span><span class="listFooterSpacer"></span>' + (this.moreCommitsAvailable ? '<div id="loadMoreCommitsBtn" class="roundedBtn">' + MENU_ICONS.pull + t('Load More Commits') + '</div>' : '') + '</div>'
 			: '';
 		document.body.style.setProperty('--git-graph-colHeadersHeight', document.getElementById('tableColHeaders')!.offsetHeight + 'px');
 		this.renderCommitSelection();
@@ -1850,9 +1887,9 @@ class GitGraphView {
 		const count = this.selectedCommits.size;
 		selectionElem.innerHTML = count > 0
 			? '<span class="listFooterSelectionCount">' + (count !== 1 ? t('{0} commits selected', count) : t('1 commit selected')) + '</span>' +
-				'<span class="listFooterAction" data-action="cherrypick">' + t('Cherry Pick') + ELLIPSIS + '</span>' +
-				'<span class="listFooterAction" data-action="copyHashes">' + t('Copy Hashes') + '</span>' +
-				'<span class="listFooterAction" data-action="clear" title="' + t('Escape') + '">' + t('Clear Selection') + '</span>'
+				'<span class="listFooterAction" data-action="cherrypick">' + MENU_ICONS.cherrypick + t('Cherry Pick') + ELLIPSIS + '</span>' +
+				'<span class="listFooterAction" data-action="copyHashes">' + MENU_ICONS.copy + t('Copy Hashes') + '</span>' +
+				'<span class="listFooterAction" data-action="clear" title="' + t('Escape') + '">' + MENU_ICONS.clear + t('Clear Selection') + '</span>'
 			: '';
 		alterClass(selectionElem, CLASS_ACTIVE, count > 0);
 	}
@@ -2302,7 +2339,10 @@ class GitGraphView {
 					possibleChordStart = Date.now();
 				}
 			} else if (e.key === 'Escape') {
-				if (this.commitExplainer.isCommitMessageModalOpen()) {
+				if (this.isCdvActionsCustomizerOpen()) {
+					this.closeCdvActionsCustomizer();
+					handledEvent(e);
+				} else if (this.commitExplainer.isCommitMessageModalOpen()) {
 					this.commitExplainer.closeCommitMessageModal();
 					handledEvent(e);
 				} else if (this.rebaseEditor.isOpen()) {
@@ -2432,6 +2472,7 @@ class GitGraphView {
 					[
 						{
 							title: t('Open URL'),
+							icon: MENU_ICONS.external,
 							visible: isExternalUrl,
 							onClick: () => {
 								sendMessage({ command: 'openExternalUrl', url: (<HTMLAnchorElement>eventTarget).href });
@@ -2439,11 +2480,13 @@ class GitGraphView {
 						},
 						{
 							title: t('Follow Internal Link'),
+							icon: MENU_ICONS.commit,
 							visible: isInternalUrl,
 							onClick: () => followInternalLink(e)
 						},
 						{
 							title: t('Copy URL to Clipboard'),
+							icon: MENU_ICONS.copy,
 							visible: isExternalUrl,
 							onClick: () => {
 								sendMessage({ command: 'copyToClipboard', type: t('External URL'), data: (<HTMLAnchorElement>eventTarget).href });
@@ -2913,8 +2956,8 @@ class GitGraphView {
 			const fileViewHtml = generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, this.cdvFileView.getFileViewType(), commitOrder.to === UNCOMMITTED);
 			activeTab = (this.activeCdvTab === 'explain' && explainPossible) || (this.activeCdvTab === 'message' && messageHtml !== '') ? this.activeCdvTab : 'files';
 			html += '</div><div id="cdvFiles">' + ((isRight || explainPossible)
-				? '<div id="cdvTabs"><span class="cdvTab' + (activeTab === 'files' ? ' active' : '') + '" data-tab="files">' + t('Changed Files') + ' · ' + expandedCommit.fileChanges!.length + '</span>' + (messageHtml !== '' ? '<span class="cdvTab' + (activeTab === 'message' ? ' active' : '') + '" data-tab="message">' + t('Commit Message') + '</span>' : '') + (explainPossible ? '<span class="cdvTab' + (activeTab === 'explain' ? ' active' : '') + '" data-tab="explain">' + CommitExplainer.ICON + t('Explain') + '</span>' : '') + '<span class="cdvTabsSpacer"></span>' +
-					(isRight ? '<div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') + '</div>' +
+				? '<div id="cdvTabs"><span class="cdvTab' + (activeTab === 'files' ? ' active' : '') + '" data-tab="files">' + MENU_ICONS.files + t('Changed Files') + ' · ' + expandedCommit.fileChanges!.length + '</span>' + (messageHtml !== '' ? '<span class="cdvTab' + (activeTab === 'message' ? ' active' : '') + '" data-tab="message">' + MENU_ICONS.subject + t('Commit Message') + '</span>' : '') + (explainPossible ? '<span class="cdvTab' + (activeTab === 'explain' ? ' active' : '') + '" data-tab="explain">' + CommitExplainer.ICON + t('Explain') + '</span>' : '') + '<span class="cdvTabsSpacer"></span>' +
+					(isRight ? '<div id="cdvHideUnchanged" class="cdvControlBtn">' + MENU_ICONS.foldDiff + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') + '</div>' +
 					'<div id="cdvFileView"' + (activeTab !== 'files' ? ' class="hidden"' : '') + '>' + fileViewHtml + '</div>' + (messageHtml !== '' ? '<div id="cdvMessageView"' + (activeTab !== 'message' ? ' class="hidden"' : '') + '>' + messageHtml + '</div>' : '') + (explainPossible ? '<div id="cdvExplainView"' + (activeTab !== 'explain' ? ' class="hidden"' : '') + '></div>' : '')
 				: fileViewHtml) + '</div><div id="cdvDivider"></div>';
 		}
@@ -2930,7 +2973,7 @@ class GitGraphView {
 		} else {
 			html += '</div><div id="cdvControls"><div id="cdvClose" class="cdvControlBtn" title="' + t('Close') + '">' + SVG_ICONS.close + '</div>' +
 				(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
-				(!expandedCommit.loading ? '<div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') +
+				(!expandedCommit.loading ? '<div id="cdvHideUnchanged" class="cdvControlBtn">' + MENU_ICONS.foldDiff + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') +
 				(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
 				'</div><div class="cdvHeightResize"></div>';
 		}
@@ -2982,8 +3025,16 @@ class GitGraphView {
 			this.cdvFileView.makeCdvFileViewInteractive();
 			this.renderCdvActions();
 			this.cdvFileView.renderCdvFileViewTypeBtns();
+			this.cdvFileView.renderCdvHideUnchangedBtn();
 			this.cdvFileView.renderCdvExternalDiffBtn();
 			this.makeCdvDividerDraggable();
+
+			const hideUnchangedBtn = document.getElementById('cdvHideUnchanged');
+			if (hideUnchangedBtn !== null) {
+				hideUnchangedBtn.addEventListener('click', () => {
+					this.setHideUnchangedRegions(!this.isHideUnchangedRegions(), true);
+				});
+			}
 
 			observeElemScroll('cdvSummary', expandedCommit.scrollTop.summary, (scrollTop) => {
 				if (this.expandedCommit === null) return;
@@ -3077,7 +3128,7 @@ class GitGraphView {
 			'<h2 class="cdvSubject">' + textFormatter.format(subject) + '</h2>' +
 			(body !== '' ? '<div class="cdvBody">' + textFormatter.format(body) + '</div>' : '') +
 			(this.getCdvFileFocus(commitDetails.hash, fileChanges) !== null ? this.generateCdvFileFocusHtml(commitDetails.hash, fileChanges) : (issues.length > 0 ? '<div class="cdvLine"><span class="cdvMuted">' + t('Related Issues') + '</span>' + issues.map((issue) => '<a class="' + CLASS_EXTERNAL_URL + '" href="' + escapeHtml(issue.url) + '" tabindex="-1">' + escapeHtml(issue.label) + '</a>').join('') + '</div>' : '') +
-			(branches.length > 0 ? '<div class="cdvLine"><span class="cdvMuted">' + t('On Branches') + '</span>' + branches.map((branch) => '<span class="cdvBranch' + (branch.remote ? ' remote' : '') + '" style="--git-graph-color:' + escapeHtml(branch.colour) + '">' + escapeHtml(branch.name) + '</span>').join('') + '</div>' : '') +
+			(branches.length > 0 ? '<div class="cdvLine"><span class="cdvMuted">' + t('On Branches') + '</span>' + branches.map((branch) => '<span class="cdvBranch' + (branch.remote ? ' remote' : '') + '" style="--git-graph-color:' + escapeHtml(branch.colour) + '">' + (branch.remote ? SVG_ICONS.cloud : SVG_ICONS.branch) + escapeHtml(branch.name) + '</span>').join('') + '</div>' : '') +
 			generateCdvStatsHtml(fileChanges) +
 			'<div id="cdvActions"></div>');
 	}
@@ -3108,9 +3159,9 @@ class GitGraphView {
 			'<span class="cdvFileFocusPath" title="' + escapeHtml(file.newFilePath) + '">' + escapeHtml(file.newFilePath) + '</span>' +
 			(textFile ? '<span class="fileTreeFileAdd">+' + file.additions + '</span><span class="fileTreeFileDel">\u2212' + file.deletions + '</span>' + generateChangeBarHtml(file.additions!, file.deletions!, null) : '') + '</div>' +
 			(file.type === GG.GitFileStatus.Renamed ? '<div class="cdvFileFocusRenamed">\u21aa ' + t('Renamed from {0}', escapeHtml(file.oldFilePath)) + '</div>' : '') +
-			'<div class="cdvFileFocusActions"><button type="button" id="cdvFileFocusDiff" class="cdvActionBtn primary" tabindex="-1">' + t('Open in Diff Editor') + '</button>' +
-			(file.type !== GG.GitFileStatus.Deleted ? '<button type="button" id="cdvFileFocusOpen" class="cdvActionBtn" tabindex="-1">' + t('Open This Version') + '</button>' : '') +
-			'<button type="button" id="cdvFileFocusAll" class="cdvActionBtn" tabindex="-1">' + t('View the Whole Commit ({0} files)', fileChanges.length) + '</button></div>' +
+			'<div class="cdvFileFocusActions"><button type="button" id="cdvFileFocusDiff" class="cdvActionBtn primary" tabindex="-1">' + MENU_ICONS.diff + t('Open in Diff Editor') + '</button>' +
+			(file.type !== GG.GitFileStatus.Deleted ? '<button type="button" id="cdvFileFocusOpen" class="cdvActionBtn" tabindex="-1">' + MENU_ICONS.file + t('Open This Version') + '</button>' : '') +
+			'<button type="button" id="cdvFileFocusAll" class="cdvActionBtn" tabindex="-1">' + MENU_ICONS.files + t('View the Whole Commit ({0} files)', fileChanges.length) + '</button></div>' +
 			'<div id="cdvFileDiff">' + this.generateCdvFileDiffHtml(hash, file) + '</div></div>';
 	}
 
@@ -3131,7 +3182,7 @@ class GitGraphView {
 			sendMessage({ command: 'loadFileDiff', repo: this.currentRepo, commitHash: hash, parentHash: parentHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath });
 		}
 		return this.cdvFileDiff.diff !== null
-			? generateFileDiffHtml(this.cdvFileDiff.diff, 40)
+			? generateFileDiffHtml(this.cdvFileDiff.diff, 40, this.isHideUnchangedRegions())
 			: '<div class="cdvFileDiffMessage">' + (this.cdvFileDiff.error !== null ? escapeHtml(this.cdvFileDiff.error) : t('Loading the changes') + ELLIPSIS) + '</div>';
 	}
 
@@ -3376,28 +3427,207 @@ class GitGraphView {
 			elem: expandedCommit.commitElem
 		};
 		let actions: ContextMenuActions, primary: ContextMenuAction[];
+		const isRegularCommit = commit.hash !== UNCOMMITTED && commit.stash === null;
 		if (commit.hash === UNCOMMITTED) {
 			actions = this.actions.getUncommittedChangesContextMenuActions(target);
-			primary = actions.reduce<ContextMenuAction[]>((all, group) => all.concat(group), []);
+			primary = actions.reduce<ContextMenuAction[]>((all, group) => all.concat(group), []).filter((action) => action.visible).slice(0, 3);
 		} else if (commit.stash !== null) {
 			target.ref = commit.stash.selector;
 			actions = this.actions.getStashContextMenuActions(<RefTarget>target);
-			primary = actions.reduce<ContextMenuAction[]>((all, group) => all.concat(group), []);
+			primary = actions.reduce<ContextMenuAction[]>((all, group) => all.concat(group), []).filter((action) => action.visible).slice(0, 3);
 		} else {
 			actions = this.actions.getCommitContextMenuActions(target);
-			primary = [actions[1][0], actions[0][1], actions[1][1]]; // Checkout, Create Branch & Cherry Pick
+			const actionMap = new Map<string, ContextMenuAction>();
+			actions.forEach((group) => group.forEach((action) => {
+				if (typeof action.id === 'string') actionMap.set(action.id, action);
+			}));
+			primary = this.getConfiguredCdvActions()
+				.map((id) => actionMap.get(id))
+				.filter((action): action is ContextMenuAction => typeof action !== 'undefined' && action.visible);
 		}
-		primary = primary.filter((action) => action.visible).slice(0, 3);
 
-		actionsElem.innerHTML = primary.map((action, i) => '<button type="button" class="cdvActionBtn' + (i === 0 ? ' primary' : '') + '" data-index="' + i + '" tabindex="-1">' + action.title + '</button>').join('')
+		actionsElem.innerHTML = primary.map((action, i) => '<button type="button" class="cdvActionBtn' + (i === 0 ? ' primary' : '') + '" data-index="' + i + '" tabindex="-1">' + (action.icon || '') + action.title + '</button>').join('')
 			+ '<button type="button" id="cdvMoreActions" class="cdvActionBtn" title="' + t('More Actions') + '" tabindex="-1">&#183;&#183;&#183;</button>';
 		actionsElem.querySelectorAll('.cdvActionBtn[data-index]').forEach((elem) => {
 			elem.addEventListener('click', () => primary[parseInt((<HTMLElement>elem).dataset.index!)].onClick());
 		});
 		document.getElementById('cdvMoreActions')!.addEventListener('click', (e) => {
 			handledEvent(e); // Don't let the click propagate to the document, which closes context menus
-			contextMenu.show(actions, false, target, <MouseEvent>e, this.isCdvDocked() ? document.body : this.viewElem);
+			const moreActions: ContextMenuActions = isRegularCommit
+				? actions.concat([[{
+					title: t('Customize Action Buttons') + ELLIPSIS,
+					icon: MENU_ICONS.settings,
+					visible: true,
+					onClick: () => this.openCdvActionsCustomizer()
+				}]])
+				: actions;
+			contextMenu.show(moreActions, false, target, <MouseEvent>e, this.isCdvDocked() ? document.body : this.viewElem);
 		});
+	}
+
+	public isCdvActionsCustomizerOpen() {
+		return document.getElementById('cdvActionsModal') !== null;
+	}
+
+	public closeCdvActionsCustomizer() {
+		const elem = document.getElementById('cdvActionsModal');
+		if (elem !== null) elem.remove();
+	}
+
+	public openCdvActionsCustomizer() {
+		this.closeCdvActionsCustomizer();
+		closeDialogAndContextMenu();
+		const catalog = getCommitActionCatalog();
+		const configured = this.getConfiguredCdvActions();
+		const items: { id: string, title: string, icon: string, checked: boolean }[] = [];
+		const added = new Set<string>();
+		configured.forEach((id) => {
+			const entry = catalog.find((item) => item.id === id);
+			if (typeof entry !== 'undefined' && !added.has(id)) {
+				added.add(id);
+				items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: true });
+			}
+		});
+		catalog.forEach((entry) => {
+			if (!added.has(entry.id)) {
+				added.add(entry.id);
+				items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: false });
+			}
+		});
+
+		const modal = document.createElement('div');
+		modal.id = 'cdvActionsModal';
+		document.body.appendChild(modal);
+
+		let dragIndex = -1;
+		const render = () => {
+			let orderCounter = 0;
+			modal.innerHTML = '<div class="cdvActionsModalPanel" role="dialog" aria-modal="true" aria-label="' + escapeHtml(t('Customize Commit Action Buttons')) + '">' +
+				'<div class="aiCommitHeader"><span class="aiCommitTitle">' + MENU_ICONS.settings + '<span>' + t('Customize Commit Action Buttons') + '</span></span>' +
+				'<button type="button" class="aiCommitClose" data-cdv-custom="close" title="' + t('Close') + '">' + SVG_ICONS.close + '</button></div>' +
+				'<div class="cdvActionsModalHint">' + t('Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.') + '</div>' +
+				'<div class="cdvActionsModalList">' + items.map((item, index) => {
+				const badge = item.checked ? '<span class="cdvActionsOrderBadge' + (orderCounter === 0 ? ' primary' : '') + '">#' + (++orderCounter) + '</span>' : '<span class="cdvActionsOrderBadge empty"></span>';
+				return '<div class="cdvActionsModalItem' + (item.checked ? ' checked' : '') + '" draggable="true" data-index="' + index + '" data-action-id="' + escapeHtml(item.id) + '">' +
+						'<span class="rebaseEditorGrip" title="' + t('Drag to reorder') + '">' + REBASE_GRIP_ICON + '</span>' +
+						'<label class="cdvActionsModalLabel"><input type="checkbox" data-index="' + index + '"' + (item.checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' +
+						'<span class="cdvActionsModalIcon">' + item.icon + '</span><span class="cdvActionsModalTitle">' + item.title + '</span></label>' +
+						badge +
+						'<span class="rebaseEditorMove"><span class="rebaseEditorMoveBtn' + (index === 0 ? ' ' + CLASS_DISABLED : '') + '" data-move="-1" data-index="' + index + '" title="' + t('Move Up') + '">' + SVG_ICONS.arrowUp + '</span>' +
+						'<span class="rebaseEditorMoveBtn' + (index === items.length - 1 ? ' ' + CLASS_DISABLED : '') + '" data-move="1" data-index="' + index + '" title="' + t('Move Down') + '">' + SVG_ICONS.arrowDown + '</span></span></div>';
+			}).join('') + '</div>' +
+				'<div class="rebaseEditorFooter">' +
+				'<span class="rebaseEditorLink" data-cdv-custom="reset">' + MENU_ICONS.revert + t('Reset to Default') + '</span>' +
+				'<span class="rebaseEditorProblem"></span>' +
+				'<button type="button" class="rebaseEditorBtn" data-cdv-custom="close">' + t('Cancel') + '</button>' +
+				'<button type="button" class="rebaseEditorBtn primary" data-cdv-custom="save">' + t('Save') + '</button></div></div>';
+		};
+
+		const moveItem = (from: number, to: number) => {
+			if (from === to || to < 0 || to >= items.length) {
+				render();
+				return;
+			}
+			const moved = items.splice(from, 1)[0];
+			items.splice(to, 0, moved);
+			render();
+		};
+
+		modal.addEventListener('mousedown', (e) => {
+			if (e.target === modal) this.closeCdvActionsCustomizer();
+		});
+		modal.addEventListener('change', (e) => {
+			if (!(e.target instanceof HTMLInputElement)) return;
+			const index = parseInt(e.target.dataset.index || '-1');
+			if (index < 0 || index >= items.length) return;
+			const checked = e.target.checked;
+			items[index].checked = checked;
+			if (checked) {
+				// Place newly checked item right after the existing checked items so all active buttons stay grouped at the top
+				let lastChecked = -1;
+				for (let i = 0; i < items.length; i++) {
+					if (i !== index && items[i].checked) lastChecked = i;
+				}
+				const targetIndex = lastChecked + 1;
+				if (index > targetIndex) {
+					const moved = items.splice(index, 1)[0];
+					items.splice(targetIndex, 0, moved);
+				}
+			}
+			render();
+		});
+		modal.addEventListener('click', (e) => {
+			if (!(e.target instanceof Element)) return;
+			const moveElem = <HTMLElement | null>e.target.closest('.rebaseEditorMoveBtn');
+			if (moveElem !== null && !moveElem.classList.contains(CLASS_DISABLED)) {
+				const index = parseInt(moveElem.dataset.index!);
+				moveItem(index, index + parseInt(moveElem.dataset.move!));
+				return;
+			}
+			const actionElem = <HTMLElement | null>e.target.closest('[data-cdv-custom]');
+			if (actionElem === null) return;
+			switch (actionElem.dataset.cdvCustom) {
+				case 'close':
+					this.closeCdvActionsCustomizer();
+					break;
+				case 'reset': {
+					items.length = 0;
+					DEFAULT_CDV_COMMIT_ACTIONS.forEach((id) => {
+						const entry = catalog.find((item) => item.id === id);
+						if (typeof entry !== 'undefined') items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: true });
+					});
+					catalog.forEach((entry) => {
+						if (!DEFAULT_CDV_COMMIT_ACTIONS.includes(entry.id)) {
+							items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: false });
+						}
+					});
+					render();
+					break;
+				}
+				case 'save': {
+					const selectedIds = items.filter((item) => item.checked).map((item) => item.id);
+					(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = selectedIds;
+					this.renderCdvActions();
+					sendMessage({ command: 'updateExtensionSetting', key: 'commitDetailsView.actions', value: selectedIds });
+					this.closeCdvActionsCustomizer();
+					break;
+				}
+			}
+		});
+		modal.addEventListener('dragstart', (e) => {
+			const itemElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.cdvActionsModalItem') : null;
+			if (itemElem === null) return;
+			dragIndex = parseInt(itemElem.dataset.index!);
+			itemElem.classList.add('dragging');
+			if (e.dataTransfer !== null) {
+				e.dataTransfer.effectAllowed = 'move';
+				e.dataTransfer.setData('text/plain', itemElem.dataset.index!);
+			}
+		});
+		modal.addEventListener('dragover', (e) => {
+			const itemElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.cdvActionsModalItem') : null;
+			if (itemElem === null || dragIndex < 0) return;
+			e.preventDefault();
+			modal.querySelectorAll('.cdvActionsModalItem.dropBefore, .cdvActionsModalItem.dropAfter').forEach((other) => other.classList.remove('dropBefore', 'dropAfter'));
+			const bounds = itemElem.getBoundingClientRect();
+			itemElem.classList.add(e.clientY < bounds.top + bounds.height / 2 ? 'dropBefore' : 'dropAfter');
+		});
+		modal.addEventListener('drop', (e) => {
+			const itemElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.cdvActionsModalItem') : null;
+			if (itemElem === null || dragIndex < 0) return;
+			e.preventDefault();
+			const index = parseInt(itemElem.dataset.index!), after = itemElem.classList.contains('dropAfter');
+			const to = (after ? index + 1 : index) - (dragIndex < index || (after && dragIndex === index) ? 1 : 0);
+			const from = dragIndex;
+			dragIndex = -1;
+			moveItem(from, to);
+		});
+		modal.addEventListener('dragend', () => {
+			dragIndex = -1;
+			modal.querySelectorAll('.cdvActionsModalItem.dragging, .cdvActionsModalItem.dropBefore, .cdvActionsModalItem.dropAfter').forEach((other) => other.classList.remove('dragging', 'dropBefore', 'dropAfter'));
+		});
+
+		render();
 	}
 
 	private setCdvHeight(elem: HTMLElement, isDocked: boolean) {

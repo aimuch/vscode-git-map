@@ -97,6 +97,11 @@ The context menus, and the key of each of their actions:
 | | `applyPatch` | Apply Patch... |
 | | `generateCommitMessage` | Generate Commit Message with AI... |
 
+## Commit Details Action Bar & Diff View
+
+* `git-map.commitDetailsView.actions` (default: `["checkout", "createBranch", "cherrypick"]`) chooses which commit actions are shown as buttons in the Commit Details View action bar and in what order. You can also customise and reorder them interactively via **"Customize Action Buttons…"** at the bottom of the Commit Details View's `···` menu or in **Appearance · All Repositories** in Git Map's Settings panel. Supported action IDs: `checkout`, `createBranch`, `cherrypick`, `addTag`, `createWorktree`, `revert`, `drop`, `editMessage`, `undoCommit`, `fixup`, `merge`, `rebase`, `reset`, `bisectBad`, `bisectGood`, `copyHash`, `copySubject`, `savePatch`, `copyPatch`.
+* `git-map.diff.hideUnchangedRegions` (default: `false`) collapses unchanged context lines so only changed regions are shown when opening the Visual Studio Code Diff Editor (`diffEditor.hideUnchangedRegions.enabled`) and in Git Map's inline diff preview. It can also be toggled directly from the Commit Details View tab bar, per-file via **"View Diff (Changes Only)"** / **"View Diff (Full File)"** in the file context menu, or in Git Map's Settings panel.
+
 ## Blame
 
 * `git-map.blame.currentLine` (default: `true`) shows the blame of the line the cursor is on at its end, and `git-map.blame.statusBar` (default: `true`) in the Status Bar (clicking it shows the history of the line).

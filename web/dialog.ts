@@ -365,10 +365,22 @@ class Dialog {
 		eventOverlay.create('dialogBacking', null, null);
 
 		const dialog = document.createElement('div'), dialogContent = document.createElement('div');
-		dialog.className = this.dangerous && type === DialogType.Form ? 'dialog danger' : 'dialog';
+		const isDangerousForm = this.dangerous && type === DialogType.Form;
+		dialog.className = isDangerousForm ? 'dialog danger' : 'dialog';
 		this.dangerous = false;
 		dialogContent.className = 'dialogContent';
-		dialogContent.innerHTML = (type === DialogType.Form && html.indexOf('<div class="dialogMessage">') !== 0 ? '<div class="dialogMessage">' + html + '</div>' : html) +
+		let bodyHtml = html;
+		if (type === DialogType.Form && html.indexOf('<svg') === -1) {
+			const titleIcon = Dialog.getTitleIcon(isDangerousForm, target);
+			if (html.indexOf('<div class="dialogMessage">') === 0) {
+				bodyHtml = '<div class="dialogMessage"><span class="dialogTitleIcon">' + titleIcon + '</span>' + html.substring(27);
+			} else {
+				bodyHtml = '<div class="dialogMessage"><span class="dialogTitleIcon">' + titleIcon + '</span>' + html + '</div>';
+			}
+		} else if (type === DialogType.Form && html.indexOf('<div class="dialogMessage">') !== 0) {
+			bodyHtml = '<div class="dialogMessage">' + html + '</div>';
+		}
+		dialogContent.innerHTML = bodyHtml +
 			'<div class="dialogButtons"><div id="dialogSecondaryAction" class="roundedBtn" role="button" tabindex="1">' + secondaryActionName + '</div>' + (actionName !== null ? '<div id="dialogAction" class="roundedBtn" role="button" tabindex="2">' + actionName + '</div>' : '') + '</div>';
 		const subtitle = type === DialogType.Form ? Dialog.getTargetSubtitle(target) : null;
 		if (subtitle !== null) {
@@ -407,6 +419,20 @@ class Dialog {
 		}
 	}
 
+	private static getTitleIcon(isDangerous: boolean, target: DialogTarget | null) {
+		if (isDangerous) return MENU_ICONS.warning;
+		if (target !== null && target.type !== TargetType.Repo) {
+			if (target.type === TargetType.Ref) {
+				if (typeof target.ref === 'string' && target.ref.indexOf('stash@{') > -1) return MENU_ICONS.stash;
+				if (target.elem.classList.contains('tag') || target.elem.closest('.gitRef.tag') !== null) return MENU_ICONS.tag;
+				return MENU_ICONS.branch;
+			}
+			if (target.hash === UNCOMMITTED) return MENU_ICONS.files;
+			return MENU_ICONS.commit;
+		}
+		return MENU_ICONS.settings;
+	}
+
 	/**
 	 * Get the HTML of the subtitle of a dialog, showing the commit that the dialog's target (a commit, or a reference on a commit) is on.
 	 * @param target The target of the dialog.
@@ -416,7 +442,7 @@ class Dialog {
 		if (target === null || target.type === TargetType.Repo || target.hash === UNCOMMITTED) return null;
 		const commitElem = target.elem.closest('tr.commit'), textElem = commitElem !== null ? commitElem.querySelector('.description .text') : null;
 		if (textElem === null) return null;
-		return '<div class="dialogSubtitle">' + t('Commit') + ' <span class="dialogSubtitleHash">' + escapeHtml(abbrevCommit(target.hash)) + '</span> · ' + escapeHtml(textElem.textContent || '') + '</div>';
+		return '<div class="dialogSubtitle">' + MENU_ICONS.commit + t('Commit') + ' <span class="dialogSubtitleHash">' + escapeHtml(abbrevCommit(target.hash)) + '</span> · ' + escapeHtml(textElem.textContent || '') + '</div>';
 	}
 
 	/**

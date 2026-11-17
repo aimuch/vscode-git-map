@@ -15,7 +15,7 @@ import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
-import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, fillScmCommitMessage, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
+import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, fillScmCommitMessage, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, syncDiffHideUnchanged, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
 import { Disposable, toDisposable } from './utils/disposable';
 import { getL10nBundle, getLanguage, t } from './l10n';
 
@@ -60,6 +60,7 @@ export class GitGraphView extends Disposable {
 	private lastHiddenRepo: string | null = null;
 	private needsFullUpdate: boolean = false;
 	private needsAiSync: boolean = false;
+	private needsCdvSync: boolean = false;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
 
 	private loadRepoInfoRefreshId: number = 0;
@@ -169,11 +170,16 @@ export class GitGraphView extends Disposable {
 								this.needsAiSync = false;
 								void this.sendAiState();
 							}
+							if (this.needsCdvSync) {
+								this.needsCdvSync = false;
+								this.sendCdvConfig();
+							}
 							this.respondLoadRepos(repos, loadViewTo);
 							if (loadViewTo === null) this.sendMessage({ command: 'refresh' });
 						} else {
 							this.needsFullUpdate = false;
 							this.needsAiSync = false;
+							this.needsCdvSync = false;
 							this.update();
 						}
 					} else {
@@ -199,6 +205,12 @@ export class GitGraphView extends Disposable {
 						void this.sendAiState();
 					} else {
 						this.needsAiSync = true;
+					}
+				} else if (event.affectsConfiguration('git-map.commitDetailsView.actions') || event.affectsConfiguration('git-map.diff.hideUnchangedRegions') || event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled')) {
+					if (this.panel.visible && this.isGraphViewLoaded) {
+						this.sendCdvConfig();
+					} else {
+						this.needsCdvSync = true;
 					}
 				} else if (this.panel.visible && this.isGraphViewLoaded && event.affectsConfiguration('workbench.iconTheme')) {
 					this.fileIconThemeRetries = 0;
@@ -802,7 +814,9 @@ export class GitGraphView extends Disposable {
 			case 'viewDiff':
 				this.sendMessage({
 					command: 'viewDiff',
-					error: await viewDiff(msg.repo, msg.fromHash, msg.toHash, msg.oldFilePath, msg.newFilePath, msg.type)
+					error: typeof msg.onlyChanges === 'boolean'
+						? await viewDiff(msg.repo, msg.fromHash, msg.toHash, msg.oldFilePath, msg.newFilePath, msg.type, null, msg.onlyChanges)
+						: await viewDiff(msg.repo, msg.fromHash, msg.toHash, msg.oldFilePath, msg.newFilePath, msg.type)
 				});
 				break;
 			case 'viewDiffWithWorkingFile':
@@ -1123,6 +1137,7 @@ export class GitGraphView extends Disposable {
 	 * Open the changes of files between two commits in one editor (the multi-file diff editor of Visual Studio Code).
 	 */
 	private async openAllChanges(repo: string, title: string, fromHash: string, toHash: string, fileChanges: ReadonlyArray<{ oldFilePath: string, newFilePath: string, type: GitFileStatus }>): Promise<ErrorInfo> {
+		await syncDiffHideUnchanged();
 		const resources = fileChanges.map((file) => [
 			vscode.Uri.file(path.join(repo, file.newFilePath)),
 			encodeDiffDocUri(repo, file.oldFilePath, fromHash, file.type, DiffSide.Old),
@@ -1134,6 +1149,14 @@ export class GitGraphView extends Disposable {
 		} catch (_) {
 			return t('This version of Visual Studio Code can\'t show the changes of several files together. Click on each file to see its changes.');
 		}
+	}
+
+	/**
+	 * Send updated Commit Details View action bar & diff settings to the front-end.
+	 */
+	private sendCdvConfig() {
+		const cdv = getConfig().commitDetailsView;
+		this.sendMessage({ command: 'updateCdvConfig', actions: cdv.actions, hideUnchangedRegions: cdv.hideUnchangedRegions });
 	}
 
 	/**

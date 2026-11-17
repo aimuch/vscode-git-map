@@ -87,12 +87,12 @@ class StashList {
 		if (listElem === null) return;
 		const keybinding = this.view.config.keybindings.scrollToStash, isMac = /Mac/.test(navigator.platform), canStash = this.view.loadedCommits.length > 0 && this.view.loadedCommits[0].hash === UNCOMMITTED;
 		const modifier = isMac ? '\u2318' : 'Ctrl+', shift = isMac ? '\u21e7' : 'Shift+';
-		listElem.innerHTML = '<div class="stashListHeader"><b>' + t('Stashes') + ' · ' + this.view.gitStashes.length + '</b><span>' + t('Click on a stash to go to it on the graph, and open its details') + '</span></div>' +
+		listElem.innerHTML = '<div class="stashListHeader"><b>' + MENU_ICONS.stash + t('Stashes') + ' · ' + this.view.gitStashes.length + '</b><span>' + t('Click on a stash to go to it on the graph, and open its details') + '</span></div>' +
 			'<div class="stashListItems">' + this.view.gitStashes.map((stash, index) => {
 			const stats = this.view.stashStats[stash.hash], branch = stash.message.match(/^(?:WIP on|On) ([^:]+):/);
 			return '<div class="stashListItem" data-index="' + index + '"><span class="stashListSelector">' + escapeHtml(stash.selector.substring(5)) + '</span>' +
 					'<span class="stashListMessage" title="' + escapeHtml(stash.message) + '">' + escapeHtml(stash.message) + '</span>' +
-					'<span class="stashListActions"><button type="button" class="stashListAction primary" data-action="apply" tabindex="-1">' + t('Apply') + '</button><button type="button" class="stashListAction" data-action="pop" tabindex="-1">' + t('Pop') + '</button><button type="button" class="stashListAction danger" data-action="drop" tabindex="-1">' + t('Drop') + '</button></span>' +
+					'<span class="stashListActions"><button type="button" class="stashListAction primary" data-action="apply" tabindex="-1">' + MENU_ICONS.stashApply + t('Apply') + '</button><button type="button" class="stashListAction" data-action="pop" tabindex="-1">' + MENU_ICONS.stashPop + t('Pop') + '</button><button type="button" class="stashListAction danger" data-action="drop" tabindex="-1">' + MENU_ICONS.trash + t('Drop') + '</button></span>' +
 					'<span class="stashListMeta">' + (branch !== null ? '<span>' + escapeHtml(branch[1]) + '</span>' : '') + '<span title="' + escapeHtml(formatLongDate(stash.date)) + '">' + escapeHtml(formatRelativeDate(stash.date)) + '</span>' +
 					'<span>' + (typeof stats !== 'undefined'
 				? (stats.files !== 1 ? t('{0} files', stats.files) : t('{0} file', stats.files)) + ' · <span class="fileTreeFileAdd">+' + stats.additions + '</span> <span class="fileTreeFileDel">\u2212' + stats.deletions + '</span>'
@@ -101,7 +101,7 @@ class StashList {
 					(typeof this.view.commitLookup[stash.hash] !== 'number' ? '<span class="stashListNotLoaded">' + t('Not in the loaded commits') + '</span>' : '') +
 					'</span></div>';
 		}).join('') + '</div>' +
-			'<div class="stashListFooter"><button type="button" id="stashListStashChanges" class="stashListAction' + (canStash ? '' : ' ' + CLASS_DISABLED) + '" title="' + (canStash ? t('Stash the uncommitted changes') : t('There aren\'t any uncommitted changes to stash')) + '" tabindex="-1">' + t('Stash Current Changes') + ELLIPSIS + '</button><span class="stashListSpacer"></span>' +
+			'<div class="stashListFooter"><button type="button" id="stashListStashChanges" class="stashListAction' + (canStash ? '' : ' ' + CLASS_DISABLED) + '" title="' + (canStash ? t('Stash the uncommitted changes') : t('There aren\'t any uncommitted changes to stash')) + '" tabindex="-1">' + MENU_ICONS.stash + t('Stash Current Changes') + ELLIPSIS + '</button><span class="stashListSpacer"></span>' +
 			(keybinding !== null ? '<span>' + t('{0} / {1}: go to the next / previous stash', modifier + keybinding.toUpperCase(), modifier + shift + keybinding.toUpperCase()) + '</span>' : '') + '</div>';
 	}
 

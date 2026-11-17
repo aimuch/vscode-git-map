@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AI_PROVIDER_VALUES } from './aiProviders';
-import { GRAPH_COLOUR_PRESET_NAMES, getConfig } from './config';
+import { COMMIT_ACTION_IDS, GRAPH_COLOUR_PRESET_NAMES, getConfig } from './config';
 import { DataSource } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
@@ -357,6 +357,7 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 	'ai.commitMessage.enabled': [true, false],
 	'ai.explainCommit.enabled': [true, false],
 	'ai.provider': AI_PROVIDER_VALUES,
+	'diff.hideUnchangedRegions': [true, false],
 	'graph.colourPreset': GRAPH_COLOUR_PRESET_NAMES,
 	'graph.density': ['Comfortable', 'Compact'],
 	'graph.freezeColumnHeaders': [true, false],
@@ -366,6 +367,30 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 	'language': ['Auto', 'English', 'Simplified Chinese'],
 	'statusBarItemDisplay': ['Icon & Text', 'Icon', 'Text']
 };
+
+function syncEditorHideUnchangedRegions(enabled: boolean): Promise<void> {
+	const diffConfig = vscode.workspace.getConfiguration('diffEditor');
+	if (!diffConfig || typeof diffConfig.update !== 'function') return Promise.resolve();
+	const current = typeof diffConfig.get === 'function' ? diffConfig.get<boolean>('hideUnchangedRegions.enabled', false) : undefined;
+	if (current === enabled) return Promise.resolve();
+	return Promise.resolve(diffConfig.update('hideUnchangedRegions.enabled', enabled, getSettingTarget(diffConfig, 'hideUnchangedRegions.enabled'))).then(() => { }, () => { });
+}
+
+export async function syncDiffHideUnchanged(onlyChanges?: boolean): Promise<void> {
+	if (typeof onlyChanges === 'boolean') {
+		const config = vscode.workspace.getConfiguration('git-map');
+		if (config && typeof config.update === 'function') {
+			await Promise.resolve(config.update('diff.hideUnchangedRegions', onlyChanges, getSettingTarget(config, 'diff.hideUnchangedRegions'))).then(() => { }, () => { });
+		}
+		await syncEditorHideUnchangedRegions(onlyChanges);
+		return;
+	}
+	const gitMapConfig = vscode.workspace.getConfiguration('git-map');
+	const inspected = gitMapConfig && typeof gitMapConfig.inspect === 'function' ? gitMapConfig.inspect<boolean>('diff.hideUnchangedRegions') : undefined;
+	if (typeof inspected !== 'undefined' && (typeof inspected.workspaceFolderValue === 'boolean' || typeof inspected.workspaceValue === 'boolean' || typeof inspected.globalValue === 'boolean')) {
+		await syncEditorHideUnchangedRegions(!!gitMapConfig.get('diff.hideUnchangedRegions', false));
+	}
+}
 
 /**
  * Get the scope in which an Extension Setting should be updated (the workspace if it's already set there, otherwise user settings).
@@ -382,9 +407,14 @@ export function getSettingTarget(config: vscode.WorkspaceConfiguration, key: str
  * @param value The new value of the Extension Setting.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export function updateExtensionSetting(key: string, value: string | boolean): Thenable<ErrorInfo> {
-	let normalisedValue: string | boolean = value;
-	if (key === 'ai.model' || key === 'ai.baseUrl') {
+export function updateExtensionSetting(key: string, value: string | boolean | ReadonlyArray<string>): Thenable<ErrorInfo> {
+	let normalisedValue: string | boolean | ReadonlyArray<string> = value;
+	if (key === 'commitDetailsView.actions') {
+		if (!Array.isArray(value) || value.length > COMMIT_ACTION_IDS.length || !value.every((item) => typeof item === 'string' && COMMIT_ACTION_IDS.includes(item))) {
+			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, JSON.stringify(value)));
+		}
+		normalisedValue = Array.from(new Set(value));
+	} else if (key === 'ai.model' || key === 'ai.baseUrl') {
 		if (typeof value !== 'string' || value.length > 512) {
 			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
 		}
@@ -406,13 +436,18 @@ export function updateExtensionSetting(key: string, value: string | boolean): Th
 		normalisedValue = trimmed;
 	} else {
 		const values = UPDATABLE_EXTENSION_SETTINGS[key];
-		if (typeof values === 'undefined' || !values.includes(value)) {
+		if (typeof values === 'undefined' || Array.isArray(value) || !values.includes(<string | boolean>value)) {
 			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, String(value)));
 		}
 	}
 	const config = vscode.workspace.getConfiguration('git-map');
 	return config.update(key, normalisedValue, getSettingTarget(config, key)).then(
-		() => null,
+		() => {
+			if (key === 'diff.hideUnchangedRegions' && typeof normalisedValue === 'boolean') {
+				return syncEditorHideUnchangedRegions(normalisedValue).then(() => null);
+			}
+			return null;
+		},
 		() => t('Visual Studio Code was unable to update the Extension Setting "{0}".', 'git-map.' + key)
 	);
 }
@@ -484,7 +519,7 @@ export async function openFile(repo: string, filePath: string, hash: string | nu
  * @param lines The lines (of the right-side file) to select, or NULL.
  * @returns A promise resolving to the ErrorInfo of the executed command.
  */
-export function viewDiff(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus, lines: GitLineRange | null = null) {
+export function viewDiff(repo: string, fromHash: string, toHash: string, oldFilePath: string, newFilePath: string, type: GitFileStatus, lines: GitLineRange | null = null, onlyChanges?: boolean): Thenable<ErrorInfo> {
 	if (type !== GitFileStatus.Untracked) {
 		let abbrevFromHash = abbrevCommit(fromHash), abbrevToHash = toHash !== UNCOMMITTED ? abbrevCommit(toHash) : t('Present'), pathComponents = newFilePath.split('/');
 		let desc = fromHash === toHash
@@ -495,7 +530,7 @@ export function viewDiff(repo: string, fromHash: string, toHash: string, oldFile
 		let title = pathComponents[pathComponents.length - 1] + ' (' + desc + ')';
 		if (fromHash === UNCOMMITTED) fromHash = 'HEAD';
 
-		return vscode.commands.executeCommand('vscode.diff', encodeDiffDocUri(repo, oldFilePath, fromHash === toHash ? fromHash + '^' : fromHash, type, DiffSide.Old), encodeDiffDocUri(repo, newFilePath, toHash, type, DiffSide.New), title, {
+		const openDiff = () => vscode.commands.executeCommand('vscode.diff', encodeDiffDocUri(repo, oldFilePath, fromHash === toHash ? fromHash + '^' : fromHash, type, DiffSide.Old), encodeDiffDocUri(repo, newFilePath, toHash, type, DiffSide.New), title, {
 			preview: true,
 			viewColumn: getConfig().openNewTabEditorGroup,
 			...getLinesSelection(lines)
@@ -503,6 +538,13 @@ export function viewDiff(repo: string, fromHash: string, toHash: string, oldFile
 			() => null,
 			() => t('Visual Studio Code was unable to load the diff editor for {0}.', newFilePath)
 		);
+		const gitMapConfig = vscode.workspace.getConfiguration('git-map');
+		const inspected = gitMapConfig && typeof gitMapConfig.inspect === 'function' ? gitMapConfig.inspect<boolean>('diff.hideUnchangedRegions') : undefined;
+		const hasExplicitSetting = typeof inspected !== 'undefined' && (typeof inspected.workspaceFolderValue === 'boolean' || typeof inspected.workspaceValue === 'boolean' || typeof inspected.globalValue === 'boolean');
+		if (typeof onlyChanges === 'boolean' || hasExplicitSetting) {
+			return syncDiffHideUnchanged(onlyChanges).then(openDiff);
+		}
+		return openDiff();
 	} else {
 		return openFile(repo, newFilePath);
 	}

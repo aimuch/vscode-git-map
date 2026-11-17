@@ -24,7 +24,7 @@ import { DataSource } from '../src/dataSource';
 import { ExtensionState } from '../src/extensionState';
 import { Logger } from '../src/logger';
 import { GitFileStatus, PullRequestProvider, RepoDropdownOrder } from '../src/types';
-import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, abbrevText, archive, constructIncompatibleGitVersionMessage, copyFilePathToClipboard, copyToClipboard, createPullRequest, doesFileExist, doesVersionMeetRequirement, evalPromises, findGit, getExtensionVersion, getGitExecutable, getGitExecutableFromPaths, getNonce, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, openExtensionSettings, openExternalUrl, openFile, openGitTerminal, pathWithTrailingSlash, realpath, resolveSpawnOutput, resolveToSymbolicPath, showErrorMessage, showInformationMessage, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from '../src/utils';
+import { GitExecutable, GitVersionRequirement, UNCOMMITTED, abbrevCommit, abbrevText, archive, constructIncompatibleGitVersionMessage, copyFilePathToClipboard, copyToClipboard, createPullRequest, doesFileExist, doesVersionMeetRequirement, evalPromises, findGit, getExtensionVersion, getGitExecutable, getGitExecutableFromPaths, getNonce, getPathFromStr, getPathFromUri, getRelativeTimeDiff, getRepoName, getSortedRepositoryPaths, isPathInWorkspace, openExtensionSettings, openExternalUrl, openFile, openGitTerminal, pathWithTrailingSlash, realpath, resolveSpawnOutput, resolveToSymbolicPath, showErrorMessage, showInformationMessage, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from '../src/utils';
 import { EventEmitter } from '../src/utils/event';
 
 import { mockRepoState } from './helpers/utils';
@@ -1419,6 +1419,50 @@ describe('viewDiff', () => {
 		});
 		expect(result).toBe(null);
 		expect(mockedFileSystemModule.access).toHaveBeenNthCalledWith(1, path.join('/path/to/repo', 'subfolder/untracked.txt'), fs.constants.R_OK, expect.anything());
+	});
+
+	it('Should sync diffEditor.hideUnchangedRegions.enabled before opening vscode.diff when onlyChanges is specified', async () => {
+		const mockUpdate = jest.fn().mockResolvedValue(undefined);
+		(vscode.mocks.workspaceConfiguration as any).update = mockUpdate;
+		try {
+			vscode.commands.executeCommand.mockResolvedValueOnce(null);
+			const result = await viewDiff('/path/to/repo', '1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b', '1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b', 'subfolder/modified.txt', 'subfolder/modified.txt', GitFileStatus.Modified, null, true);
+			expect(result).toBe(null);
+			expect(mockUpdate).toHaveBeenCalledWith('hideUnchangedRegions.enabled', true, expect.anything());
+			expect(vscode.commands.executeCommand).toHaveBeenCalledWith('vscode.diff', expect.anything(), expect.anything(), 'modified.txt (1a2b3c4d^ ↔ 1a2b3c4d)', expect.anything());
+		} finally {
+			delete (vscode.mocks.workspaceConfiguration as any).update;
+		}
+	});
+});
+
+describe('updateExtensionSetting (commitDetailsView.actions & diff.hideUnchangedRegions)', () => {
+	it('Should validate, deduplicate, and persist commitDetailsView.actions in order', async () => {
+		const mockUpdate = jest.fn().mockResolvedValue(undefined);
+		(vscode.mocks.workspaceConfiguration as any).update = mockUpdate;
+		try {
+			const ok = await updateExtensionSetting('commitDetailsView.actions', ['savePatch', 'checkout', 'savePatch', 'rebase']);
+			expect(ok).toBe(null);
+			expect(mockUpdate).toHaveBeenCalledWith('commitDetailsView.actions', ['savePatch', 'checkout', 'rebase'], expect.anything());
+
+			const err = await updateExtensionSetting('commitDetailsView.actions', ['checkout', 'notAnAction']);
+			expect(err).toContain('git-map.commitDetailsView.actions');
+		} finally {
+			delete (vscode.mocks.workspaceConfiguration as any).update;
+		}
+	});
+
+	it('Should persist diff.hideUnchangedRegions and sync diffEditor.hideUnchangedRegions.enabled', async () => {
+		const mockUpdate = jest.fn().mockResolvedValue(undefined);
+		(vscode.mocks.workspaceConfiguration as any).update = mockUpdate;
+		try {
+			const ok = await updateExtensionSetting('diff.hideUnchangedRegions', true);
+			expect(ok).toBe(null);
+			expect(mockUpdate).toHaveBeenNthCalledWith(1, 'diff.hideUnchangedRegions', true, expect.anything());
+			expect(mockUpdate).toHaveBeenNthCalledWith(2, 'hideUnchangedRegions.enabled', true, expect.anything());
+		} finally {
+			delete (vscode.mocks.workspaceConfiguration as any).update;
+		}
 	});
 });
 

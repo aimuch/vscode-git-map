@@ -2001,11 +2001,19 @@ async function run() {
 			// The settings that freeze the column headers & footer are booleans (a string isn't accepted)
 			const freeze = await send('graph.freezeFooter', false);
 			const freezeString = await send('graph.freezeColumnHeaders', 'false');
+			const cdvActionsOk = await send('commitDetailsView.actions', ['savePatch', 'checkout']);
+			const cdvActionsBad = await send('commitDetailsView.actions', ['checkout', 'unknownAction']);
+			const hideUnchangedOk = await send('diff.hideUnchangedRegions', true);
 			const config = vscode.workspace.getConfiguration('git-map');
 			assert(freeze.error === null && config.inspect('graph.freezeFooter').globalValue === false && freezeString.error !== null && config.inspect('graph.freezeColumnHeaders').globalValue === undefined, 'Unexpected boolean settings: ' + freeze.error + ' / ' + freezeString.error);
-			return 'Valid: updated; invalid value: "' + invalidValue.error + '"; other setting: "' + invalidKey.error + '"; boolean: updated, as a string: "' + freezeString.error + '"';
+			assert(cdvActionsOk.error === null && JSON.stringify(config.inspect('commitDetailsView.actions').globalValue) === JSON.stringify(['savePatch', 'checkout']) && cdvActionsBad.error !== null, 'Unexpected commitDetailsView.actions setting: ' + cdvActionsOk.error + ' / ' + cdvActionsBad.error);
+			assert(hideUnchangedOk.error === null && config.inspect('diff.hideUnchangedRegions').globalValue === true && vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled') === true, 'diff.hideUnchangedRegions didn\'t sync diffEditor.hideUnchangedRegions.enabled');
+			return 'Valid: updated; invalid value: "' + invalidValue.error + '"; other setting: "' + invalidKey.error + '"; boolean & CDV actions & diff hideUnchangedRegions verified';
 		} finally {
 			await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', undefined, vscode.ConfigurationTarget.Global);
+			await vscode.workspace.getConfiguration('git-map').update('commitDetailsView.actions', undefined, vscode.ConfigurationTarget.Global);
+			await vscode.workspace.getConfiguration('git-map').update('diff.hideUnchangedRegions', undefined, vscode.ConfigurationTarget.Global);
+			await vscode.workspace.getConfiguration('diffEditor').update('hideUnchangedRegions.enabled', undefined, vscode.ConfigurationTarget.Global);
 			// Changing the setting re-renders the open view, which must happen before the next check waits for the view to be re-rendered
 			const renders = record.html.length;
 			await vscode.workspace.getConfiguration('git-map').update('graph.freezeFooter', undefined, vscode.ConfigurationTarget.Global);

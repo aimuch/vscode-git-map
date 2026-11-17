@@ -43,6 +43,13 @@ export const GRAPH_COLOUR_PRESETS: { readonly [name: string]: ReadonlyArray<stri
 	'Tokyo Subway': ['#f62e36', '#ff9500', '#009bbf', '#00bb85', '#8f76d6', '#c1a470', '#00ac9b', '#9c5e31', '#e85298', '#0079c2', '#6cbb5a', '#b6007a']
 };
 export const GRAPH_COLOUR_PRESET_NAMES: ReadonlyArray<string> = ['Default', 'Pastel', 'Vivid', 'High Contrast', 'Colour Blind Safe', 'Tokyo Subway'];
+export const COMMIT_ACTION_IDS: ReadonlyArray<string> = [
+	'checkout', 'createBranch', 'cherrypick', 'addTag', 'createWorktree',
+	'revert', 'drop', 'editMessage', 'undoCommit', 'fixup',
+	'merge', 'rebase', 'reset', 'bisectBad', 'bisectGood',
+	'copyHash', 'copySubject', 'savePatch', 'copyPatch'
+];
+export const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
 
 const VIEW_COLUMN_MAPPING: { [column: string]: vscode.ViewColumn } = {
 	'Active': vscode.ViewColumn.Active,
@@ -80,13 +87,44 @@ class Config {
 	 */
 	get commitDetailsView(): CommitDetailsViewConfig {
 		return {
+			actions: this.cdvActions,
 			autoCenter: !!this.getRenamedExtensionSetting('commitDetailsView.autoCenter', 'autoCenterCommitDetailsView', true),
 			fileTreeCompactFolders: !!this.getRenamedExtensionSetting('commitDetailsView.fileView.fileTree.compactFolders', 'commitDetailsViewFileTreeCompactFolders', true),
 			fileViewType: this.getRenamedExtensionSetting<string>('commitDetailsView.fileView.type', 'defaultFileViewType', 'File Tree') === 'File List'
 				? FileViewType.List
 				: FileViewType.Tree,
+			hideUnchangedRegions: this.hideUnchangedRegions,
 			location: this.getCommitDetailsViewLocation()
 		};
+	}
+
+	/**
+	 * Get the value of the `git-map.commitDetailsView.actions` Extension Setting.
+	 */
+	get cdvActions(): ReadonlyArray<string> {
+		const raw = this.config.get<unknown>('commitDetailsView.actions');
+		if (!Array.isArray(raw)) return DEFAULT_CDV_COMMIT_ACTIONS;
+		const seen = new Set<string>(), out: string[] = [];
+		for (let i = 0; i < raw.length; i++) {
+			const item = raw[i];
+			if (typeof item === 'string' && COMMIT_ACTION_IDS.includes(item) && !seen.has(item)) {
+				seen.add(item);
+				out.push(item);
+			}
+		}
+		return out;
+	}
+
+	/**
+	 * Get whether unchanged regions should be collapsed when viewing diffs (`git-map.diff.hideUnchangedRegions`, falling back to `diffEditor.hideUnchangedRegions.enabled`).
+	 */
+	get hideUnchangedRegions(): boolean {
+		const inspected = this.config.inspect<boolean>('diff.hideUnchangedRegions');
+		if (typeof inspected !== 'undefined' && (typeof inspected.workspaceFolderValue === 'boolean' || typeof inspected.workspaceValue === 'boolean' || typeof inspected.globalValue === 'boolean')) {
+			return !!this.config.get('diff.hideUnchangedRegions', false);
+		}
+		const diffCfg = vscode.workspace.getConfiguration('diffEditor');
+		return !!(diffCfg && typeof diffCfg.get === 'function' && diffCfg.get('hideUnchangedRegions.enabled', false));
 	}
 
 	/**

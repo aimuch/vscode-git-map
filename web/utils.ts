@@ -58,6 +58,95 @@ const SVG_ICONS = {
 	review: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill-rule="evenodd" d="m4,4.7 -4,7.3 4,7.3 2.5,0 -4,-7.3 4,-7.3zM11.5,6C9,5.5 6.6,7.1 6.1,9.6c-0.5,2.6 1.1,5 3.6,5.5 1,0.2 1.8,0.1 2.7,-0.3l2.5,3.3c0.1,0.1 0.3,0.2 0.5,0.3 0.2,0 0.4,0 0.6,-0.1 0.3,-0.2 0.4,-0.4 0.4,-0.6 0,-0.2 0,-0.4 -0.1,-0.6 0,-0.2 -2.4,-3.3 -2.4,-3.3 0.7,-0.6 1,-1.5 1.3,-2.4C15.7,8.9 14,6.5 11.5,6zm8.5,-1.3 -2.5,0 4,7.3 -4.2,7.3 2.5,0L24,12zm-8.8,3c1.6,0.3 2.6,1.8 2.3,3.4 -0.3,1.6 -1.8,2.6 -3.4,2.3C8.5,13 7.4,11.6 7.8,10 8,8.4 9.6,7.3 11.2,7.7z"/></svg>'
 };
 
+function strokeIcon(paths: string) {
+	return '<svg class="uiIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+
+const MENU_ICONS = {
+	tag: strokeIcon('<path d="M2.5 8.2V3.5a1 1 0 0 1 1-1h4.7l5.3 5.3a1 1 0 0 1 0 1.4l-3.9 3.9a1 1 0 0 1-1.4 0z"/><circle cx="5.5" cy="5.5" r="1"/>'),
+	createBranch: strokeIcon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M4.5 9.5c0-2.5 2-3 4.5-3M12 4v5M9.5 6.5h5"/>'),
+	branch: strokeIcon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="5.5" r="1.5"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4"/>'),
+	worktree: strokeIcon('<path d="M2 4.5V12a1 1 0 0 0 1 1h4.5M2 4.5a1 1 0 0 1 1-1h2.5l1 1.2H9"/><circle cx="12" cy="4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M12 5.5v5M12 8.5c-1.5 0-2.5.8-2.5 2.5"/>'),
+	checkout: strokeIcon('<circle cx="10.5" cy="8" r="3"/><path d="M1.5 8h6M5 5.5L7.5 8 5 10.5"/>'),
+	cherrypick: strokeIcon('<circle cx="4.5" cy="11.5" r="2.5"/><circle cx="11.5" cy="11.5" r="2.5"/><path d="M4.5 9c.5-3 3-5.5 6.5-6.5M11.5 9c-.5-2.5-.5-4.5-.5-6.5"/>'),
+	revert: strokeIcon('<path d="M5.5 3L2.5 6l3 3"/><path d="M2.5 6h7a4 4 0 0 1 0 8H7"/>'),
+	trash: strokeIcon('<path d="M3 4.5h10M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5M4.5 4.5l.6 8.5a1 1 0 0 0 1 1h3.8a1 1 0 0 0 1-1l.6-8.5M6.8 7v4.5M9.2 7v4.5"/>'),
+	edit: strokeIcon('<path d="M10.8 2.7a1.5 1.5 0 0 1 2.1 2.1L5.5 12.2 2.5 13l.8-3zM9.5 4l2.1 2.1"/>'),
+	fixup: strokeIcon('<circle cx="5" cy="8" r="2.2"/><path d="M1.5 8h1.3M7.2 8h2.3M12.5 5.5v5M10 8h5"/>'),
+	merge: strokeIcon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="11.5" cy="3.5" r="1.5"/><circle cx="8" cy="12.5" r="1.5"/><path d="M4.5 5c0 3 3.5 3 3.5 6M11.5 5c0 3-3.5 3-3.5 6"/>'),
+	rebase: strokeIcon('<circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="3.5" r="1.5"/><path d="M4.5 11V6.5a2 2 0 0 1 2-2h3.5M8 2.5l2 2-2 2"/>'),
+	reset: strokeIcon('<path d="M3 3.5v9M7.5 5L4.5 8l3 3"/><path d="M4.5 8h6a3 3 0 0 1 0 6H9"/>'),
+	bisectBad: strokeIcon('<circle cx="8" cy="8" r="5.8"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/>'),
+	bisectGood: strokeIcon('<circle cx="8" cy="8" r="5.8"/><path d="M5.4 8.2l1.8 1.8 3.5-3.8"/>'),
+	bisectSkip: strokeIcon('<path d="M3 4.5l5.5 3.5L3 11.5zM9.5 4.5L13 8l-3.5 3.5M13 4.5v7"/>'),
+	copy: strokeIcon('<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 3.5V3a1.5 1.5 0 0 0-1.5-1.5H3.5A1.5 1.5 0 0 0 2 3v5.5A1.5 1.5 0 0 0 3.5 10H4"/>'),
+	subject: strokeIcon('<path d="M2.5 4.5h11M2.5 8h8.5M2.5 11.5h6"/>'),
+	patchSave: strokeIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13M8 7.5v4M6.2 9.8L8 11.6l1.8-1.8"/>'),
+	patchApply: strokeIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13M6 9.5h4M8 7.5v4"/>'),
+	sparkle: strokeIcon('<path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/>'),
+	stash: strokeIcon('<path d="M2.5 9.5l1.5-6h8l1.5 6v3.5h-11z"/><path d="M2.5 9.5h3.5l.5 1.5h3l.5-1.5h3.5"/>'),
+	stashApply: strokeIcon('<path d="M2.5 9.5l1.2-4.8h8.6l1.2 4.8v3.5h-11z"/><path d="M8 2v5.5M5.8 5.5L8 7.7l2.2-2.2"/>'),
+	stashPop: strokeIcon('<path d="M2.5 9.5l1.2-4.8h8.6l1.2 4.8v3.5h-11z"/><path d="M8 7.8V2M5.8 4.2L8 2l2.2 2.2"/>'),
+	fetch: strokeIcon('<path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v3h-3"/>'),
+	pull: strokeIcon('<path d="M8 2.5v10M4.5 9L8 12.5 11.5 9"/>'),
+	push: strokeIcon('<path d="M8 13.5v-10M4.5 7L8 3.5 11.5 7"/>'),
+	pullRequest: strokeIcon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><circle cx="11.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M11.5 11V5.5a2 2 0 0 0-2-2H7.5M9 1.8L7.2 3.5 9 5.2"/>'),
+	issue: strokeIcon('<circle cx="8" cy="8" r="5.8"/><circle cx="8" cy="8" r="1.4"/>'),
+	archive: strokeIcon('<rect x="2" y="2.5" width="12" height="3" rx="0.8"/><path d="M3 5.5v7a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-7M6.5 8.5h3"/>'),
+	compare: strokeIcon('<path d="M2.5 5.5h10l-2.5-2.5M13.5 10.5h-10l2.5 2.5"/>'),
+	diff: strokeIcon('<rect x="2" y="2.5" width="12" height="11" rx="1.2"/><path d="M8 2.5v11M4 6.5h2.2M5.1 5.4v2.2M9.8 9.5H12"/>'),
+	file: strokeIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13"/>'),
+	history: strokeIcon('<path d="M3 5.5A5.5 5.5 0 1 1 4.2 11.8M2.8 2.8v3h3M8 5.2V8l2.2 1.4"/>'),
+	chart: strokeIcon('<path d="M2.5 13.5h11M4.5 13.5V8.5M8 13.5V4.5M11.5 13.5V6.5"/>'),
+	eye: strokeIcon('<path d="M1.8 8s2.3-4.2 6.2-4.2S14.2 8 14.2 8s-2.3 4.2-6.2 4.2S1.8 8 1.8 8z"/><circle cx="8" cy="8" r="1.8"/>'),
+	eyeOff: strokeIcon('<path d="M2.5 2.5l11 11M6.6 6.7a1.8 1.8 0 0 0 2.7 2.6M3.5 5.6C2.4 6.8 1.8 8 1.8 8s2.3 4.2 6.2 4.2c1.3 0 2.4-.4 3.3-1M6.2 4c.6-.1 1.2-.2 1.8-.2 3.9 0 6.2 4.2 6.2 4.2s-.6 1.2-1.8 2.4"/>'),
+	external: strokeIcon('<path d="M9.5 2.5h4v4M13.5 2.5L7.5 8.5M12.5 9.5v3a1 1 0 0 1-1 1h-8a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1h3"/>'),
+	clear: strokeIcon('<circle cx="8" cy="8" r="5.8"/><path d="M5.8 5.8l4.4 4.4M10.2 5.8l-4.4 4.4"/>'),
+	commit: strokeIcon('<circle cx="8" cy="8" r="2.6"/><path d="M1.5 8h3.9M10.6 8h3.9"/>'),
+	warning: strokeIcon('<path d="M8 2.2l6 10.6a.8.8 0 0 1-.7 1.2H2.7a.8.8 0 0 1-.7-1.2zM8 6.2v3.3M8 11.7h.01"/>'),
+	key: strokeIcon('<circle cx="5.5" cy="9.5" r="2.8"/><path d="M7.6 7.4L13 2m-1.5 1.5l1.8 1.8M9.8 5.2l1.6 1.6"/>'),
+	files: strokeIcon('<path d="M5.5 2h5L13.5 5v6.5a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M10.5 2v3h3M2.5 5v8a1 1 0 0 0 1 1h6.5"/>'),
+	calendar: strokeIcon('<rect x="2.5" y="3.5" width="11" height="10" rx="1.2"/><path d="M2.5 6.5h11M5.5 2v2.5M10.5 2v2.5"/>'),
+	person: strokeIcon('<circle cx="8" cy="5.5" r="2.4"/><path d="M3.2 13.2c.8-2.4 2.6-3.7 4.8-3.7s4 1.3 4.8 3.7"/>'),
+	pin: strokeIcon('<path d="M5.5 2.5h5l-.6 3.5 2.1 2v1.2H4V8l2.1-2zM8 9.2v4.3"/>'),
+	plus: strokeIcon('<path d="M8 3v10M3 8h10"/>'),
+	palette: strokeIcon('<circle cx="8" cy="8" r="5.8"/><circle cx="6" cy="6" r="0.8"/><circle cx="10" cy="6" r="0.8"/><circle cx="5.5" cy="9.5" r="0.8"/><path d="M9.5 10.5a1.5 1.5 0 0 0 2.2-1.2"/>'),
+	globe: strokeIcon('<circle cx="8" cy="8" r="5.8"/><path d="M2.2 8h11.6M8 2.2c1.8 1.8 1.8 9.8 0 11.6M8 2.2c-1.8 1.8-1.8 9.8 0 11.6"/>'),
+	layout: strokeIcon('<rect x="2.5" y="3" width="11" height="10" rx="1.2"/><path d="M2.5 10.2h11"/>'),
+	repo: strokeIcon('<path d="M3 3.5A1.5 1.5 0 0 1 4.5 2h7.5v11.5H4.5A1.5 1.5 0 0 1 3 12z"/><path d="M3 11.5A1.5 1.5 0 0 1 4.5 10H12M6 5h3.5"/>'),
+	settings: strokeIcon('<path d="M2.5 4.5h3M8.5 4.5h5M2.5 8h6.5M12 8h1.5M2.5 11.5h2M7.5 11.5h6"/><circle cx="7" cy="4.5" r="1.5"/><circle cx="10.5" cy="8" r="1.5"/><circle cx="6" cy="11.5" r="1.5"/>'),
+	terminal: strokeIcon('<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M5 6.5L7.5 8.5 5 10.5M8.5 10.5h2.5"/>'),
+	stop: strokeIcon('<circle cx="8" cy="8" r="5.8"/><rect x="6" y="6" width="4" height="4" rx="0.6"/>'),
+	cloud: strokeIcon('<path d="M4.5 12.2h7.2a2.7 2.7 0 0 0 .4-5.4A3.9 3.9 0 0 0 4.4 6.1a3 3 0 0 0 .1 6.1z"/>'),
+	foldDiff: strokeIcon('<path d="M5.5 2.5L8 5l2.5-2.5M5.5 13.5L8 11l2.5 2.5M2.5 8h11"/>')
+};
+
+const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
+
+function getCommitActionCatalog(): ReadonlyArray<{ readonly id: string, readonly title: string, readonly icon: string }> {
+	return [
+		{ id: 'checkout', title: t('Checkout') + ELLIPSIS, icon: MENU_ICONS.checkout },
+		{ id: 'createBranch', title: t('Create Branch') + ELLIPSIS, icon: MENU_ICONS.createBranch },
+		{ id: 'cherrypick', title: t('Cherry Pick') + ELLIPSIS, icon: MENU_ICONS.cherrypick },
+		{ id: 'addTag', title: t('Add Tag') + ELLIPSIS, icon: MENU_ICONS.tag },
+		{ id: 'createWorktree', title: t('Create Worktree') + ELLIPSIS, icon: MENU_ICONS.worktree },
+		{ id: 'revert', title: t('Revert') + ELLIPSIS, icon: MENU_ICONS.revert },
+		{ id: 'drop', title: t('Drop') + ELLIPSIS, icon: MENU_ICONS.trash },
+		{ id: 'editMessage', title: t('Edit Commit Message') + ELLIPSIS, icon: MENU_ICONS.edit },
+		{ id: 'undoCommit', title: t('Undo Commit') + ELLIPSIS, icon: MENU_ICONS.revert },
+		{ id: 'fixup', title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS, icon: MENU_ICONS.fixup },
+		{ id: 'merge', title: t('Merge into current branch') + ELLIPSIS, icon: MENU_ICONS.merge },
+		{ id: 'rebase', title: t('Rebase current branch on this Commit') + ELLIPSIS, icon: MENU_ICONS.rebase },
+		{ id: 'reset', title: t('Reset current branch to this Commit') + ELLIPSIS, icon: MENU_ICONS.reset },
+		{ id: 'bisectBad', title: t('Start Bisecting: This Commit is Bad') + ELLIPSIS, icon: MENU_ICONS.bisectBad },
+		{ id: 'bisectGood', title: t('Start Bisecting: This Commit is Good') + ELLIPSIS, icon: MENU_ICONS.bisectGood },
+		{ id: 'copyHash', title: t('Copy Commit Hash to Clipboard'), icon: MENU_ICONS.copy },
+		{ id: 'copySubject', title: t('Copy Commit Subject to Clipboard'), icon: MENU_ICONS.subject },
+		{ id: 'savePatch', title: t('Save as Patch') + ELLIPSIS, icon: MENU_ICONS.patchSave },
+		{ id: 'copyPatch', title: t('Copy as Patch'), icon: MENU_ICONS.copy }
+	];
+}
+
 const GIT_FILE_CHANGE_TYPES = { 'A': 'Added', 'M': 'Modified', 'D': 'Deleted', 'R': 'Renamed', 'U': 'Untracked' };
 const GIT_SIGNATURE_STATUS_DESCRIPTIONS = {
 	'G': 'Valid Signature',

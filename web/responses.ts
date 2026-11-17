@@ -103,6 +103,9 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'updateAiConfig':
 				gitGraph.setAiConfig(msg.ai);
 				break;
+			case 'updateCdvConfig':
+				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions);
+				break;
 			case 'explainCommit':
 				gitGraph.commitExplainer.processExplainCommitResponse(msg);
 				break;

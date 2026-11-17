@@ -67,52 +67,62 @@
 			{
 				"category": "Git Map",
 				"command": "git-map.addGitRepository",
-				"title": "%command.addGitRepository.title%"
+				"title": "%command.addGitRepository.title%",
+				"icon": "$(repo-create)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.clearAvatarCache",
-				"title": "%command.clearAvatarCache.title%"
+				"title": "%command.clearAvatarCache.title%",
+				"icon": "$(clear-all)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.endAllWorkspaceCodeReviews",
-				"title": "%command.endAllWorkspaceCodeReviews.title%"
+				"title": "%command.endAllWorkspaceCodeReviews.title%",
+				"icon": "$(checklist)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.endSpecificWorkspaceCodeReview",
-				"title": "%command.endSpecificWorkspaceCodeReview.title%"
+				"title": "%command.endSpecificWorkspaceCodeReview.title%",
+				"icon": "$(checklist)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.fetch",
-				"title": "%command.fetch.title%"
+				"title": "%command.fetch.title%",
+				"icon": "$(repo-fetch)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.cleanUpBranches",
-				"title": "%command.cleanUpBranches.title%"
+				"title": "%command.cleanUpBranches.title%",
+				"icon": "$(git-branch)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.removeGitRepository",
-				"title": "%command.removeGitRepository.title%"
+				"title": "%command.removeGitRepository.title%",
+				"icon": "$(trash)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.resumeWorkspaceCodeReview",
-				"title": "%command.resumeWorkspaceCodeReview.title%"
+				"title": "%command.resumeWorkspaceCodeReview.title%",
+				"icon": "$(eye)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.version",
-				"title": "%command.version.title%"
+				"title": "%command.version.title%",
+				"icon": "$(info)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.selectGraphColourPreset",
-				"title": "%command.selectGraphColourPreset.title%"
+				"title": "%command.selectGraphColourPreset.title%",
+				"icon": "$(symbol-color)"
 			},
 			{
 				"category": "Git Map",
@@ -142,27 +152,32 @@
 			{
 				"category": "Git Map",
 				"command": "git-map.viewCommitInGitMap",
-				"title": "%command.viewCommitInGitMap.title%"
+				"title": "%command.viewCommitInGitMap.title%",
+				"icon": "$(git-commit)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.toggleLineBlame",
-				"title": "%command.toggleLineBlame.title%"
+				"title": "%command.toggleLineBlame.title%",
+				"icon": "$(git-commit)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.removeFilesFromHistory",
-				"title": "%command.removeFilesFromHistory.title%"
+				"title": "%command.removeFilesFromHistory.title%",
+				"icon": "$(trash)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.cleanUpRemovedFiles",
-				"title": "%command.cleanUpRemovedFiles.title%"
+				"title": "%command.cleanUpRemovedFiles.title%",
+				"icon": "$(clear-all)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.restoreHistoryBackup",
-				"title": "%command.restoreHistoryBackup.title%"
+				"title": "%command.restoreHistoryBackup.title%",
+				"icon": "$(history)"
 			},
 			{
 				"category": "Git Map",
@@ -292,12 +307,14 @@
 			{
 				"category": "Git Map",
 				"command": "git-map.ai.setApiKey",
-				"title": "%command.ai.setApiKey.title%"
+				"title": "%command.ai.setApiKey.title%",
+				"icon": "$(key)"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.ai.clearApiKey",
-				"title": "%command.ai.clearApiKey.title%"
+				"title": "%command.ai.clearApiKey.title%",
+				"icon": "$(trash)"
 			}
 		],
 		"configuration": {
@@ -378,6 +395,39 @@
 					"type": "boolean",
 					"default": false,
 					"description": "%config.codeLens.enabled.description%"
+				},
+				"git-map.commitDetailsView.actions": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"checkout",
+							"createBranch",
+							"cherrypick",
+							"addTag",
+							"createWorktree",
+							"revert",
+							"drop",
+							"editMessage",
+							"undoCommit",
+							"fixup",
+							"merge",
+							"rebase",
+							"reset",
+							"bisectBad",
+							"bisectGood",
+							"copyHash",
+							"copySubject",
+							"savePatch",
+							"copyPatch"
+						]
+					},
+					"default": [
+						"checkout",
+						"createBranch",
+						"cherrypick"
+					],
+					"description": "%config.commitDetailsView.actions.description%"
 				},
 				"git-map.commitDetailsView.autoCenter": {
 					"type": "boolean",
@@ -1056,6 +1106,11 @@
 					"type": "boolean",
 					"default": true,
 					"description": "%config.dialog.stashUncommittedChanges.includeUntracked.description%"
+				},
+				"git-map.diff.hideUnchangedRegions": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.diff.hideUnchangedRegions.description%"
 				},
 				"git-map.editorContextMenu": {
 					"type": "object",

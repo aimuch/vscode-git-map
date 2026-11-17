@@ -121,13 +121,13 @@ class RebaseEditor {
 				'<span class="rebaseEditorMove"><span class="rebaseEditorMoveBtn' + (index === 0 ? ' ' + CLASS_DISABLED : '') + '" data-move="-1" data-index="' + index + '" title="' + t('Move Up') + '">' + SVG_ICONS.arrowUp + '</span><span class="rebaseEditorMoveBtn' + (index === this.items.length - 1 ? ' ' + CLASS_DISABLED : '') + '" data-move="1" data-index="' + index + '" title="' + t('Move Down') + '">' + SVG_ICONS.arrowDown + '</span></span>' +
 				'</div>').join('') + '</div>';
 		}
-		panelElem.innerHTML = '<div class="rebaseEditorHeader"><h3>' + t('Interactive Rebase') + '</h3><span>' + t('Rebase {0} on {1}', branch, '<b>' + escapeHtml(this.baseName) + '</b>') + '</span></div>' +
+		panelElem.innerHTML = '<div class="rebaseEditorHeader"><h3>' + MENU_ICONS.rebase + t('Interactive Rebase') + '</h3><span>' + t('Rebase {0} on {1}', branch, '<b>' + escapeHtml(this.baseName) + '</b>') + '</span></div>' +
 			'<div class="rebaseEditorHint">' + t('The commits are rebased from the top (oldest) to the bottom (newest). Drag them to reorder them, and choose how each commit is rebased.') + '</div>' +
 			body +
-			'<div class="rebaseEditorFooter"><span id="rebaseEditorTerminal" class="rebaseEditorLink" title="' + t('Run the interactive rebase in a terminal (editing the todo list in the editor configured for Git)') + '">' + t('Open in Terminal') + ELLIPSIS + '</span>' +
+			'<div class="rebaseEditorFooter"><span id="rebaseEditorTerminal" class="rebaseEditorLink" title="' + t('Run the interactive rebase in a terminal (editing the todo list in the editor configured for Git)') + '">' + MENU_ICONS.terminal + t('Open in Terminal') + ELLIPSIS + '</span>' +
 			'<span class="rebaseEditorProblem">' + (problem !== null ? escapeHtml(problem) : '') + '</span>' +
 			'<button type="button" id="rebaseEditorCancel" class="rebaseEditorBtn" tabindex="-1">' + t('Cancel') + '</button>' +
-			'<button type="button" id="rebaseEditorStart" class="rebaseEditorBtn primary' + (this.loading || this.error !== null || this.items.length === 0 || problem !== null ? ' ' + CLASS_DISABLED : '') + '" tabindex="-1">' + t('Start Rebase') + '</button></div>';
+			'<button type="button" id="rebaseEditorStart" class="rebaseEditorBtn primary' + (this.loading || this.error !== null || this.items.length === 0 || problem !== null ? ' ' + CLASS_DISABLED : '') + '" tabindex="-1">' + MENU_ICONS.rebase + t('Start Rebase') + '</button></div>';
 	}
 
 	/**

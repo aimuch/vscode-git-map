@@ -33,7 +33,7 @@ class SettingsWidget {
 
 		this.widgetElem = document.createElement('div');
 		this.widgetElem.id = 'settingsWidget';
-		this.widgetElem.innerHTML = '<div id="settingsHeader"><h2>' + t('Settings') + '</h2><span id="settingsRepoName"></span><div id="settingsClose" title="' + t('Close') + '"></div></div><div id="settingsContent"></div><div id="settingsFooter"></div><div id="settingsLoading"></div>';
+		this.widgetElem.innerHTML = '<div id="settingsHeader"><h2>' + MENU_ICONS.settings + t('Settings') + '</h2><span id="settingsRepoName"></span><div id="settingsClose" title="' + t('Close') + '"></div></div><div id="settingsContent"></div><div id="settingsFooter"></div><div id="settingsLoading"></div>';
 		document.body.appendChild(this.widgetElem);
 
 		observeElemScroll('settingsContent', this.scrollTop, (scrollTop) => {
@@ -93,6 +93,21 @@ class SettingsWidget {
 			return;
 		}
 		this.render();
+	}
+
+	/**
+	 * Sync the Diff View segmented control when `diff.hideUnchangedRegions` changes outside the Settings Widget.
+	 */
+	public setHideUnchangedRegions(enabled: boolean) {
+		if (!this.isVisible()) return;
+		const group = this.contentsElem.querySelector<HTMLElement>('.settingsSegmented[data-setting="diff.hideUnchangedRegions"]');
+		if (group === null) return;
+		const expected = enabled ? 'true' : 'false';
+		group.querySelectorAll<HTMLElement>('.settingsSegment').forEach((segment) => {
+			const selected = segment.dataset.value === expected;
+			alterClass(segment, CLASS_SELECTED, selected);
+			segment.setAttribute('aria-checked', selected ? 'true' : 'false');
+		});
 	}
 
 	/**
@@ -187,7 +202,7 @@ class SettingsWidget {
 			const displayLanguage = /^zh(-(cn|sg|hans.*))?$/i.test(appearance.displayLanguage) ? '简体中文' : /^en\b/i.test(appearance.displayLanguage) ? 'English' : appearance.displayLanguage;
 			const statusBarDisplay = appearance.statusBarItemDisplay === GG.StatusBarItemDisplay.Icon ? 'Icon' : appearance.statusBarItemDisplay === GG.StatusBarItemDisplay.Text ? 'Text' : 'Icon & Text';
 
-			let html = '<div class="settingsSection"><h3>' + t('Appearance · All Repositories') + '</h3>' +
+			let html = '<div class="settingsSection"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
 				'<div class="settingsLabel">' + t('Branch Line Colours') + '</div>' +
 				'<div class="settingsPresets">' + appearance.colourPresets.map((preset) => '<button type="button" class="settingsPreset' + (preset.name === appearance.colourPreset ? ' selected' : '') + '" data-preset="' + escapeHtml(preset.name) + '" aria-pressed="' + (preset.name === appearance.colourPreset) + '" tabindex="-1"><span class="settingsPresetColours">' + preset.colours.map((colour) => '<span style="background-color:' + escapeHtml(colour) + '"></span>').join('') + '</span><span class="settingsPresetName">' + escapeHtml(t(preset.name)) + '</span></button>').join('') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Line Style') + '</span>' + segmented('graph.style', [['rounded', t('Rounded')], ['angular', t('Angular')]], initialState.config.graph.style === GG.GraphStyle.Angular ? 'angular' : 'rounded') + '</div>' +
@@ -195,13 +210,15 @@ class SettingsWidget {
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Commit Nodes') + '</span>' + segmented('graph.nodeStyle', [['Dot', t('Dot')], ['Avatar', t('Author Avatar')]], initialState.config.graph.nodeStyle === GG.GraphNodeStyle.Avatar ? 'Avatar' : 'Dot') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Column Headers') + '</span>' + segmented('graph.freezeColumnHeaders', [['true', t('Frozen')], ['false', t('Scroll with the Commits')]], initialState.config.graph.freezeColumnHeaders ? 'true' : 'false') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Footer') + '</span>' + segmented('graph.freezeFooter', [['true', t('Frozen')], ['false', t('Scroll with the Commits')]], initialState.config.graph.freezeFooter ? 'true' : 'false') + '</div>' +
+				'<div class="settingsRow"><span class="settingsLabel">' + t('Diff View') + '</span>' + segmented('diff.hideUnchangedRegions', [['false', t('Full File')], ['true', t('Changes Only')]], this.view.isHideUnchangedRegions() ? 'true' : 'false') + '</div>' +
+				'<div class="settingsRow"><span class="settingsLabel">' + t('Action Bar') + '</span>' + button('settingsCustomizeCdvActions', '', MENU_ICONS.settings + t('Customize Action Buttons') + ELLIPSIS) + '</div>' +
 				'</div>';
 
-			html += '<div class="settingsSection"><h3>' + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
+			html += '<div class="settingsSection"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
 				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
 				'</div></div>';
 
-			html += '<div class="settingsSection"><h3>' + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
+			html += '<div class="settingsSection"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
 				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div></div>';
@@ -210,7 +227,7 @@ class SettingsWidget {
 			const activePreset = ai.presets.find((p) => p.id === ai.provider) || ai.presets[0];
 			const isDirectAi = ai.provider !== 'VS Code';
 			const aiButtons = isDirectAi
-				? button('settingsSetAiApiKey', 'addBtn', t('Set API Key') + ELLIPSIS) + (ai.hasApiKey ? button('settingsClearAiApiKey', 'removeBtn', t('Clear API Key')) : '')
+				? button('settingsSetAiApiKey', 'addBtn', MENU_ICONS.key + t('Set API Key') + ELLIPSIS) + (ai.hasApiKey ? button('settingsClearAiApiKey', 'removeBtn', MENU_ICONS.trash + t('Clear API Key')) : '')
 				: '';
 			const providerLabel = (preset: GG.AiProviderPresetInfo) => {
 				switch (preset.id) {
@@ -247,22 +264,22 @@ class SettingsWidget {
 					: '') +
 				'</div>' +
 				(!isDirectAi ? '<p class="settingsDescription">' + t('Uses the language models provided in Visual Studio Code (e.g. GitHub Copilot Chat). No API URL or API key is needed.') + '</p>' : '');
-			html += '<div class="settingsSection" id="settingsAiSection"><h3>' + t('AI · All Repositories') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsAiSection"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +
 				'<span>' + checkbox('settingsAiExplainCommit', t('Explain Commits'), t('Shows an "Explain" tab in the Commit Details View, where a language model explains the selected commit.')) + '</span>' +
 				'</div>' +
-				card(t('Language Model'), aiButtons, aiCardBody) +
+				card(MENU_ICONS.sparkle + t('Language Model'), aiButtons, aiCardBody) +
 				'</div>';
 
-			html += '<div class="settingsSection"><h3>' + t('This Repository') + '</h3>' +
+			html += '<div class="settingsSection"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
 				'<div class="settingsCheckboxes">' +
 				'<span>' + checkbox('settingsShowRemoteBranches', t('Show Remote Branches'), null) + '</span>' +
 				'<span>' + checkbox('settingsShowStashes', t('Show Stashes'), null) + '</span>' +
 				'<span>' + checkbox('settingsShowTags', t('Show Tags'), null) + '</span>' +
 				'</div>';
 
-			let generalHtml = card(t('General'), '', '<div class="settingsGrid">' +
+			let generalHtml = card(MENU_ICONS.settings + t('General'), '', '<div class="settingsGrid">' +
 				'<span class="settingsKey">' + t('Name:') + '</span><span class="settingsValue" title="' + escapedRepoName + (this.repo.name === null ? t(' (Default Name from the File System)') : '') + '">' + escapedRepoName + '</span><span class="btns"><div id="editRepoName" title="' + t('Edit Name') + ELLIPSIS + '">' + SVG_ICONS.pencil + '</div>' + (this.repo.name !== null ? ' <div id="deleteRepoName" title="' + t('Delete Name') + ELLIPSIS + '">' + SVG_ICONS.close + '</div>' : '') + '</span>' +
 				'<span class="settingsKey">' + t('Initial Branches:') + '</span><span class="settingsValue" title="' + initialBranchesStr + ' (' + (initialBranchesLocallyConfigured ? t('Local') : t('Global')) + ')">' + initialBranchesStr + '</span><span class="btns"><div id="editInitialBranches" title="' + t('Edit Initial Branches') + ELLIPSIS + '">' + SVG_ICONS.pencil + '</div>' + (initialBranchesLocallyConfigured ? ' <div id="clearInitialBranches" title="' + t('Clear Initial Branches') + ELLIPSIS + '">' + SVG_ICONS.close + '</div>' : '') + '</span>' +
 				'</div>' +
@@ -279,24 +296,24 @@ class SettingsWidget {
 				if (userNameSet || userEmailSet) {
 					const escapedUserName = escapeHtml(userName.local ?? userName.global ?? t('Not Set'));
 					const escapedUserEmail = escapeHtml(userEmail.local ?? userEmail.global ?? t('Not Set'));
-					generalHtml += card(t('User Details'), button('editUserDetails', 'editBtn', t('Edit')) + button('removeUserDetails', 'removeBtn', t('Remove')), '<div class="settingsGrid two">' +
+					generalHtml += card(MENU_ICONS.person + t('User Details'), button('editUserDetails', 'editBtn', MENU_ICONS.edit + t('Edit')) + button('removeUserDetails', 'removeBtn', MENU_ICONS.trash + t('Remove')), '<div class="settingsGrid two">' +
 						'<span class="settingsKey">' + t('User Name:') + '</span><span class="settingsValue" title="' + escapedUserName + (userNameSet ? ' (' + (userName.local !== null ? t('Local') : t('Global')) + ')' : '') + '">' + escapedUserName + '</span>' +
 						'<span class="settingsKey">' + t('User Email:') + '</span><span class="settingsValue" title="' + escapedUserEmail + (userEmailSet ? ' (' + (userEmail.local !== null ? t('Local') : t('Global')) + ')' : '') + '">' + escapedUserEmail + '</span>' +
 						'</div>');
 				} else {
-					generalHtml += card(t('User Details'), button('editUserDetails', 'addBtn', t('Add User Details')), '<p class="settingsDescription">' + t('User Details (such as name and email) are used by Git to record the Author and Committer of commit objects.') + '</p>');
+					generalHtml += card(MENU_ICONS.person + t('User Details'), button('editUserDetails', 'addBtn', MENU_ICONS.plus + t('Add User Details')), '<p class="settingsDescription">' + t('User Details (such as name and email) are used by Git to record the Author and Committer of commit objects.') + '</p>');
 				}
 			}
 
 			const issueLinkingConfig = this.repo.issueLinkingConfig || globalState.issueLinkingConfig;
 			if (issueLinkingConfig !== null) {
 				const escapedIssue = escapeHtml(issueLinkingConfig.issue), escapedUrl = escapeHtml(issueLinkingConfig.url);
-				html += card(t('Issue Linking'), button('editIssueLinking', 'editBtn', t('Edit')) + button('removeIssueLinking', 'removeBtn', t('Remove')), '<div class="settingsGrid two">' +
+				html += card(MENU_ICONS.issue + t('Issue Linking'), button('editIssueLinking', 'editBtn', MENU_ICONS.edit + t('Edit')) + button('removeIssueLinking', 'removeBtn', MENU_ICONS.trash + t('Remove')), '<div class="settingsGrid two">' +
 					'<span class="settingsKey">' + t('Issue Regex:') + '</span><span class="settingsValue mono" title="' + escapedIssue + '">' + escapedIssue + '</span>' +
 					'<span class="settingsKey">' + t('Issue URL:') + '</span><span class="settingsValue mono" title="' + escapedUrl + '">' + escapedUrl + '</span>' +
 					'</div>');
 			} else {
-				html += card(t('Issue Linking'), button('editIssueLinking', 'addBtn', t('Add Issue Linking')), '<p class="settingsDescription">' + t('Issue Linking converts issue numbers in commit &amp; tag messages into hyperlinks, that open the issue in your issue tracking system. If a branch\'s name contains an issue number, the issue can be viewed via the branch\'s context menu.') + '</p>');
+				html += card(MENU_ICONS.issue + t('Issue Linking'), button('editIssueLinking', 'addBtn', MENU_ICONS.plus + t('Add Issue Linking')), '<p class="settingsDescription">' + t('Issue Linking converts issue numbers in commit &amp; tag messages into hyperlinks, that open the issue in your issue tracking system. If a branch\'s name contains an issue number, the issue can be viewed via the branch\'s context menu.') + '</p>');
 			}
 
 			if (this.config !== null) {
@@ -316,7 +333,7 @@ class SettingsWidget {
 				} else {
 					remotesHtml = '<p class="settingsDescription">' + t('There are no remotes configured for this repository.') + '</p>';
 				}
-				html += card(t('Remotes'), button('settingsAddRemote', 'addBtn', t('Add Remote') + ELLIPSIS), remotesHtml);
+				html += card(MENU_ICONS.cloud + t('Remotes'), button('settingsAddRemote', 'addBtn', MENU_ICONS.plus + t('Add Remote') + ELLIPSIS), remotesHtml);
 				html += generalHtml;
 				generalHtml = '';
 
@@ -333,14 +350,14 @@ class SettingsWidget {
 					const source = escapeHtml(pullRequestConfig.sourceOwner + '/' + pullRequestConfig.sourceRepo + ' (' + pullRequestConfig.sourceRemote + ')');
 					const destination = escapeHtml(pullRequestConfig.destOwner + '/' + pullRequestConfig.destRepo + (pullRequestConfig.destRemote !== null ? ' (' + pullRequestConfig.destRemote + ')' : ''));
 					const destinationBranch = escapeHtml(pullRequestConfig.destBranch);
-					html += card(t('Pull Request Creation'), button('editPullRequestIntegration', 'editBtn', t('Edit')) + button('removePullRequestIntegration', 'removeBtn', t('Remove')), '<div class="settingsGrid two">' +
+					html += card(MENU_ICONS.pullRequest + t('Pull Request Creation'), button('editPullRequestIntegration', 'editBtn', MENU_ICONS.edit + t('Edit')) + button('removePullRequestIntegration', 'removeBtn', MENU_ICONS.trash + t('Remove')), '<div class="settingsGrid two">' +
 						'<span class="settingsKey">' + t('Provider:') + '</span><span class="settingsValue" title="' + provider + '">' + provider + '</span>' +
 						'<span class="settingsKey">' + t('Source Repo:') + '</span><span class="settingsValue" title="' + source + '">' + source + '</span>' +
 						'<span class="settingsKey">' + t('Destination Repo:') + '</span><span class="settingsValue" title="' + destination + '">' + destination + '</span>' +
 						'<span class="settingsKey">' + t('Destination Branch:') + '</span><span class="settingsValue" title="' + destinationBranch + '">' + destinationBranch + '</span>' +
 						'</div>');
 				} else {
-					html += card(t('Pull Request Creation'), button('editPullRequestIntegration', 'addBtn', t('Configure') + ELLIPSIS), '<p class="settingsDescription">' + t('Pull Request Creation automates the opening and pre-filling of a Pull Request form, directly from a branch\'s context menu.') + '</p>');
+					html += card(MENU_ICONS.pullRequest + t('Pull Request Creation'), button('editPullRequestIntegration', 'addBtn', MENU_ICONS.settings + t('Configure') + ELLIPSIS), '<p class="settingsDescription">' + t('Pull Request Creation automates the opening and pre-filling of a Pull Request form, directly from a branch\'s context menu.') + '</p>');
 				}
 			}
 			html += generalHtml + '</div>';
@@ -674,6 +691,8 @@ class SettingsWidget {
 						update('statusBarItemDisplay', value);
 					} else if (setting === 'graph.freezeColumnHeaders' || setting === 'graph.freezeFooter') {
 						update(setting, value === 'true');
+					} else if (setting === 'diff.hideUnchangedRegions') {
+						this.view.setHideUnchangedRegions(value === 'true', true);
 					} else {
 						update(<GG.RequestUpdateExtensionSetting['key']>setting, value);
 					}
@@ -778,6 +797,12 @@ class SettingsWidget {
 		if (clearApiKeyBtn !== null) {
 			clearApiKeyBtn.addEventListener('click', () => {
 				sendMessage({ command: 'clearAiApiKey' });
+			});
+		}
+		const customizeCdvActionsBtn = document.getElementById('settingsCustomizeCdvActions');
+		if (customizeCdvActionsBtn !== null) {
+			customizeCdvActionsBtn.addEventListener('click', () => {
+				this.view.openCdvActionsCustomizer();
 			});
 		}
 	}

@@ -110,7 +110,7 @@ class CdvFileView {
 			}
 		};
 
-		const triggerViewFileDiff = (file: GG.GitFileChange, fileElem: HTMLElement) => {
+		const triggerViewFileDiff = (file: GG.GitFileChange, fileElem: HTMLElement, onlyChanges?: boolean) => {
 			const expandedCommit = this.view.expandedCommit;
 			if (expandedCommit === null) return;
 
@@ -137,6 +137,9 @@ class CdvFileView {
 			}
 
 			this.cdvUpdateFileState(file, fileElem, true, true);
+			if (typeof onlyChanges === 'boolean') {
+				this.view.setHideUnchangedRegions(onlyChanges, false);
+			}
 			sendMessage({
 				command: 'viewDiff',
 				repo: this.view.currentRepo,
@@ -144,7 +147,8 @@ class CdvFileView {
 				toHash: toHash,
 				oldFilePath: file.oldFilePath,
 				newFilePath: file.newFilePath,
-				type: fileStatus
+				type: fileStatus,
+				...(typeof onlyChanges === 'boolean' ? { onlyChanges: onlyChanges } : {})
 			});
 		};
 
@@ -275,31 +279,49 @@ class CdvFileView {
 				[
 					{
 						title: t('View Diff'),
+						icon: MENU_ICONS.diff,
 						visible: visibility.viewDiff && diffPossible,
 						onClick: () => triggerViewFileDiff(file, fileElem)
 					},
 					{
+						title: t('View Diff (Changes Only)'),
+						icon: MENU_ICONS.foldDiff,
+						visible: visibility.viewDiff && diffPossible,
+						onClick: () => triggerViewFileDiff(file, fileElem, true)
+					},
+					{
+						title: t('View Diff (Full File)'),
+						icon: MENU_ICONS.file,
+						visible: visibility.viewDiff && diffPossible && this.view.isHideUnchangedRegions(),
+						onClick: () => triggerViewFileDiff(file, fileElem, false)
+					},
+					{
 						title: t('View File at this Revision'),
+						icon: MENU_ICONS.file,
 						visible: visibility.viewFileAtThisRevision && fileExistsAtThisRevisionAndDiffPossible,
 						onClick: () => triggerViewFileAtRevision(file, fileElem)
 					},
 					{
 						title: t('View Diff with Working File'),
+						icon: MENU_ICONS.compare,
 						visible: visibility.viewDiffWithWorkingFile && fileExistsAtThisRevisionAndDiffPossible,
 						onClick: () => triggerViewFileDiffWithWorkingFile(file, fileElem)
 					},
 					{
 						title: t('Open File'),
+						icon: MENU_ICONS.external,
 						visible: visibility.openFile && file.type !== GG.GitFileStatus.Deleted,
 						onClick: () => triggerOpenFile(file, fileElem)
 					},
 					{
 						title: t('View File History'),
+						icon: MENU_ICONS.history,
 						visible: file.type !== GG.GitFileStatus.Untracked && this.view.fileHistory !== file.newFilePath,
 						onClick: () => this.view.setFileHistory(file.newFilePath)
 					},
 					{
 						title: t('Visual File History'),
+						icon: MENU_ICONS.chart,
 						visible: visibility.visualFileHistory && file.type !== GG.GitFileStatus.Untracked && !(isUncommitted && file.type === GG.GitFileStatus.Added),
 						onClick: () => sendMessage({ command: 'viewVisualFileHistory', repo: this.view.currentRepo, filePath: file.newFilePath, commitHash: isUncommitted ? null : commitOrder.to })
 					}
@@ -307,11 +329,13 @@ class CdvFileView {
 				[
 					{
 						title: t('Mark as Reviewed'),
+						icon: MENU_ICONS.eye,
 						visible: visibility.markAsReviewed && codeReviewInProgressAndNotReviewed,
 						onClick: () => this.cdvUpdateFileState(file, fileElem, true, false)
 					},
 					{
 						title: t('Mark as Not Reviewed'),
+						icon: MENU_ICONS.eyeOff,
 						visible: visibility.markAsNotReviewed && expandedCommit.codeReview !== null && !codeReviewInProgressAndNotReviewed,
 						onClick: () => this.cdvUpdateFileState(file, fileElem, false, false)
 					}
@@ -319,16 +343,19 @@ class CdvFileView {
 				[
 					{
 						title: t('Reset File to this Revision') + ELLIPSIS,
+						icon: MENU_ICONS.reset,
 						visible: visibility.resetFileToThisRevision && fileExistsAtThisRevision && expandedCommit.compareWithHash === null,
 						onClick: () => triggerResetFileToRevision(file, fileElem)
 					},
 					{
 						title: t('Stash this File') + ELLIPSIS,
+						icon: MENU_ICONS.stash,
 						visible: visibility.stashFile && isUncommitted && expandedCommit.compareWithHash === null,
 						onClick: () => this.view.actions.stashUncommittedChangesAction(null, file.newFilePath)
 					},
 					{
 						title: t('Restore File from this Stash') + ELLIPSIS,
+						icon: MENU_ICONS.stashPop,
 						visible: visibility.restoreFromStash && stash !== null && file.type !== GG.GitFileStatus.Deleted,
 						onClick: () => {
 							if (stash === null) return;
@@ -338,6 +365,7 @@ class CdvFileView {
 					{
 						// The extension shows what removing the file will do, and asks for confirmation (also removing its previous name, if it was renamed)
 						title: t('Remove File from History') + ELLIPSIS,
+						icon: MENU_ICONS.trash,
 						visible: visibility.removeFromHistory && file.type !== GG.GitFileStatus.Untracked,
 						onClick: () => sendMessage({ command: 'removeFilesFromHistory', repo: this.view.currentRepo, filePaths: file.oldFilePath !== file.newFilePath ? [file.newFilePath, file.oldFilePath] : [file.newFilePath] })
 					}
@@ -345,11 +373,13 @@ class CdvFileView {
 				[
 					{
 						title: t('Copy Absolute File Path to Clipboard'),
+						icon: MENU_ICONS.copy,
 						visible: visibility.copyAbsoluteFilePath,
 						onClick: () => triggerCopyFilePath(file, true)
 					},
 					{
 						title: t('Copy Relative File Path to Clipboard'),
+						icon: MENU_ICONS.copy,
 						visible: visibility.copyRelativeFilePath,
 						onClick: () => triggerCopyFilePath(file, false)
 					}
@@ -368,6 +398,17 @@ class CdvFileView {
 		let listView = this.getFileViewType() === GG.FileViewType.List;
 		alterClass(treeBtnElem, CLASS_ACTIVE, !listView);
 		alterClass(listBtnElem, CLASS_ACTIVE, listView);
+	}
+
+	public renderCdvHideUnchangedBtn() {
+		if (this.view.expandedCommit === null) return;
+		const btnElem = document.getElementById('cdvHideUnchanged');
+		if (btnElem === null) return;
+		const active = this.view.isHideUnchangedRegions();
+		alterClass(btnElem, CLASS_ACTIVE, active);
+		btnElem.title = active
+			? t('Diff View: Changes Only (Click to show full file)')
+			: t('Diff View: Full File (Click to only show changes)');
 	}
 
 	public renderCdvExternalDiffBtn() {

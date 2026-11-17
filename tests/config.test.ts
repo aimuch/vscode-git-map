@@ -263,6 +263,41 @@ describe('Config', () => {
 				expect(value).toBe(CommitDetailsViewLocation.DockedToRight);
 			});
 		});
+
+		describe('actions', () => {
+			it('Should return the default actions when not configured', () => {
+				const value = config.commitDetailsView.actions;
+				expect(value).toStrictEqual(['checkout', 'createBranch', 'cherrypick']);
+			});
+
+			it('Should return configured actions in user-specified order, deduplicated and filtered to valid IDs', () => {
+				vscode.mockExtensionSettingReturnValue('commitDetailsView.actions', ['savePatch', 'checkout', 'invalidId', 'savePatch', 'rebase']);
+				const value = config.commitDetailsView.actions;
+				expect(value).toStrictEqual(['savePatch', 'checkout', 'rebase']);
+			});
+
+			it('Should allow an explicitly empty actions array when configured', () => {
+				vscode.mockExtensionSettingReturnValue('commitDetailsView.actions', []);
+				const value = config.commitDetailsView.actions;
+				expect(value).toStrictEqual([]);
+			});
+		});
+
+		describe('hideUnchangedRegions', () => {
+			it('Should return FALSE by default when neither setting is configured', () => {
+				expect(config.commitDetailsView.hideUnchangedRegions).toBe(false);
+			});
+
+			it('Should return TRUE when git-map.diff.hideUnchangedRegions is TRUE', () => {
+				vscode.mockExtensionSettingReturnValue('diff.hideUnchangedRegions', true);
+				expect(config.commitDetailsView.hideUnchangedRegions).toBe(true);
+			});
+
+			it('Should return FALSE when git-map.diff.hideUnchangedRegions is explicitly FALSE', () => {
+				vscode.mockExtensionSettingReturnValue('diff.hideUnchangedRegions', false);
+				expect(config.commitDetailsView.hideUnchangedRegions).toBe(false);
+			});
+		});
 	});
 
 	describe('contextMenuActionsVisibility', () => {

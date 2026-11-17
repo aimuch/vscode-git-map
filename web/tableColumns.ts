@@ -209,6 +209,7 @@ class TableColumns {
 				[
 					{
 						title: t('Changes'),
+						icon: MENU_ICONS.diff,
 						visible: this.view.fileHistory === null,
 						checked: this.view.isChangesColumnShown(),
 						onClick: () => {
@@ -219,18 +220,21 @@ class TableColumns {
 					},
 					{
 						title: t('Date'),
+						icon: MENU_ICONS.calendar,
 						visible: true,
 						checked: columnWidths[2] !== COLUMN_HIDDEN,
 						onClick: () => toggleColumnState(2, 128)
 					},
 					{
 						title: t('Author'),
+						icon: MENU_ICONS.person,
 						visible: true,
 						checked: columnWidths[3] !== COLUMN_HIDDEN,
 						onClick: () => toggleColumnState(3, 128)
 					},
 					{
 						title: t('Commit'),
+						icon: MENU_ICONS.commit,
 						visible: true,
 						checked: columnWidths[4] !== COLUMN_HIDDEN,
 						onClick: () => toggleColumnState(4, 80)
@@ -239,12 +243,14 @@ class TableColumns {
 				[
 					{
 						title: t('Freeze Column Headers'),
+						icon: MENU_ICONS.pin,
 						visible: true,
 						checked: this.view.config.graph.freezeColumnHeaders,
 						onClick: () => sendMessage({ command: 'updateExtensionSetting', key: 'graph.freezeColumnHeaders', value: !this.view.config.graph.freezeColumnHeaders })
 					},
 					{
 						title: t('Freeze Footer'),
+						icon: MENU_ICONS.pin,
 						visible: true,
 						checked: this.view.config.graph.freezeFooter,
 						onClick: () => sendMessage({ command: 'updateExtensionSetting', key: 'graph.freezeFooter', value: !this.view.config.graph.freezeFooter })
@@ -253,18 +259,21 @@ class TableColumns {
 				[
 					{
 						title: t('Commit Timestamp Order'),
+						icon: MENU_ICONS.history,
 						visible: true,
 						checked: commitOrdering === GG.CommitOrdering.Date,
 						onClick: () => changeCommitOrdering(GG.RepoCommitOrdering.Date)
 					},
 					{
 						title: t('Author Timestamp Order'),
+						icon: MENU_ICONS.calendar,
 						visible: true,
 						checked: commitOrdering === GG.CommitOrdering.AuthorDate,
 						onClick: () => changeCommitOrdering(GG.RepoCommitOrdering.AuthorDate)
 					},
 					{
 						title: t('Topological Order'),
+						icon: MENU_ICONS.branch,
 						visible: true,
 						checked: commitOrdering === GG.CommitOrdering.Topological,
 						onClick: () => changeCommitOrdering(GG.RepoCommitOrdering.Topological)

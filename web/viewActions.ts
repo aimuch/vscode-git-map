@@ -23,10 +23,12 @@ class ViewActions {
 		return [[
 			{
 				title: t('Checkout Branch'),
+				icon: MENU_ICONS.checkout,
 				visible: visibility.checkout && this.view.gitBranchHead !== refName,
 				onClick: () => this.checkoutBranchAction(refName, null, null, target)
 			}, {
 				title: t('Rename Branch') + ELLIPSIS,
+				icon: MENU_ICONS.edit,
 				visible: visibility.rename,
 				onClick: () => {
 					dialog.showRefInput(t('Enter the new name for branch <b><i>{0}</i></b>:', escapeHtml(refName)), refName, t('Rename Branch'), (newName) => {
@@ -35,6 +37,7 @@ class ViewActions {
 				}
 			}, {
 				title: t('Delete Branch') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.delete && this.view.gitBranchHead !== refName,
 				onClick: () => {
 					let remotesWithBranch = this.view.gitRemotes.filter(remote => this.view.gitBranches.includes('remotes/' + remote + '/' + refName));
@@ -53,14 +56,17 @@ class ViewActions {
 				}
 			}, {
 				title: t('Merge into current branch') + ELLIPSIS,
+				icon: MENU_ICONS.merge,
 				visible: visibility.merge && this.view.gitBranchHead !== refName,
 				onClick: () => this.mergeAction(refName, refName, GG.MergeActionOn.Branch, target)
 			}, {
 				title: t('Rebase current branch on Branch') + ELLIPSIS,
+				icon: MENU_ICONS.rebase,
 				visible: visibility.rebase && this.view.gitBranchHead !== refName,
 				onClick: () => this.rebaseAction(refName, refName, GG.RebaseActionOn.Branch, target)
 			}, {
 				title: t('Push Branch') + ELLIPSIS,
+				icon: MENU_ICONS.push,
 				visible: visibility.push && this.view.gitRemotes.length > 0,
 				onClick: () => this.pushBranchAction(refName, target)
 			}
@@ -68,6 +74,7 @@ class ViewActions {
 			this.getViewIssueAction(refName, visibility.viewIssue, target),
 			{
 				title: t('Create Pull Request') + ELLIPSIS,
+				icon: MENU_ICONS.pullRequest,
 				visible: visibility.createPullRequest && this.view.gitRepos[this.view.currentRepo].pullRequestConfig !== null,
 				onClick: () => {
 					const config = this.view.gitRepos[this.view.currentRepo].pullRequestConfig;
@@ -80,6 +87,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Create Archive'),
+				icon: MENU_ICONS.archive,
 				visible: visibility.createArchive,
 				onClick: () => {
 					runAction({ command: 'createArchive', repo: this.view.currentRepo, ref: refName }, t('Creating Archive'));
@@ -87,22 +95,26 @@ class ViewActions {
 			},
 			{
 				title: t('Create Worktree') + ELLIPSIS,
+				icon: MENU_ICONS.worktree,
 				visible: visibility.createWorktree && this.view.gitBranchHead !== refName && this.view.worktreeList.getOtherWorktreeOfBranch(refName) === null,
 				onClick: () => this.view.worktreeList.createWorktreeAction(refName, true, target)
 			},
 			{
 				title: t('Select in Branches Dropdown'),
+				icon: MENU_ICONS.branch,
 				visible: visibility.selectInBranchesDropdown && !isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.selectOption(refName)
 			},
 			{
 				title: t('Unselect in Branches Dropdown'),
+				icon: MENU_ICONS.clear,
 				visible: visibility.unselectInBranchesDropdown && isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.unselectOption(refName)
 			}
 		], [
 			{
 				title: t('Copy Branch Name to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyName,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Branch Name'), data: refName });
@@ -111,6 +123,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Compare with Branch') + ELLIPSIS,
+				icon: MENU_ICONS.compare,
 				visible: visibility.compare,
 				onClick: () => this.view.branchCompare.chooseAndCompare(refName, target)
 			}
@@ -124,16 +137,21 @@ class ViewActions {
 		const bisect = this.view.getBisectState();
 		return [[
 			{
+				id: 'addTag',
 				title: t('Add Tag') + ELLIPSIS,
+				icon: MENU_ICONS.tag,
 				visible: visibility.addTag,
 				onClick: () => this.addTagAction(hash, '', this.view.config.dialogDefaults.addTag.type, '', null, target)
 			}, {
 				id: 'createBranch',
 				title: t('Create Branch') + ELLIPSIS,
+				icon: MENU_ICONS.createBranch,
 				visible: visibility.createBranch,
 				onClick: () => this.createBranchAction(hash, '', this.view.config.dialogDefaults.createBranch.checkout, target)
 			}, {
+				id: 'createWorktree',
 				title: t('Create Worktree') + ELLIPSIS,
+				icon: MENU_ICONS.worktree,
 				visible: visibility.createWorktree,
 				onClick: () => this.view.worktreeList.createWorktreeAction(hash, false, target)
 			}
@@ -141,6 +159,7 @@ class ViewActions {
 			{
 				id: 'checkout',
 				title: t('Checkout') + (globalState.alwaysAcceptCheckoutCommit ? '' : ELLIPSIS),
+				icon: MENU_ICONS.checkout,
 				visible: visibility.checkout,
 				onClick: () => {
 					const checkoutCommit = () => runAction({ command: 'checkoutCommit', repo: this.view.currentRepo, commitHash: hash }, t('Checking out Commit'));
@@ -158,6 +177,7 @@ class ViewActions {
 			}, {
 				id: 'cherrypick',
 				title: t('Cherry Pick') + ELLIPSIS,
+				icon: MENU_ICONS.cherrypick,
 				visible: visibility.cherrypick,
 				onClick: () => {
 					const isMerge = commit.parents.length > 1;
@@ -200,7 +220,9 @@ class ViewActions {
 					}, target);
 				}
 			}, {
+				id: 'revert',
 				title: t('Revert') + ELLIPSIS,
+				icon: MENU_ICONS.revert,
 				visible: visibility.revert,
 				onClick: () => {
 					if (commit.parents.length > 1) {
@@ -218,7 +240,9 @@ class ViewActions {
 					}
 				}
 			}, {
+				id: 'drop',
 				title: t('Drop') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.drop && rebasable,
 				onClick: () => {
 					dialog.asDangerous().showConfirmation(t('Are you sure you want to permanently drop commit <b><i>{0}</i></b>?{1}', abbrevCommit(hash), (this.view.onlyFollowFirstParent ? t('<br/><i>Note: By enabling "Only follow the first parent of commits", some commits may have been hidden from the Git Map View that could affect the outcome of performing this action.</i>') : '')), t('Yes, drop'), () => {
@@ -228,14 +252,18 @@ class ViewActions {
 			}
 		], [
 			{
+				id: 'editMessage',
 				title: t('Edit Commit Message') + ELLIPSIS,
+				icon: MENU_ICONS.edit,
 				visible: visibility.editMessage && commit.parents.length < 2 && (isHead || rebasable),
 				onClick: () => {
 					this.editMessageTarget = target;
 					sendMessage({ command: 'loadCommitMessage', repo: this.view.currentRepo, commitHash: hash });
 				}
 			}, {
+				id: 'undoCommit',
 				title: t('Undo Commit') + ELLIPSIS,
+				icon: MENU_ICONS.revert,
 				visible: visibility.undoCommit && isHead && commit.parents.length === 1,
 				onClick: () => {
 					dialog.showForm(t('Undo commit <b><i>{0}</i></b>? The current branch moves back to its parent, and the changes of the commit are kept:', abbrevCommit(hash)), [{
@@ -251,7 +279,9 @@ class ViewActions {
 					}, target);
 				}
 			}, {
+				id: 'fixup',
 				title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS,
+				icon: MENU_ICONS.fixup,
 				visible: visibility.fixup && commit.parents.length < 2 && (isHead || rebasable),
 				onClick: () => {
 					dialog.showConfirmation(t('Add the staged changes to commit <b><i>{0}</i></b>?', abbrevCommit(hash)) + '<br/><i>' + (isHead ? t('Unstaged changes are kept.') : t('The later commits are rebased onto the changed commit (they get new hashes). Unstaged changes are kept.')) + '</i>', t('Fix Up'), () => {
@@ -261,15 +291,21 @@ class ViewActions {
 			}
 		], [
 			{
+				id: 'merge',
 				title: t('Merge into current branch') + ELLIPSIS,
+				icon: MENU_ICONS.merge,
 				visible: visibility.merge,
 				onClick: () => this.mergeAction(hash, abbrevCommit(hash), GG.MergeActionOn.Commit, target)
 			}, {
+				id: 'rebase',
 				title: t('Rebase current branch on this Commit') + ELLIPSIS,
+				icon: MENU_ICONS.rebase,
 				visible: visibility.rebase,
 				onClick: () => this.rebaseAction(hash, abbrevCommit(hash), GG.RebaseActionOn.Commit, target)
 			}, {
+				id: 'reset',
 				title: t('Reset current branch to this Commit') + ELLIPSIS,
+				icon: MENU_ICONS.reset,
 				visible: visibility.reset,
 				onClick: () => {
 					dialog.asDangerous().showSelect(t('Are you sure you want to reset {0} to commit <b><i>{1}</i></b>?', (this.view.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.view.gitBranchHead)) : t('the current branch')), abbrevCommit(hash)), this.view.config.dialogDefaults.resetCommit.mode, [
@@ -283,23 +319,30 @@ class ViewActions {
 			}
 		], [
 			{
+				id: 'bisectBad',
 				title: t('Start Bisecting: This Commit is Bad') + ELLIPSIS,
+				icon: MENU_ICONS.bisectBad,
 				visible: visibility.bisect && bisect === null,
 				onClick: () => this.startBisectAction(hash, true, target)
 			}, {
+				id: 'bisectGood',
 				title: t('Start Bisecting: This Commit is Good') + ELLIPSIS,
+				icon: MENU_ICONS.bisectGood,
 				visible: visibility.bisect && bisect === null,
 				onClick: () => this.startBisectAction(hash, false, target)
 			}, {
 				title: t('Mark as Good'),
+				icon: MENU_ICONS.bisectGood,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'good', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}, {
 				title: t('Mark as Bad'),
+				icon: MENU_ICONS.bisectBad,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'bad', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}, {
 				title: t('Skip (Can\'t Be Tested)'),
+				icon: MENU_ICONS.bisectSkip,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'skip', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}
@@ -307,6 +350,7 @@ class ViewActions {
 			{
 				id: 'copyHash',
 				title: t('Copy Commit Hash to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyHash,
 				shortcut: (/Mac/.test(navigator.platform) ? '\u2318' : 'Ctrl+') + 'C',
 				onClick: () => {
@@ -314,19 +358,25 @@ class ViewActions {
 				}
 			},
 			{
+				id: 'copySubject',
 				title: t('Copy Commit Subject to Clipboard'),
+				icon: MENU_ICONS.subject,
 				visible: visibility.copySubject,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Commit Subject'), data: commit.message });
 				}
 			},
 			{
+				id: 'savePatch',
 				title: t('Save as Patch') + ELLIPSIS,
+				icon: MENU_ICONS.patchSave,
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('commits', [hash], getPatchName(hash, commit.message), false)
 			},
 			{
+				id: 'copyPatch',
 				title: t('Copy as Patch'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('commits', [hash], '', true)
 			}
@@ -344,28 +394,33 @@ class ViewActions {
 		return [[
 			{
 				title: t('Cherry Pick {0} Commits', commits.length) + ELLIPSIS,
+				icon: MENU_ICONS.cherrypick,
 				visible: visibility.cherrypick,
 				onClick: () => this.cherrypickCommitsAction(commits, target)
 			}
 		], [
 			{
 				title: t('Copy {0} Commit Hashes to Clipboard', commits.length),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyHash,
 				onClick: () => this.copyCommitsToClipboard(commits, false)
 			},
 			{
 				title: t('Copy {0} Commit Subjects to Clipboard', commits.length),
+				icon: MENU_ICONS.subject,
 				visible: visibility.copySubject,
 				onClick: () => this.copyCommitsToClipboard(commits, true)
 			},
 			{
 				title: t('Save {0} Commits as Patch', commits.length) + ELLIPSIS,
+				icon: MENU_ICONS.patchSave,
 				visible: visibility.savePatch && commits.every((commit) => commit.parents.length < 2),
 				onClick: () => this.savePatchAction('commits', commits.map((commit) => commit.hash), commits.length + '-commits.patch', false)
 			}
 		], [
 			{
 				title: t('Clear Selection'),
+				icon: MENU_ICONS.clear,
 				visible: true,
 				onClick: () => this.view.clearCommitSelection()
 			}
@@ -380,10 +435,12 @@ class ViewActions {
 		return [[
 			{
 				title: t('Checkout Branch') + ELLIPSIS,
+				icon: MENU_ICONS.checkout,
 				visible: visibility.checkout,
 				onClick: () => this.checkoutBranchAction(refName, remote, null, target)
 			}, {
 				title: t('Delete Remote Branch') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.delete && remote !== '',
 				onClick: () => {
 					dialog.asDangerous().showConfirmation(t('Are you sure you want to delete the remote branch <b><i>{0}</i></b>?', escapeHtml(refName)), t('Yes, delete'), () => {
@@ -392,6 +449,7 @@ class ViewActions {
 				}
 			}, {
 				title: t('Fetch into local branch') + ELLIPSIS,
+				icon: MENU_ICONS.fetch,
 				visible: visibility.fetch && remote !== '' && this.view.gitBranches.includes(branchName) && this.view.gitBranchHead !== branchName,
 				onClick: () => {
 					dialog.showForm(t('Are you sure you want to fetch the remote branch <b><i>{0}</i></b> into the local branch <b><i>{1}</i></b>?', escapeHtml(refName), escapeHtml(branchName)), [{
@@ -405,10 +463,12 @@ class ViewActions {
 				}
 			}, {
 				title: t('Merge into current branch') + ELLIPSIS,
+				icon: MENU_ICONS.merge,
 				visible: visibility.merge,
 				onClick: () => this.mergeAction(refName, refName, GG.MergeActionOn.RemoteTrackingBranch, target)
 			}, {
 				title: t('Pull into current branch') + ELLIPSIS,
+				icon: MENU_ICONS.pull,
 				visible: visibility.pull && remote !== '',
 				onClick: () => this.pullBranchAction(refName, remote, branchName, target)
 			}
@@ -416,6 +476,7 @@ class ViewActions {
 			this.getViewIssueAction(refName, visibility.viewIssue, target),
 			{
 				title: t('Create Pull Request'),
+				icon: MENU_ICONS.pullRequest,
 				visible: visibility.createPullRequest && this.view.gitRepos[this.view.currentRepo].pullRequestConfig !== null && branchName !== 'HEAD' &&
 					(this.view.gitRepos[this.view.currentRepo].pullRequestConfig!.sourceRemote === remote || this.view.gitRepos[this.view.currentRepo].pullRequestConfig!.destRemote === remote),
 				onClick: () => {
@@ -437,6 +498,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Create Archive'),
+				icon: MENU_ICONS.archive,
 				visible: visibility.createArchive,
 				onClick: () => {
 					runAction({ command: 'createArchive', repo: this.view.currentRepo, ref: refName }, t('Creating Archive'));
@@ -444,17 +506,20 @@ class ViewActions {
 			},
 			{
 				title: t('Select in Branches Dropdown'),
+				icon: MENU_ICONS.branch,
 				visible: visibility.selectInBranchesDropdown && !isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.selectOption(prefixedRefName)
 			},
 			{
 				title: t('Unselect in Branches Dropdown'),
+				icon: MENU_ICONS.clear,
 				visible: visibility.unselectInBranchesDropdown && isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.unselectOption(prefixedRefName)
 			}
 		], [
 			{
 				title: t('Copy Branch Name to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyName,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Branch Name'), data: refName });
@@ -463,6 +528,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Compare with Branch') + ELLIPSIS,
+				icon: MENU_ICONS.compare,
 				visible: visibility.compare && branchName !== 'HEAD',
 				onClick: () => this.view.branchCompare.chooseAndCompare(refName, target)
 			}
@@ -474,10 +540,12 @@ class ViewActions {
 		return [[
 			{
 				title: t('Apply Stash') + ELLIPSIS,
+				icon: MENU_ICONS.stashApply,
 				visible: visibility.apply,
 				onClick: () => this.applyStashAction(selector, target)
 			}, {
 				title: t('Create Branch from Stash') + ELLIPSIS,
+				icon: MENU_ICONS.createBranch,
 				visible: visibility.createBranch,
 				onClick: () => {
 					dialog.showRefInput(t('Create a branch from stash <b><i>{0}</i></b> with the name:', escapeHtml(selector.substring(5))), '', t('Create Branch'), (branchName) => {
@@ -486,28 +554,33 @@ class ViewActions {
 				}
 			}, {
 				title: t('Pop Stash') + ELLIPSIS,
+				icon: MENU_ICONS.stashPop,
 				visible: visibility.pop,
 				onClick: () => this.popStashAction(selector, target)
 			}, {
 				title: t('Drop Stash') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.drop,
 				onClick: () => this.dropStashAction(selector, target)
 			}
 		], [
 			{
 				title: t('Copy Stash Name to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyName,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Stash Name'), data: selector });
 				}
 			}, {
 				title: t('Copy Stash Hash to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyHash,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Stash Hash'), data: hash });
 				}
 			}, {
 				title: t('Save as Patch') + ELLIPSIS,
+				icon: MENU_ICONS.patchSave,
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('stash', [hash], selector.substring(5).replace(/[@{}]/g, '') + '.patch', false)
 			}
@@ -519,12 +592,14 @@ class ViewActions {
 		return [[
 			{
 				title: t('View Details'),
+				icon: MENU_ICONS.eye,
 				visible: visibility.viewDetails && isAnnotated,
 				onClick: () => {
 					runAction({ command: 'tagDetails', repo: this.view.currentRepo, tagName: tagName, commitHash: hash }, t('Retrieving Tag Details'));
 				}
 			}, {
 				title: t('Delete Tag') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.delete,
 				onClick: () => {
 					let message = t('Are you sure you want to delete the tag <b><i>{0}</i></b>?', escapeHtml(tagName));
@@ -546,6 +621,7 @@ class ViewActions {
 				}
 			}, {
 				title: t('Push Tag') + ELLIPSIS,
+				icon: MENU_ICONS.push,
 				visible: visibility.push && this.view.gitRemotes.length > 0,
 				onClick: () => {
 					const runPushTagAction = (remotes: string[]) => {
@@ -575,6 +651,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Create Archive'),
+				icon: MENU_ICONS.archive,
 				visible: visibility.createArchive,
 				onClick: () => {
 					runAction({ command: 'createArchive', repo: this.view.currentRepo, ref: tagName }, t('Creating Archive'));
@@ -582,6 +659,7 @@ class ViewActions {
 			},
 			{
 				title: t('Copy Tag Name to Clipboard'),
+				icon: MENU_ICONS.copy,
 				visible: visibility.copyName,
 				onClick: () => {
 					sendMessage({ command: 'copyToClipboard', type: t('Tag Name'), data: tagName });
@@ -595,24 +673,29 @@ class ViewActions {
 		return [[
 			{
 				title: t('Generate Commit Message with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
 				visible: this.view.config.ai.commitMessage && visibility.generateCommitMessage,
 				onClick: () => this.view.commitExplainer.openCommitMessageModal()
 			}, {
 				title: t('Stash uncommitted changes') + ELLIPSIS,
+				icon: MENU_ICONS.stash,
 				visible: visibility.stash,
 				onClick: () => this.stashUncommittedChangesAction(target)
 			}, {
 				title: t('Save Changes as Patch') + ELLIPSIS,
+				icon: MENU_ICONS.patchSave,
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('uncommitted', [], 'uncommitted-changes.patch', false)
 			}, {
 				title: t('Apply Patch') + ELLIPSIS,
+				icon: MENU_ICONS.patchApply,
 				visible: visibility.applyPatch,
 				onClick: () => sendMessage({ command: 'checkPatch', repo: this.view.currentRepo })
 			}
 		], [
 			{
 				title: t('Reset uncommitted changes') + ELLIPSIS,
+				icon: MENU_ICONS.reset,
 				visible: visibility.reset,
 				onClick: () => {
 					dialog.asDangerous().showSelect(t('Are you sure you want to reset the <b>uncommitted changes</b> to <b>HEAD</b>?'), this.view.config.dialogDefaults.resetUncommitted.mode, [
@@ -624,6 +707,7 @@ class ViewActions {
 				}
 			}, {
 				title: t('Clean untracked files') + ELLIPSIS,
+				icon: MENU_ICONS.trash,
 				visible: visibility.clean,
 				onClick: () => {
 					dialog.asDangerous().showCheckbox(t('Are you sure you want to clean all untracked files?'), t('Clean untracked directories'), true, t('Yes, clean'), directories => {
@@ -634,6 +718,7 @@ class ViewActions {
 		], [
 			{
 				title: t('Open Source Control View'),
+				icon: MENU_ICONS.external,
 				visible: visibility.openSourceControlView,
 				onClick: () => {
 					sendMessage({ command: 'viewScm' });
@@ -659,6 +744,7 @@ class ViewActions {
 
 		return {
 			title: t('View Issue{0}', (issueLinks.length > 1 ? ELLIPSIS : '')),
+			icon: MENU_ICONS.issue,
 			visible: issueLinks.length > 0,
 			onClick: () => {
 				if (issueLinks.length > 1) {

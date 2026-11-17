@@ -266,11 +266,11 @@ class CommitExplainer {
 		if (result.truncated) meta.push(escapeHtml(t('Only the first part of the changes was sent.')));
 		elem.innerHTML = '<div class="explainResult">' +
 			(result.text !== '' ? '<div class="explainText">' + renderExplanationMarkdown(result.text) + '</div>' : '') +
-			(!result.done ? '<div class="explainLoading">' + SVG_ICONS.loading + '<span>' + t('Explaining') + ELLIPSIS + '</span><span class="explainSpacer"></span><button type="button" class="cdvActionBtn" data-explain="stop">' + t('Stop') + '</button></div>' : '') +
+			(!result.done ? '<div class="explainLoading">' + SVG_ICONS.loading + '<span>' + t('Explaining') + ELLIPSIS + '</span><span class="explainSpacer"></span><button type="button" class="cdvActionBtn" data-explain="stop">' + MENU_ICONS.stop + t('Stop') + '</button></div>' : '') +
 			(result.error !== null ? '<div class="explainError">' + SVG_ICONS.alert + escapeHtml(result.error) + '</div>' : '') +
 			(result.done ? '<div class="explainFooter"><span>' + meta.join(' · ') + '</span><span class="explainSpacer"></span>' +
-				'<button type="button" class="cdvActionBtn" data-explain="changeModel">' + t('Model') + ELLIPSIS + '</button>' +
-				(result.text !== '' ? '<button type="button" class="cdvActionBtn" data-explain="copy">' + t('Copy') + '</button>' : '') + '<button type="button" class="cdvActionBtn" data-explain="regenerate">' + (result.error !== null && result.text === '' ? t('Try Again') : t('Regenerate')) + '</button></div>' : '') +
+				'<button type="button" class="cdvActionBtn" data-explain="changeModel">' + MENU_ICONS.settings + t('Model') + ELLIPSIS + '</button>' +
+				(result.text !== '' ? '<button type="button" class="cdvActionBtn" data-explain="copy">' + MENU_ICONS.copy + t('Copy') + '</button>' : '') + '<button type="button" class="cdvActionBtn" data-explain="regenerate">' + MENU_ICONS.fetch + (result.error !== null && result.text === '' ? t('Try Again') : t('Regenerate')) + '</button></div>' : '') +
 			'</div>';
 	}
 
@@ -297,7 +297,7 @@ class CommitExplainer {
 	private getConsentHtml() {
 		if (this.modelsError !== null) {
 			return '<div class="explainConsent"><div class="explainError">' + SVG_ICONS.alert + escapeHtml(this.modelsError) + '</div>' +
-				(this.needsApiKey ? '<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="setApiKey">' + t('Set API Key') + ELLIPSIS + '</button></div>' : '') +
+				(this.needsApiKey ? '<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="setApiKey">' + MENU_ICONS.key + t('Set API Key') + ELLIPSIS + '</button></div>' : '') +
 				'</div>';
 		}
 		const models = this.models, first = this.getSelectedModel();
@@ -307,7 +307,7 @@ class CommitExplainer {
 				? '<div class="explainLoading">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</div>'
 				: '<label for="explainModel" class="explainLabel">' + t('Model') + '</label><select id="explainModel">' + models.map((model) => '<option value="' + escapeHtml(model.id) + '"' + (first !== null && model.id === first.id ? ' selected' : '') + '>' + escapeHtml(model.name + ' (' + CommitExplainer.getProviderName(model) + ')') + '</option>').join('') + '</select>' +
 				'<label class="explainDontAsk"><input type="checkbox" id="explainDontAsk"><span class="customCheckbox"></span>' + t('Don\'t ask again') + '</label>' +
-				'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="explain">' + t('Explain') + '</button><button type="button" class="cdvActionBtn" data-explain="cancel">' + t('Cancel') + '</button></div>') +
+				'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-explain="explain">' + MENU_ICONS.sparkle + t('Explain') + '</button><button type="button" class="cdvActionBtn" data-explain="cancel">' + t('Cancel') + '</button></div>') +
 			'</div>';
 	}
 
@@ -469,8 +469,8 @@ class CommitExplainer {
 			if (this.modelsError !== null) {
 				bodyHtml = '<div class="aiCommitBody"><div class="explainError">' + SVG_ICONS.alert + escapeHtml(this.modelsError) + '</div>' +
 					'<div class="explainButtons">' +
-					(this.needsApiKey ? '<button type="button" class="cdvActionBtn primary" data-ai-commit="setApiKey">' + t('Set API Key') + ELLIPSIS + '</button>' : '') +
-					'<button type="button" class="cdvActionBtn" data-ai-commit="openSettings">' + t('AI Settings') + ELLIPSIS + '</button>' +
+					(this.needsApiKey ? '<button type="button" class="cdvActionBtn primary" data-ai-commit="setApiKey">' + MENU_ICONS.key + t('Set API Key') + ELLIPSIS + '</button>' : '') +
+					'<button type="button" class="cdvActionBtn" data-ai-commit="openSettings">' + MENU_ICONS.settings + t('AI Settings') + ELLIPSIS + '</button>' +
 					'<button type="button" class="cdvActionBtn" data-ai-commit="close">' + t('Close') + '</button></div></div>';
 			} else {
 				const models = this.models, first = this.getSelectedModel();
@@ -479,7 +479,7 @@ class CommitExplainer {
 						? '<div class="explainLoading">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</div>'
 						: '<label for="aiCommitModel" class="explainLabel">' + t('Model') + '</label><select id="aiCommitModel" class="aiCommitSelect">' + models.map((model) => '<option value="' + escapeHtml(model.id) + '"' + (first !== null && model.id === first.id ? ' selected' : '') + '>' + escapeHtml(model.name + ' (' + CommitExplainer.getProviderName(model) + ')') + '</option>').join('') + '</select>' +
 						'<label class="explainDontAsk"><input type="checkbox" id="aiCommitDontAsk"><span class="customCheckbox"></span>' + t('Don\'t ask again') + '</label>' +
-						'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-ai-commit="generate">' + t('Generate') + '</button><button type="button" class="cdvActionBtn" data-ai-commit="openSettings">' + t('AI Settings') + ELLIPSIS + '</button><button type="button" class="cdvActionBtn" data-ai-commit="close">' + t('Cancel') + '</button></div>') +
+						'<div class="explainButtons"><button type="button" class="cdvActionBtn primary" data-ai-commit="generate">' + MENU_ICONS.sparkle + t('Generate') + '</button><button type="button" class="cdvActionBtn" data-ai-commit="openSettings">' + MENU_ICONS.settings + t('AI Settings') + ELLIPSIS + '</button><button type="button" class="cdvActionBtn" data-ai-commit="close">' + t('Cancel') + '</button></div>') +
 					'</div>';
 			}
 		} else {
@@ -492,12 +492,12 @@ class CommitExplainer {
 
 			bodyHtml = '<div class="aiCommitBody">' +
 				'<textarea id="aiCommitTextarea" class="aiCommitTextarea" rows="7"' + (!state.done ? ' readonly' : '') + ' placeholder="' + escapeHtml(t('Generating commit message…')) + '">' + escapeHtml(state.text) + '</textarea>' +
-				(!state.done ? '<div class="explainLoading">' + SVG_ICONS.loading + '<span>' + t('Generating commit message…') + '</span><span class="explainSpacer"></span><button type="button" class="cdvActionBtn" data-ai-commit="stop">' + t('Stop') + '</button></div>' : '') +
+				(!state.done ? '<div class="explainLoading">' + SVG_ICONS.loading + '<span>' + t('Generating commit message…') + '</span><span class="explainSpacer"></span><button type="button" class="cdvActionBtn" data-ai-commit="stop">' + MENU_ICONS.stop + t('Stop') + '</button></div>' : '') +
 				(state.error !== null ? '<div class="explainError">' + SVG_ICONS.alert + escapeHtml(state.error) + '</div>' : '') +
 				(state.done ? '<div class="explainFooter"><span>' + meta.join(' · ') + '</span><span class="explainSpacer"></span>' +
-					'<button type="button" class="cdvActionBtn" data-ai-commit="changeModel">' + t('Model') + ELLIPSIS + '</button>' +
-					'<button type="button" class="cdvActionBtn" data-ai-commit="regenerate">' + (state.error !== null && state.text === '' ? t('Try Again') : t('Regenerate')) + '</button>' +
-					(state.text.trim() !== '' ? '<button type="button" class="cdvActionBtn" data-ai-commit="copy">' + t('Copy') + '</button><button type="button" class="cdvActionBtn primary" data-ai-commit="use">' + t('Use in Source Control') + '</button>' : '') +
+					'<button type="button" class="cdvActionBtn" data-ai-commit="changeModel">' + MENU_ICONS.settings + t('Model') + ELLIPSIS + '</button>' +
+					'<button type="button" class="cdvActionBtn" data-ai-commit="regenerate">' + MENU_ICONS.fetch + (state.error !== null && state.text === '' ? t('Try Again') : t('Regenerate')) + '</button>' +
+					(state.text.trim() !== '' ? '<button type="button" class="cdvActionBtn" data-ai-commit="copy">' + MENU_ICONS.copy + t('Copy') + '</button><button type="button" class="cdvActionBtn primary" data-ai-commit="use">' + MENU_ICONS.checkout + t('Use in Source Control') + '</button>' : '') +
 					'</div>' : '') +
 				'</div>';
 		}

@@ -33,6 +33,21 @@ body.vscode-high-contrast .dialog{
 	line-height:20px;
 	word-wrap:break-word;
 }
+.dialogTitleIcon{
+	display:inline-flex;
+	align-items:center;
+	margin-right:7px;
+	vertical-align:-2px;
+	color:var(--vscode-textLink-foreground, var(--vscode-focusBorder));
+}
+.dialog.danger .dialogTitleIcon{
+	color:var(--vscode-errorForeground, #f48771);
+}
+.dialogTitleIcon svg.uiIcon{
+	width:15px !important;
+	height:15px !important;
+	opacity:0.95;
+}
 .dialogMessage + br{
 	display:none;
 }
@@ -43,6 +58,13 @@ body.vscode-high-contrast .dialog{
 	font-size:12.5px;
 	text-overflow:ellipsis;
 	white-space:nowrap;
+}
+.dialogSubtitle svg.uiIcon{
+	width:13px !important;
+	height:13px !important;
+	margin-right:5px;
+	vertical-align:-2px;
+	opacity:0.8;
 }
 .dialogSubtitleHash{
 	font-family:var(--vscode-editor-font-family);
@@ -222,6 +244,11 @@ body.vscode-high-contrast .dialog{
 	fill:var(--vscode-menu-foreground);
 	opacity:0.75;
 	vertical-align:sub;
+}
+.dialog svg.uiIcon{
+	display:inline-block;
+	fill:none !important;
+	stroke:currentColor;
 }
 
 .dialog .dialogAlert svg, .dialog .actionRunning svg{

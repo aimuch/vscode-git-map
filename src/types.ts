@@ -582,9 +582,11 @@ export interface GitGraphViewWorkspaceState {
 }
 
 export interface CommitDetailsViewConfig {
+	readonly actions: ReadonlyArray<string>;
 	readonly autoCenter: boolean;
 	readonly fileTreeCompactFolders: boolean;
 	readonly fileViewType: FileViewType;
+	readonly hideUnchangedRegions: boolean;
 	readonly location: CommitDetailsViewLocation;
 }
 
@@ -1528,8 +1530,8 @@ export interface ResponseMerge extends ResponseWithErrorInfo {
 
 export interface RequestUpdateExtensionSetting extends BaseMessage {
 	readonly command: 'updateExtensionSetting';
-	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'language' | 'statusBarItemDisplay';
-	readonly value: string | boolean;
+	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'commitDetailsView.actions' | 'diff.hideUnchangedRegions' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'language' | 'statusBarItemDisplay';
+	readonly value: string | boolean | ReadonlyArray<string>;
 }
 export interface ResponseUpdateExtensionSetting extends ResponseWithErrorInfo {
 	readonly command: 'updateExtensionSetting';
@@ -1786,6 +1788,7 @@ export interface RequestViewDiff extends RepoRequest {
 	readonly oldFilePath: string;
 	readonly newFilePath: string;
 	readonly type: GitFileStatus;
+	readonly onlyChanges?: boolean;
 }
 export interface ResponseViewDiff extends ResponseWithErrorInfo {
 	readonly command: 'viewDiff';
@@ -2264,9 +2267,16 @@ export type ResponseMessage =
 	| ResponseRestoreFileFromStash
 	| ResponseLoadLanguageModels
 	| ResponseUpdateAiConfig
+	| ResponseUpdateCdvConfig
 	| ResponseExplainCommit
 	| ResponseGenerateCommitMessage
 	| ResponseUseGeneratedCommitMessage;
+
+export interface ResponseUpdateCdvConfig extends BaseMessage {
+	readonly command: 'updateCdvConfig';
+	readonly actions: ReadonlyArray<string>;
+	readonly hideUnchangedRegions: boolean;
+}
 
 
 /** Helper Types */

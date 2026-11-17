@@ -1326,5 +1326,17 @@
 	"Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.": "在源代码管理视图和 Git Map 视图中提供根据未提交更改生成提交说明的操作。",
 	"Explain Commits": "AI 解释提交",
 	"Shows an \"Explain\" tab in the Commit Details View, where a language model explains the selected commit.": "在提交详情视图中显示“解释”标签页，由语言模型解释所选提交。",
-	"Language Model": "大模型配置"
+	"Language Model": "大模型配置",
+	"View Diff (Changes Only)": "查看差异（仅差异部分）",
+	"View Diff (Full File)": "查看差异（完整文件）",
+	"Diff View: Changes Only (Click to show full file)": "差异视图：仅显示差异部分（点击切换为完整文件）",
+	"Diff View: Full File (Click to only show changes)": "差异视图：显示完整文件（点击切换为仅显示差异部分）",
+	"Diff View": "差异视图",
+	"Full File": "完整文件",
+	"Changes Only": "仅差异部分",
+	"Action Bar": "快捷操作栏",
+	"Customize Action Buttons": "自定义快捷操作按钮",
+	"Customize Commit Action Buttons": "自定义提交快捷操作",
+	"Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.": "勾选要在提交详情栏（如“签出…”所在行）显示的按钮，拖拽或使用上下箭头调整排列顺序。",
+	"Reset to Default": "恢复默认"
 }

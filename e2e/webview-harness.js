@@ -360,6 +360,12 @@
 			['提交：', '父提交：', '作者：', '提交者：', '日期：'].forEach((text) => assert(cdv.textContent.includes(text), 'The Commit Details View doesn\'t include "' + text + '"'));
 			const actions = Array.from(cdv.querySelectorAll('#cdvActions .cdvActionBtn')).map((elem) => elem.textContent);
 			assert(actions[0] === '签出…' && actions[1] === '创建分支…' && actions[2] === '拣选…', 'Unexpected action buttons: ' + JSON.stringify(actions));
+			assert(cdv.querySelectorAll('#cdvActions .cdvActionBtn[data-index] svg.uiIcon').length === 3 && document.getElementById('cdvHideUnchanged') !== null && document.getElementById('cdvHideUnchanged').title.includes('差异视图'), 'Missing icons or Diff View toggle in zh-CN CDV');
+			mouse(document.getElementById('cdvMoreActions'), 'click');
+			const moreMenu = await waitFor('the zh-CN more actions menu', () => document.querySelector('.contextMenu'));
+			assert(moreMenu.textContent.includes('自定义快捷操作按钮…'), 'Missing zh-CN Customize Action Buttons in menu: ' + moreMenu.textContent);
+			key(document.body, 'Escape');
+			await waitFor('the zh-CN more actions menu to close', () => document.querySelector('.contextMenu') === null);
 			assert(document.querySelector('#minimap .minimapTitle').textContent === '活动每日提交数', 'Unexpected minimap title: ' + document.querySelector('#minimap .minimapTitle').textContent);
 			const dropdown = document.getElementById('authorDropdown');
 			mouse(dropdown.querySelector('.dropdownCurrentValue'), 'click');
@@ -377,6 +383,7 @@
 			const widget = await waitFor('the Repository Settings Widget to load', () => document.getElementById('editIssueLinking') ? document.getElementById('settingsWidget') : null);
 			const sections = Array.from(widget.querySelectorAll('h3, h4')).map((elem) => elem.textContent.trim());
 			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', 'AI · 所有仓库', '大模型配置', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
+			['差异视图', '完整文件', '仅差异部分', '快捷操作栏', '自定义快捷操作按钮…'].forEach((text) => assert(widget.textContent.includes(text), 'Missing zh-CN Settings label "' + text + '"'));
 			assert(widget.querySelector('#settingsHeader h2').textContent === '设置', 'Unexpected title: ' + widget.querySelector('#settingsHeader h2').textContent);
 			mouse(document.getElementById('editIssueLinking'), 'click');
 			await waitFor('the Issue Linking dialog', () => document.getElementById('dialogInput1'));
@@ -587,7 +594,7 @@
 			mouse(document.getElementById('columnSettingsBtn'), 'click');
 			const menu = await waitFor('the column menu', () => document.querySelector('.contextMenu'));
 			const changesItem = Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Changes');
-			assert(changesItem && changesItem.querySelector('svg') !== null, 'The Changes column isn\'t checked in the column menu');
+			assert(changesItem && changesItem.querySelector('.contextMenuItemCheck svg') !== null, 'The Changes column isn\'t checked in the column menu');
 			mouse(changesItem, 'click');
 			await waitFor('the Changes column to be hidden', () => document.querySelector('#commitTable td.changesCol') === null);
 			mouse(document.getElementById('columnSettingsBtn'), 'click');
@@ -817,7 +824,7 @@
 			for (const title of ['Freeze Column Headers', 'Freeze Footer']) {
 				mouse(document.getElementById('columnSettingsBtn'), 'click');
 				const item = Array.from((await waitFor('the column menu', () => document.querySelector('.contextMenu'))).querySelectorAll('.contextMenuItem')).find((elem) => elem.textContent === title);
-				assert(item && item.querySelector('svg') !== null, 'The "' + title + '" item isn\'t checked');
+				assert(item && item.querySelector('.contextMenuItemCheck svg') !== null, 'The "' + title + '" item isn\'t checked');
 				mouse(item, 'click');
 			}
 			const sent = await waitFor('the settings to be sent', () => updates().length >= before + 2 ? updates().slice(before) : null);
@@ -1955,6 +1962,100 @@
 				uncommittedFixture = false;
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('the uncommitted changes to be hidden', () => document.getElementById('uncommittedChanges') === null);
+			}
+		});
+
+		await check('ui-cdv-actions-and-diff', '[UI] Context menus, dialogs, tabs & Settings display leading icons; diffs support "Changes Only" mode; Commit Details action buttons can be customized & reordered', async () => {
+			await waitFor('the commits to be reloaded', () => commitRow(0) !== null);
+			await openDetails(commitRow(0));
+			try {
+				// 1. Leading icons across context menus, Commit Details View, and dialogs
+				const commitMenuItems = await contextMenuItems(commitRow(0));
+				assert(commitMenuItems.length > 10 && commitMenuItems.every((item) => item.querySelector('.contextMenuItemIcon svg.uiIcon') !== null), 'Every commit context menu item should display a leading icon');
+				key(document.body, 'Escape');
+				await waitFor('the commit context menu to close', () => document.querySelector('.contextMenu') === null);
+
+				assert(document.querySelectorAll('#cdvActions .cdvActionBtn[data-index] svg.uiIcon').length === 3, 'CDV action buttons are missing leading icons');
+				assert(document.querySelector('#cdvSummary .cdvBranch svg') !== null && document.querySelectorAll('#cdvTabs .cdvTab svg.uiIcon').length >= 2, 'CDV branch pill or tabs are missing leading icons');
+
+				mouse(document.querySelector('#cdvActions .cdvActionBtn[data-index="1"]'), 'click');
+				const dlg = await waitFor('the Create Branch dialog with icons', () => document.querySelector('.dialog'));
+				assert(dlg.querySelector('.dialogTitleIcon svg.uiIcon') !== null && dlg.querySelector('.dialogSubtitle svg.uiIcon') !== null, 'Dialog title or subtitle is missing its icon');
+				key(document.body, 'Escape');
+				await waitFor('the dialog to close', () => document.querySelector('.dialog') === null);
+
+				// 2. Diff "Changes Only" toggle & file context menu action
+				const hideBtn = document.getElementById('cdvHideUnchanged');
+				assert(hideBtn !== null && !hideBtn.classList.contains('active'), 'Unexpected initial state of #cdvHideUnchanged');
+				const settingBefore = requestsOf('updateExtensionSetting').length;
+				mouse(hideBtn, 'click');
+				await waitFor('diff.hideUnchangedRegions setting update', () => requestsOf('updateExtensionSetting').length > settingBefore);
+				const hideUpdate = requestsOf('updateExtensionSetting').slice(-1)[0];
+				assert(hideUpdate.key === 'diff.hideUnchangedRegions' && hideUpdate.value === true && document.getElementById('cdvHideUnchanged').classList.contains('active'), 'Toggling #cdvHideUnchanged didn\'t enable Changes Only mode');
+
+				const viewDiffBefore = requestsOf('viewDiff').length;
+				await clickMenuItem(fileRecord('README.md'), 'View Diff (Changes Only)');
+				const diffReq = await waitFor('viewDiff with onlyChanges=true', () => requestsOf('viewDiff').length > viewDiffBefore ? requestsOf('viewDiff').slice(-1)[0] : null);
+				assert(diffReq.newFilePath === 'README.md' && diffReq.onlyChanges === true, 'Unexpected viewDiff request: ' + JSON.stringify(diffReq));
+
+				// Reset Changes Only toggle back to Full File
+				mouse(document.getElementById('cdvHideUnchanged'), 'click');
+				await waitFor('#cdvHideUnchanged to deactivate', () => !document.getElementById('cdvHideUnchanged').classList.contains('active'));
+
+				// 3. Customize & reorder Commit Details View action buttons
+				mouse(document.getElementById('cdvMoreActions'), 'click');
+				const moreMenu = await waitFor('the More Actions menu', () => document.querySelector('.contextMenu'));
+				const customizeItem = Array.from(moreMenu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent === 'Customize Action Buttons\u2026');
+				assert(customizeItem && customizeItem.querySelector('.contextMenuItemIcon svg.uiIcon') !== null, 'Missing "Customize Action Buttons…" in More Actions menu');
+				mouse(customizeItem, 'click');
+
+				const modal = await waitFor('the Customize Commit Action Buttons modal', () => document.getElementById('cdvActionsModal'));
+				const savePatchRow = modal.querySelector('.cdvActionsModalItem[data-action-id="savePatch"]');
+				assert(savePatchRow !== null, 'Missing savePatch in action customizer');
+				const savePatchInput = savePatchRow.querySelector('input[type="checkbox"]');
+				savePatchInput.checked = true;
+				savePatchInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+				// Move savePatch up from #4 to #1 using the Up arrow button, then swap #2 and #3 via drag-and-drop
+				for (let step = 0; step < 3; step++) {
+					const row = modal.querySelector('.cdvActionsModalItem[data-action-id="savePatch"]');
+					mouse(row.querySelector('.rebaseEditorMoveBtn[data-move="-1"]'), 'click');
+				}
+				const createBranchRow = modal.querySelector('.cdvActionsModalItem[data-action-id="createBranch"]');
+				const checkoutRow = modal.querySelector('.cdvActionsModalItem[data-action-id="checkout"]');
+				createBranchRow.dispatchEvent(new DragEvent('dragstart', { bubbles: true }));
+				checkoutRow.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true }));
+				checkoutRow.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true }));
+
+				const actionsBeforeSave = requestsOf('updateExtensionSetting').length;
+				mouse(modal.querySelector('[data-cdv-custom="save"]'), 'click');
+				await waitFor('the customizer modal to close & persist', () => document.getElementById('cdvActionsModal') === null && requestsOf('updateExtensionSetting').length > actionsBeforeSave);
+				const actionsUpdate = requestsOf('updateExtensionSetting').slice(-1)[0];
+				const expectedOrder = ['savePatch', 'createBranch', 'checkout', 'cherrypick'];
+				assert(actionsUpdate.key === 'commitDetailsView.actions' && JSON.stringify(actionsUpdate.value) === JSON.stringify(expectedOrder), 'Unexpected commitDetailsView.actions update: ' + JSON.stringify(actionsUpdate));
+
+				const renderedButtons = Array.from(document.querySelectorAll('#cdvActions .cdvActionBtn')).map((elem) => elem.textContent);
+				assert(JSON.stringify(renderedButtons) === JSON.stringify(['Save as Patch\u2026', 'Create Branch\u2026', 'Checkout\u2026', 'Cherry Pick\u2026', '\u00b7\u00b7\u00b7']), 'Unexpected reordered CDV buttons: ' + JSON.stringify(renderedButtons));
+				await shot('cdv-custom-actions');
+
+				// Reset back to default from the Settings panel
+				mouse(document.getElementById('settingsBtn'), 'click');
+				const settingsBtn = await waitFor('#settingsCustomizeCdvActions in Settings', () => document.getElementById('settingsCustomizeCdvActions'));
+				assert(document.querySelector('#settingsHeader h2 svg.uiIcon') !== null, 'Settings header is missing its icon');
+				mouse(settingsBtn, 'click');
+				const resetModal = await waitFor('the customizer modal opened from Settings', () => document.getElementById('cdvActionsModal'));
+				mouse(resetModal.querySelector('[data-cdv-custom="reset"]'), 'click');
+				mouse(resetModal.querySelector('[data-cdv-custom="save"]'), 'click');
+				await waitFor('default actions restored', () => document.getElementById('cdvActionsModal') === null);
+				mouse(document.getElementById('settingsClose'), 'click');
+				await waitFor('Settings to close', () => !document.getElementById('settingsWidget').classList.contains('active'));
+
+				const restoredButtons = Array.from(document.querySelectorAll('#cdvActions .cdvActionBtn')).map((elem) => elem.textContent);
+				assert(JSON.stringify(restoredButtons) === JSON.stringify(['Checkout\u2026', 'Create Branch\u2026', 'Cherry Pick\u2026', '\u00b7\u00b7\u00b7']), 'Default CDV buttons weren\'t restored: ' + JSON.stringify(restoredButtons));
+				return 'Icons verified across menus/CDV/dialogs/Settings; Changes Only diff toggled & requested; customized & reordered CDV actions to ' + expectedOrder.join(' → ') + ', then reset';
+			} finally {
+				if (document.getElementById('cdvActionsModal') !== null) document.getElementById('cdvActionsModal').remove();
+				await closeDetails();
 			}
 		});
 	};

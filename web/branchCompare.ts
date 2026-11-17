@@ -310,9 +310,9 @@ class BranchCompare {
 					(file.additions !== null && file.deletions !== null ? '<span class="comparePanelStats"><span class="fileTreeFileAdd">+' + file.additions + '</span> <span class="fileTreeFileDel">−' + file.deletions + '</span></span>' : '') + '</button>';
 		}).join('') : '<div class="comparePanelEmpty">' + t('No files are changed.') + '</div>') + '</div>' +
 			'<div class="comparePanelActions">' +
-			(this.fileChanges.length > 0 ? '<button type="button" class="cdvActionBtn primary" data-panel="openAll">' + t('Open All Changes') + '</button>' : '') +
-			(canCreatePullRequest ? '<button type="button" class="cdvActionBtn" data-panel="pullRequest">' + t('Create Pull Request') + ELLIPSIS + '</button>' : '') +
-			'<button type="button" class="cdvActionBtn" data-panel="copy">' + t('Copy Summary') + '</button></div>';
+			(this.fileChanges.length > 0 ? '<button type="button" class="cdvActionBtn primary" data-panel="openAll">' + MENU_ICONS.diff + t('Open All Changes') + '</button>' : '') +
+			(canCreatePullRequest ? '<button type="button" class="cdvActionBtn" data-panel="pullRequest">' + MENU_ICONS.pullRequest + t('Create Pull Request') + ELLIPSIS + '</button>' : '') +
+			'<button type="button" class="cdvActionBtn" data-panel="copy">' + MENU_ICONS.copy + t('Copy Summary') + '</button></div>';
 	}
 
 	private onPanelClick(e: MouseEvent) {

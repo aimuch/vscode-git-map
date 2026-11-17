@@ -59,7 +59,7 @@ function filterCommits(commits: ReadonlyArray<GG.GitCommit>, filter: ReadonlySet
  * @param maxLines The maximum number of lines of the diff to show.
  * @returns The HTML.
  */
-function generateFileDiffHtml(diff: string, maxLines: number) {
+function generateFileDiffHtml(diff: string, maxLines: number, onlyChanges: boolean = false) {
 	let html = '', shown = 0, hunks = 0, hiddenHunks = 0, oldLine = 0, newLine = 0, inHunk = false, truncatedHunk = false;
 	const row = (oldNumber: number | null, newNumber: number | null, type: string, text: string) => {
 		html += '<div class="cdvFileDiffLine ' + type + '"><span>' + (oldNumber !== null ? oldNumber : '') + '</span><span>' + (newNumber !== null ? newNumber : '') + '</span><span>' + (type === 'add' ? '+' : type === 'del' ? '\u2212' : ' ') + '</span><span>' + escapeHtml(text) + '</span></div>';
@@ -91,7 +91,12 @@ function generateFileDiffHtml(diff: string, maxLines: number) {
 		} else if (type === '-') {
 			row(oldLine++, null, 'del', text);
 		} else if (type === ' ') {
-			row(oldLine++, newLine++, 'context', text);
+			if (onlyChanges) {
+				oldLine++;
+				newLine++;
+			} else {
+				row(oldLine++, newLine++, 'context', text);
+			}
 		}
 	});
 	if (hunks === 0) {
