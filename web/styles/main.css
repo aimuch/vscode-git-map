@@ -1109,23 +1109,75 @@ body.freezeFooter #footer{
 	z-index:1;
 	display:flex;
 	align-items:center;
-	gap:18px;
-	padding:0 8px 0 10px;
+	gap:12px;
+	padding:0 10px;
 	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
 	background-color:var(--vscode-sideBar-background, var(--vscode-editor-background));
 	font-size:12.5px;
 }
-#cdvTabs .cdvControlBtn{
-	width:24px;
-	height:24px;
-	border-radius:4px;
+.cdvTabTools{
+	display:inline-flex;
+	align-items:center;
+	gap:6px;
+	flex:0 0 auto;
+	margin:3px 0;
 }
-#cdvTabs .cdvControlBtn + .cdvControlBtn{
-	margin-left:-16px;
+.cdvDiffModePill{
+	display:inline-flex;
+	align-items:center;
+	gap:4px;
+	height:22px;
+	padding:0 7px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.35));
+	border-radius:5px;
+	color:var(--vscode-descriptionForeground);
+	font-size:11.5px;
+	line-height:1;
+	cursor:pointer;
+	user-select:none;
+	white-space:nowrap;
+	background:transparent;
+}
+.cdvDiffModePill svg.uiIcon{
+	position:static !important;
+	width:12px !important;
+	height:12px !important;
+	opacity:0.85;
+}
+.cdvDiffModePill:hover{
+	color:var(--vscode-foreground);
+	background-color:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.16));
+}
+.cdvDiffModePill.active{
+	border-color:var(--vscode-focusBorder);
+	background-color:color-mix(in srgb, var(--vscode-focusBorder) 16%, transparent);
+	color:var(--vscode-foreground);
+	font-weight:600;
+}
+.cdvViewModeGroup{
+	display:inline-flex;
+	align-items:center;
+	padding:1px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.35));
+	border-radius:6px;
+	background:rgba(128,128,128,0.08);
+}
+#cdvTabs .cdvControlBtn{
+	width:22px;
+	height:20px;
+	margin:0;
+	border-radius:4px;
+	background:transparent;
+}
+#cdvTabs .cdvControlBtn.active{
+	background-color:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.32));
+	box-shadow:0 1px 2px rgba(0,0,0,0.2);
 }
 #cdvTabs .cdvControlBtn svg{
-	left:5px;
-	top:5px;
+	width:13px;
+	height:13px;
+	left:4.5px;
+	top:3.5px;
 }
 .cdvTab{
 	display:inline-flex;

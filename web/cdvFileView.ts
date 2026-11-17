@@ -80,11 +80,12 @@ class CdvFileView {
 	 */
 	public refreshCdvFileView() {
 		if (this.view.expandedCommit !== null && this.view.expandedCommit.fileTree !== null && !this.view.expandedCommit.loading) {
-			this.changeFileViewType(this.getFileViewType());
+			this.changeFileViewType(this.getFileViewType(), true);
 		}
 	}
 
-	public changeFileViewType(type: GG.FileViewType) {
+	public changeFileViewType(type: GG.FileViewType, force: boolean = false) {
+		if (!force && type === this.getFileViewType()) return;
 		const expandedCommit = this.view.expandedCommit, filesElem = getCdvFileViewElem();
 		if (expandedCommit === null || expandedCommit.fileTree === null || expandedCommit.fileChanges === null || filesElem === null) return;
 		GitGraphView.closeCdvContextMenuIfOpen(expandedCommit);
@@ -318,6 +319,12 @@ class CdvFileView {
 						icon: MENU_ICONS.history,
 						visible: file.type !== GG.GitFileStatus.Untracked && this.view.fileHistory !== file.newFilePath,
 						onClick: () => this.view.setFileHistory(file.newFilePath)
+					},
+					{
+						title: t('File Time Machine'),
+						icon: MENU_ICONS.history,
+						visible: visibility.visualFileHistory && file.type !== GG.GitFileStatus.Untracked && !(isUncommitted && file.type === GG.GitFileStatus.Added),
+						onClick: () => sendMessage({ command: 'viewFileTimeMachine', repo: this.view.currentRepo, filePath: file.newFilePath, commitHash: isUncommitted ? null : commitOrder.to })
 					},
 					{
 						title: t('Visual File History'),

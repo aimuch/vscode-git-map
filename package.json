@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.2.1",
+	"version": "2.2.2",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -328,6 +328,12 @@
 				"title": "%command.diff.showFullFile.title%",
 				"icon": "$(unfold)",
 				"toggled": "config.diffEditor.hideUnchangedRegions.enabled"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.fileTimeMachine",
+				"title": "%command.fileTimeMachine.title%",
+				"icon": "$(history)"
 			}
 		],
 		"configuration": {
@@ -2300,6 +2306,11 @@
 					"when": "resourceScheme == file && !explorerResourceIsFolder"
 				},
 				{
+					"command": "git-map.fileTimeMachine",
+					"when": "resourceScheme == file && !explorerResourceIsFolder",
+					"group": "gitMap@1.5"
+				},
+				{
 					"command": "git-map.visualFileHistory",
 					"when": "resourceScheme == file && !explorerResourceIsFolder",
 					"group": "gitMap@2"
@@ -2315,6 +2326,11 @@
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@1",
 					"when": "resourceScheme == file"
+				},
+				{
+					"command": "git-map.fileTimeMachine",
+					"when": "resourceScheme == file",
+					"group": "gitMap@1.5"
 				},
 				{
 					"command": "git-map.visualFileHistory",
@@ -2346,6 +2362,11 @@
 				{
 					"command": "git-map.openNextRevision",
 					"group": "navigation@-97",
+					"when": "resourceScheme == git-map"
+				},
+				{
+					"command": "git-map.fileTimeMachine",
+					"group": "navigation@-96",
 					"when": "resourceScheme == git-map"
 				}
 			],
@@ -2454,6 +2475,11 @@
 					"command": "git-map.visualFileHistory",
 					"when": "config.git-map.editorContextMenu.visualFileHistory == 'Submenu'",
 					"group": "1_history@4"
+				},
+				{
+					"command": "git-map.fileTimeMachine",
+					"when": "config.git-map.editorContextMenu.visualFileHistory == 'Submenu'",
+					"group": "1_history@5"
 				},
 				{
 					"command": "git-map.toggleFileBlame",

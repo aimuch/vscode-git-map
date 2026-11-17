@@ -962,6 +962,36 @@ async function run() {
 		}
 	});
 
+	await check('file-time-machine', '[Time Machine] File Time Machine opens an interactive vertical timeline ruler with a LIVE playhead, zoom controls, and live diff / snapshot preview across commits & renames', async () => {
+		const view = await getView();
+		const { FileTimeMachine } = require(path.join(extension.extensionPath, 'out', 'fileTimeMachine.js'));
+		const repo = createScratchRepo('file-time-machine', { 'old-app.py': 'def greet():\n    return "v1"\n' });
+		await view.repoManager.registerRepo(repo, false);
+		commitFile(repo, 'old-app.py', 'def greet():\n    return "v2"\n\ndef helper():\n    return 42\n', 'Add helper function');
+		git(repo, 'mv', 'old-app.py', 'app.py');
+		git(repo, 'commit', '-q', '-m', 'Rename to app.py');
+		commitFile(repo, 'app.py', 'def greet(name="world"):\n    return f"hello {name}"\n\ndef helper():\n    return 42\n', 'Parameterize greet');
+		fs.writeFileSync(path.join(repo, 'app.py'), 'def greet(name="world"):\n    return f"hello {name}!"\n\ndef helper():\n    return 99\n');
+		try {
+			await vscode.commands.executeCommand('git-map.fileTimeMachine', vscode.Uri.file(path.join(repo, 'app.py')));
+			const shown = await waitFor('the File Time Machine', () => FileTimeMachine.getInstance().getShown());
+			assert(shown.repo === repo && shown.filePath === 'app.py' && shown.entries === 5, 'Unexpected File Time Machine entries: ' + JSON.stringify({ repo: shown.repo, filePath: shown.filePath, entries: shown.entries }));
+			assert(shown.html.includes('ftmRulerDock') && shown.html.includes('ftmZoomSlider') && shown.html.includes('LIVE') && shown.html.includes('Parameterize greet'), 'File Time Machine HTML missing expected elements');
+			await waitFor('the Time Machine tab', () => vscode.window.tabGroups.all.flatMap((group) => group.tabs).some((tab) => tab.label === 'Time Machine: app.py'));
+			await sleep(600);
+			await screenshot('file-time-machine');
+
+			await view.respondToMessage({ command: 'viewFileTimeMachine', repo: repo, filePath: 'app.py' });
+			await waitFor('File Time Machine reopened from Git Map View', () => {
+				const again = FileTimeMachine.getInstance().getShown();
+				return again !== null && again.entries === 5;
+			});
+			return 'Showed LIVE working tree + 4 commits of app.py (across rename) with vertical Time Machine scrubber';
+		} finally {
+			await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		}
+	});
+
 	await check('ui-visual-file-history', '[GitLens] The Visual File History page shows a row for each author, the commits in the time range chosen (90 days, 1 year, All), the selected commit\'s details, and opens its changes (clicking the button, or double-clicking a circle)', async () => {
 		const view = await getView();
 		const { VisualFileHistory } = require(path.join(extension.extensionPath, 'out', 'visualFileHistory.js'));

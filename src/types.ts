@@ -1989,6 +1989,12 @@ export interface RequestViewVisualFileHistory extends RepoRequest {
 	readonly commitHash?: string | null;
 }
 
+export interface RequestViewFileTimeMachine extends RepoRequest {
+	readonly command: 'viewFileTimeMachine';
+	readonly filePath: string;
+	readonly commitHash?: string | null;
+}
+
 export interface RequestLoadLanguageModels extends BaseMessage {
 	readonly command: 'loadLanguageModels';
 }
@@ -2165,6 +2171,7 @@ export type RequestMessage =
 	| RequestLoadStashableFiles
 	| RequestRestoreFileFromStash
 	| RequestViewVisualFileHistory
+	| RequestViewFileTimeMachine
 	| RequestLoadLanguageModels
 	| RequestCancelExplainCommit
 	| RequestExplainCommit

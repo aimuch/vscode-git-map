@@ -1340,5 +1340,22 @@
 	"Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.": "勾选要在提交详情栏（如“签出…”所在行）显示的按钮，拖拽或使用上下箭头调整排列顺序。",
 	"Reset to Default": "恢复默认",
 	"Diff View: Changes Only": "差异视图：仅显示差异部分",
-	"Diff View: Full File": "差异视图：显示完整文件"
+	"Diff View: Full File": "差异视图：显示完整文件",
+	"Unable to open File Time Machine: {0}": "无法打开文件时间机器：{0}",
+	"Working Tree": "工作区",
+	"Uncommitted Changes (LIVE)": "未提交的更改（LIVE）",
+	"Time Machine: {0}": "时间机器：{0}",
+	"(Binary file)": "（二进制文件）",
+	"File Time Machine": "文件时间机器",
+	"Full Diff": "完整差异",
+	"Newer Revision (Up Arrow)": "较新版本（↑ 键）",
+	"Older Revision (Down Arrow)": "较旧版本（↓ 键）",
+	"Open Diff in Editor": "在编辑器中对比",
+	"Open File at this Revision": "打开此版本文件",
+	"Loading revision…": "正在加载版本内容…",
+	"No line changes in this revision.": "此版本无文本行差异。",
+	"⋯ {0} unchanged lines collapsed ⋯": "⋯ 已折叠 {0} 行未更改内容 ⋯",
+	"Zoom Out Timeline": "缩小时间轴刻度",
+	"Zoom In Timeline": "放大时间轴刻度",
+	"Drag playhead, click ticks, or use ↑ / ↓ keys to travel through commits": "拖动蓝色游标、点击刻度或按 ↑ / ↓ 键在各次提交间穿越回溯"
 }

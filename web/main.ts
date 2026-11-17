@@ -2957,7 +2957,7 @@ class GitGraphView {
 			activeTab = (this.activeCdvTab === 'explain' && explainPossible) || (this.activeCdvTab === 'message' && messageHtml !== '') ? this.activeCdvTab : 'files';
 			html += '</div><div id="cdvFiles">' + ((isRight || explainPossible)
 				? '<div id="cdvTabs"><span class="cdvTab' + (activeTab === 'files' ? ' active' : '') + '" data-tab="files">' + MENU_ICONS.files + t('Changed Files') + ' · ' + expandedCommit.fileChanges!.length + '</span>' + (messageHtml !== '' ? '<span class="cdvTab' + (activeTab === 'message' ? ' active' : '') + '" data-tab="message">' + MENU_ICONS.subject + t('Commit Message') + '</span>' : '') + (explainPossible ? '<span class="cdvTab' + (activeTab === 'explain' ? ' active' : '') + '" data-tab="explain">' + CommitExplainer.ICON + t('Explain') + '</span>' : '') + '<span class="cdvTabsSpacer"></span>' +
-					(isRight ? '<div id="cdvHideUnchanged" class="cdvControlBtn">' + MENU_ICONS.foldDiff + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') + '</div>' +
+					(isRight ? '<div class="cdvTabTools"><div class="cdvViewModeGroup"><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div></div></div>' : '') + '</div>' +
 					'<div id="cdvFileView"' + (activeTab !== 'files' ? ' class="hidden"' : '') + '>' + fileViewHtml + '</div>' + (messageHtml !== '' ? '<div id="cdvMessageView"' + (activeTab !== 'message' ? ' class="hidden"' : '') + '>' + messageHtml + '</div>' : '') + (explainPossible ? '<div id="cdvExplainView"' + (activeTab !== 'explain' ? ' class="hidden"' : '') + '></div>' : '')
 				: fileViewHtml) + '</div><div id="cdvDivider"></div>';
 		}
@@ -2965,6 +2965,7 @@ class GitGraphView {
 			const title = expandedCommit.compareWithHash !== null ? t('Commit Comparison') : expandedCommit.commitHash === UNCOMMITTED ? t('Uncommitted Changes')
 				: !expandedCommit.loading && expandedCommit.fileChanges !== null && this.getCdvFileFocus(expandedCommit.commitHash, expandedCommit.fileChanges) !== null ? t('Changes to this File in the Commit') : t('Commit Details');
 			html = '<div id="cdvHeader"><span class="cdvHeaderTitle">' + title + '</span>' +
+				(!expandedCommit.loading ? '<div id="cdvHideUnchanged" class="cdvDiffModePill">' + MENU_ICONS.foldDiff + '<span class="cdvDiffModeLabel">' + t('Changes Only') + '</span></div>' : '') +
 				(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
 				(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
 				(expandedCommit.compareWithHash === null ? '<div id="cdvPrev" class="cdvControlBtn" title="' + t('Previous Commit') + '">' + SVG_ICONS.arrowUp + '</div><div id="cdvNext" class="cdvControlBtn" title="' + t('Next Commit') + '">' + SVG_ICONS.arrowDown + '</div>' : '') +

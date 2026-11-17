@@ -1036,6 +1036,9 @@ export class GitGraphView extends Disposable {
 			case 'viewVisualFileHistory':
 				vscode.commands.executeCommand('git-map.visualFileHistory', { repo: msg.repo, filePath: msg.filePath, commitHash: msg.commitHash }).then(() => { }, () => { });
 				break;
+			case 'viewFileTimeMachine':
+				vscode.commands.executeCommand('git-map.fileTimeMachine', { repo: msg.repo, filePath: msg.filePath, commitHash: msg.commitHash }).then(() => { }, () => { });
+				break;
 			case 'loadLanguageModels':
 				await this.sendLanguageModels();
 				break;

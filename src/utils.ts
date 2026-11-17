@@ -398,11 +398,23 @@ function syncEditorHideUnchangedRegions(enabled: boolean): Promise<void> {
 	return updateConfigResilient(diffConfig, 'hideUnchangedRegions.enabled', enabled, true).then(() => { });
 }
 
+let syncingHideUnchangedDepth = 0;
+export function isInternalHideUnchangedWrite() {
+	return syncingHideUnchangedDepth > 0;
+}
+
 export async function setDiffHideUnchangedRegions(enabled: boolean): Promise<void> {
-	const gitMapConfig = vscode.workspace.getConfiguration('git-map');
-	const wrote = await updateConfigResilient(gitMapConfig, 'diff.hideUnchangedRegions', enabled, true);
-	await saveSettingFallback('diff.hideUnchangedRegions', wrote ? undefined : enabled);
-	await syncEditorHideUnchangedRegions(enabled);
+	syncingHideUnchangedDepth++;
+	try {
+		const gitMapConfig = vscode.workspace.getConfiguration('git-map');
+		const wrote = await updateConfigResilient(gitMapConfig, 'diff.hideUnchangedRegions', enabled, true);
+		await saveSettingFallback('diff.hideUnchangedRegions', wrote ? undefined : enabled);
+		await syncEditorHideUnchangedRegions(enabled);
+	} finally {
+		setTimeout(() => {
+			if (syncingHideUnchangedDepth > 0) syncingHideUnchangedDepth--;
+		}, 50);
+	}
 }
 
 export async function syncDiffHideUnchanged(onlyChanges?: boolean): Promise<void> {

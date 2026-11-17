@@ -8,6 +8,7 @@ import { DiffDocProvider } from './diffDocProvider';
 import { EscapeStack } from './escapeStack';
 import { ExtensionState } from './extensionState';
 import { FileBlame } from './fileBlame';
+import { FileTimeMachine } from './fileTimeMachine';
 import { GitGraphView } from './gitGraphView';
 import { LineBlame } from './lineBlame';
 import { LineHistory } from './lineHistory';
@@ -20,7 +21,7 @@ import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMess
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
-import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
+import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, isInternalHideUnchangedWrite, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
 import { EventEmitter } from './utils/event';
 import { t } from './l10n';
 
@@ -84,6 +85,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	const codeLens = new GitCodeLens(dataSource, repoManager, onDidChangeConfiguration, onDidChangeGitState);
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
+	const fileTimeMachine = new FileTimeMachine(dataSource, repoManager, logger);
 	setAiSecretStorage(context.secrets);
 	setSettingFallbackStorage(context.globalState);
 
@@ -104,17 +106,20 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (event.affectsConfiguration('git-map.commitDetailsView.actions')) {
 				void saveSettingFallback('commitDetailsView.actions', undefined);
 			}
-			if (event.affectsConfiguration('git-map.diff.hideUnchangedRegions')) {
-				void saveSettingFallback('diff.hideUnchangedRegions', undefined);
-				const enabled = !!vscode.workspace.getConfiguration('git-map').get('diff.hideUnchangedRegions', false);
-				void setDiffHideUnchangedRegions(enabled);
-			} else if (event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled')) {
-				const enabled = !!vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled', false);
-				if (getConfig().commitDetailsView.hideUnchangedRegions !== enabled) {
-					void setDiffHideUnchangedRegions(enabled).then(() => GitGraphView.notifyCdvConfigChanged());
+			if (!isInternalHideUnchangedWrite()) {
+				if (event.affectsConfiguration('git-map.diff.hideUnchangedRegions')) {
+					void saveSettingFallback('diff.hideUnchangedRegions', undefined);
+					const enabled = !!vscode.workspace.getConfiguration('git-map').get('diff.hideUnchangedRegions', false);
+					void setDiffHideUnchangedRegions(enabled);
+				} else if (event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled')) {
+					const enabled = !!vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled', false);
+					if (getConfig().commitDetailsView.hideUnchangedRegions !== enabled) {
+						void setDiffHideUnchangedRegions(enabled).then(() => GitGraphView.notifyCdvConfigChanged());
+					}
 				}
 			}
-			if (event.affectsConfiguration('git-map')) {
+			// Skip emitting configurationEmitter when only UI-only CDV/diff settings changed so DataSource/Blame don't respawn git processes
+			if (event.affectsConfiguration('git-map') && !isInternalHideUnchangedWrite()) {
 				configurationEmitter.emit(event);
 			} else if (event.affectsConfiguration('git.path')) {
 				const paths = getConfig().gitPaths;
@@ -151,6 +156,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		codeLens,
 		removeFromHistory,
 		visualFileHistory,
+		fileTimeMachine,
 		commandManager,
 		statusBarItem,
 		repoManager,

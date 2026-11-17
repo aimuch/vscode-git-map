@@ -155,6 +155,9 @@ export class VisualFileHistory extends Disposable {
 			case 'viewFileHistory':
 				await vscode.commands.executeCommand('git-map.viewFileHistory', vscode.Uri.file(shown.repo + '/' + shown.filePath));
 				break;
+			case 'fileTimeMachine':
+				await vscode.commands.executeCommand('git-map.fileTimeMachine', { repo: shown.repo, filePath: shown.filePath, commitHash: commit.hash });
+				break;
 		}
 		if (error !== null) showErrorMessage(error);
 	}
@@ -184,6 +187,7 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		openFile: t('Open File at this Commit'),
 		viewCommit: t('View Commit in Git Map'),
 		viewFileHistory: t('View File History in Git Map'),
+		fileTimeMachine: t('File Time Machine'),
 		sizeLegend: t('Circle size: lines changed'),
 		barsLegend: t('Lines added & deleted by each commit'),
 		noCommits: t('No commits in this range.'),
@@ -198,6 +202,7 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + STYLES + '</style></head><body>' +
 		'<header class="vfhHeader"><h1>' + escapeHtml(t('Visual File History')) + '</h1><span class="vfhPath">' + escapeHtml(filePath) + '</span><span class="vfhSpacer"></span>' +
 		'<div class="vfhRange" role="group" aria-label="' + escapeHtml(t('Time range')) + '"><button type="button" data-range="90">' + escapeHtml(strings.days90) + '</button><button type="button" data-range="365">' + escapeHtml(strings.year) + '</button><button type="button" data-range="0">' + escapeHtml(strings.all) + '</button></div>' +
+		'<button type="button" class="vfhButton primary" data-action="fileTimeMachine">' + escapeHtml(strings.fileTimeMachine) + '</button>' +
 		'<button type="button" class="vfhButton" data-action="viewFileHistory">' + escapeHtml(strings.viewFileHistory) + '</button></header>' +
 		'<div id="summary" class="vfhSummary"></div>' +
 		'<div class="vfhBody"><figure class="vfhChart" aria-label="' + escapeHtml(t('Commits that changed the file, by author')) + '"><div class="vfhPlot"><div id="lanes" class="vfhLanes"></div><div id="plot" class="vfhArea"></div></div><div id="axis" class="vfhAxis"></div><div id="bars" class="vfhBars"></div>' +

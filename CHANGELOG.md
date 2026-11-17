@@ -1,5 +1,9 @@
 # Change Log
 
+## 2.2.2 - 2026-11-17
+* File Time Machine (`Git Map: File Time Machine` / "File Time Machine" in the context menu of files in the Commit Details View, Explorer & editors, and in the Diff Editor & Visual File History toolbars): an interactive vertical timeline ruler with a `− / +` zoom slider and a draggable `LIVE` playhead (following the file across renames and including uncommitted working-tree changes), paired with an instant in-panel viewer that switches between **Changes Only**, **Full Diff**, and **Full File** snapshot as you drag, click ticks, or step with the `↑` / `↓` keys.
+* Commit Details View tab bar refinements: separated the labelled **Changes Only** diff pill from the grouped **File Tree / File List** segmented toggle, and eliminated redundant configuration change emissions and duplicate DOM rebuilds so switching modes responds instantaneously.
+
 ## 2.2.1 - 2026-11-17
 * Commit Details View, Diff Editor & UI refinements:
     * Crisp, theme-adaptive leading icons across context menus, Commit Details action buttons, tabs, branch pills, popovers, dialogs, the Settings drawer, and Visual Studio Code command contributions.
