@@ -208,6 +208,61 @@ describe('getLanguageModels', () => {
 		expect(storage.values.has('git-map.ai.apiKey.DeepSeek')).toBe(false);
 		expect((await getLanguageModels()).needsApiKey).toBe(true);
 	});
+
+	it('Should use the local gateway of Magpie & the local routing of CC Switch without an API key', async () => {
+		const fs = require('fs'), os = require('os'), path = require('path');
+		const configHome = fs.mkdtempSync(path.join(os.tmpdir(), 'git-map-magpie-'));
+		const previousConfigHome = process.env.XDG_CONFIG_HOME;
+		process.env.XDG_CONFIG_HOME = configHome;
+		try {
+			// Magpie, before its gateway has recorded its address: the default port
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'Magpie');
+			vscode.mockExtensionSettingReturnValue('ai.model', 'claude-sonnet-4-5');
+			expect(await getLanguageModels()).toStrictEqual({
+				models: [{ id: 'claude-sonnet-4-5', name: 'claude-sonnet-4-5', vendor: 'Magpie', endpoint: '127.0.0.1:3425' }],
+				error: null,
+				needsApiKey: false
+			});
+
+			// Magpie, with the address its gateway recorded in gateway.json
+			fs.mkdirSync(path.join(configHome, 'magpie'));
+			fs.writeFileSync(path.join(configHome, 'magpie', 'gateway.json'), JSON.stringify({ addr: '0.0.0.0:4567', pid: 1, serves: 'tray' }));
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'Magpie');
+			vscode.mockExtensionSettingReturnValue('ai.model', 'claude-sonnet-4-5');
+			expect(await getLanguageModels()).toStrictEqual({
+				models: [{ id: 'claude-sonnet-4-5', name: 'claude-sonnet-4-5', vendor: 'Magpie', endpoint: '127.0.0.1:4567' }],
+				error: null,
+				needsApiKey: false
+			});
+
+			// Magpie, with an unexpected address in gateway.json: the default port
+			fs.writeFileSync(path.join(configHome, 'magpie', 'gateway.json'), JSON.stringify({ addr: 'http://evil.example/' }));
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'Magpie');
+			vscode.mockExtensionSettingReturnValue('ai.model', 'claude-sonnet-4-5');
+			expect((await getLanguageModels()).models[0].endpoint).toBe('127.0.0.1:3425');
+
+			// CC Switch: a model must be set
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'CC Switch');
+			vscode.mockExtensionSettingReturnValue('ai.model', '');
+			expect(await getLanguageModels()).toStrictEqual({
+				models: [],
+				error: 'Set the model of CC Switch to use in the "git-map.ai.model" setting.',
+				needsApiKey: false
+			});
+
+			vscode.mockExtensionSettingReturnValue('ai.provider', 'CC Switch');
+			vscode.mockExtensionSettingReturnValue('ai.model', 'gpt-5-codex');
+			expect(await getLanguageModels()).toStrictEqual({
+				models: [{ id: 'gpt-5-codex', name: 'gpt-5-codex', vendor: 'CC Switch', endpoint: '127.0.0.1:15721' }],
+				error: null,
+				needsApiKey: false
+			});
+		} finally {
+			if (typeof previousConfigHome === 'undefined') delete process.env.XDG_CONFIG_HOME;
+			else process.env.XDG_CONFIG_HOME = previousConfigHome;
+			fs.rmSync(configHome, { recursive: true, force: true });
+		}
+	});
 });
 
 describe('getExplainPrompt', () => {

@@ -374,6 +374,8 @@
 						"Qwen",
 						"OpenAI",
 						"Ollama",
+						"Magpie",
+						"CC Switch",
 						"OpenAI Compatible"
 					],
 					"enumDescriptions": [
@@ -384,7 +386,9 @@
 						"%config.ai.provider.enumDescriptions.4%",
 						"%config.ai.provider.enumDescriptions.5%",
 						"%config.ai.provider.enumDescriptions.6%",
-						"%config.ai.provider.enumDescriptions.7%"
+						"%config.ai.provider.enumDescriptions.7%",
+						"%config.ai.provider.enumDescriptions.8%",
+						"%config.ai.provider.enumDescriptions.9%"
 					],
 					"default": "VS Code",
 					"description": "%config.ai.provider.description%",

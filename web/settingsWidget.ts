@@ -233,6 +233,8 @@ class SettingsWidget {
 				switch (preset.id) {
 					case 'VS Code': return t('VS Code (Built-in / Copilot)');
 					case 'Ollama': return t('Ollama (Local)');
+					case 'Magpie': return t('Magpie (Local Gateway)');
+					case 'CC Switch': return t('CC Switch (Local Routing)');
 					case 'OpenAI Compatible': return t('OpenAI Compatible');
 					default: return preset.name;
 				}
@@ -263,7 +265,10 @@ class SettingsWidget {
 					'<span class="settingsKey">' + t('API Key:') + '</span><span class="settingsValue">' + apiKeyStatus + '</span>'
 					: '') +
 				'</div>' +
-				(!isDirectAi ? '<p class="settingsDescription">' + t('Uses the language models provided in Visual Studio Code (e.g. GitHub Copilot Chat). No API URL or API key is needed.') + '</p>' : '');
+				(!isDirectAi ? '<p class="settingsDescription">' + t('Uses the language models provided in Visual Studio Code (e.g. GitHub Copilot Chat). No API URL or API key is needed.') + '</p>'
+					: ai.provider === 'Magpie' ? '<p class="settingsDescription">' + t('Requests go through the local gateway of Magpie, which calls the providers signed in to it. Keep Magpie running, and set a model it serves. No API key is needed.') + '</p>'
+						: ai.provider === 'CC Switch' ? '<p class="settingsDescription">' + t('Requests go through the local routing of CC Switch to the provider currently selected for Codex. Turn on local routing in CC Switch, and set a model that provider serves. No API key is needed.') + '</p>'
+							: '');
 			html += '<div class="settingsSection" id="settingsAiSection"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +

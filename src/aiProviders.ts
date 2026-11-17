@@ -1,3 +1,6 @@
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { t } from './l10n';
@@ -15,6 +18,8 @@ export const enum AiProvider {
 	Qwen = 'Qwen',
 	OpenAI = 'OpenAI',
 	Ollama = 'Ollama',
+	Magpie = 'Magpie',
+	CCSwitch = 'CC Switch',
 	OpenAICompatible = 'OpenAI Compatible'
 }
 
@@ -32,6 +37,8 @@ const PRESETS: { readonly [provider: string]: AiProviderPreset } = {
 	[AiProvider.Qwen]: { name: 'Qwen (Alibaba Cloud Model Studio)', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-plus', requiresApiKey: true },
 	[AiProvider.OpenAI]: { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', model: '', requiresApiKey: true },
 	[AiProvider.Ollama]: { name: 'Ollama', baseUrl: 'http://localhost:11434/v1', model: '', requiresApiKey: false },
+	[AiProvider.Magpie]: { name: 'Magpie', baseUrl: 'http://127.0.0.1:3425/v1', model: '', requiresApiKey: false },
+	[AiProvider.CCSwitch]: { name: 'CC Switch', baseUrl: 'http://127.0.0.1:15721/v1', model: '', requiresApiKey: false },
 	[AiProvider.OpenAICompatible]: { name: 'OpenAI Compatible', baseUrl: '', model: '', requiresApiKey: false }
 };
 
@@ -56,10 +63,41 @@ export function getDirectAiConfig(): DirectAiConfig | null {
 	return {
 		provider: provider,
 		name: preset.name,
-		baseUrl: (config.aiBaseUrl !== '' ? config.aiBaseUrl : preset.baseUrl).replace(/\/+$/, ''),
+		baseUrl: (config.aiBaseUrl !== '' ? config.aiBaseUrl : getDefaultBaseUrl(provider)).replace(/\/+$/, ''),
 		model: config.aiModel !== '' ? config.aiModel : preset.model,
 		requiresApiKey: preset.requiresApiKey
 	};
+}
+
+/**
+ * Get the default base URL of a direct provider. Magpie's local gateway records the address it listens on in
+ * `~/.config/magpie/gateway.json` (`{"addr": "127.0.0.1:3425", ...}`), which is used when it's available.
+ */
+function getDefaultBaseUrl(provider: AiProvider) {
+	if (provider === AiProvider.Magpie) {
+		const addr = readMagpieGatewayAddress();
+		if (addr !== null) return 'http://' + addr + '/v1';
+	}
+	return PRESETS[provider].baseUrl;
+}
+
+/**
+ * Read the address of Magpie's running local gateway.
+ * @returns The host & port (e.g. "127.0.0.1:3425"), or NULL if it can't be read.
+ */
+function readMagpieGatewayAddress(): string | null {
+	const configHome = typeof process.env.XDG_CONFIG_HOME === 'string' && process.env.XDG_CONFIG_HOME !== '' ? process.env.XDG_CONFIG_HOME : path.join(os.homedir(), '.config');
+	try {
+		const gateway = JSON.parse(fs.readFileSync(path.join(configHome, 'magpie', 'gateway.json'), 'utf8'));
+		const addr = gateway !== null && typeof gateway === 'object' && typeof gateway.addr === 'string' ? gateway.addr.trim() : '';
+		const match = addr.match(/^(\[[0-9a-fA-F:]+\]|[A-Za-z0-9.-]+):(\d{1,5})$/);
+		if (match === null) return null;
+		// A gateway listening on all interfaces is reached locally
+		const host = match[1] === '0.0.0.0' || match[1] === '[::]' ? '127.0.0.1' : match[1];
+		return host + ':' + match[2];
+	} catch (_) {
+		return null;
+	}
 }
 
 /**
@@ -80,6 +118,8 @@ const ALL_DIRECT_PROVIDERS: ReadonlyArray<AiProvider> = [
 	AiProvider.Qwen,
 	AiProvider.OpenAI,
 	AiProvider.Ollama,
+	AiProvider.Magpie,
+	AiProvider.CCSwitch,
 	AiProvider.OpenAICompatible
 ];
 
@@ -155,7 +195,7 @@ function getAiProviderPresets(): ReadonlyArray<AiProviderPresetInfo> {
 		...ALL_DIRECT_PROVIDERS.map((id) => ({
 			id: id,
 			name: PRESETS[id].name,
-			defaultBaseUrl: PRESETS[id].baseUrl,
+			defaultBaseUrl: getDefaultBaseUrl(id),
 			defaultModel: PRESETS[id].model,
 			requiresApiKey: PRESETS[id].requiresApiKey
 		}))

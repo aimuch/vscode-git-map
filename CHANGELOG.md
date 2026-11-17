@@ -2,6 +2,7 @@
 
 ## 2.2.2 - 2026-11-17
 * File Time Machine (`Git Map: File Time Machine` / "File Time Machine" in the context menu of files in the Commit Details View, Explorer & editors, and in the Diff Editor & Visual File History toolbars): an interactive vertical timeline ruler with a `− / +` zoom slider and a draggable `LIVE` playhead (following the file across renames and including uncommitted working-tree changes), paired with an instant in-panel viewer that switches between **Changes Only**, **Full Diff**, and **Full File** snapshot as you drag, click ticks, or step with the `↑` / `↓` keys.
+* AI providers: `Magpie` (calls its local gateway, at the address recorded in `~/.config/magpie/gateway.json` or `http://127.0.0.1:3425/v1`) and `CC Switch` (calls its local routing at `http://127.0.0.1:15721/v1`, which forwards to the provider selected for Codex) in `git-map.ai.provider` and the Settings panel. Neither needs an API key in Git Map; set the model in `git-map.ai.model`.
 * Commit Details View tab bar refinements: separated the labelled **Changes Only** diff pill from the grouped **File Tree / File List** segmented toggle, and eliminated redundant configuration change emissions and duplicate DOM rebuilds so switching modes responds instantaneously.
 
 ## 2.2.1 - 2026-11-17

@@ -126,6 +126,8 @@ All `git-map.ai.*` settings can also be configured directly in the **AI · All R
 | `Qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | Yes |
 | `OpenAI` | `https://api.openai.com/v1` | *(set `git-map.ai.model`)* | Yes |
 | `Ollama` | `http://localhost:11434/v1` | *(set `git-map.ai.model`)* | No |
+| `Magpie` | The address of Magpie's local gateway in `~/.config/magpie/gateway.json` (otherwise `http://127.0.0.1:3425/v1`) | *(set `git-map.ai.model`)* | No |
+| `CC Switch` | `http://127.0.0.1:15721/v1` (CC Switch's local routing; requests go to the provider selected for Codex) | *(set `git-map.ai.model`)* | No |
 | `OpenAI Compatible` | *(set `git-map.ai.baseUrl`)* | *(set `git-map.ai.model`)* | Optional |
 
 * `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). All `git-map.ai.*` settings (`commitMessage.enabled`, `explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable AI requests or redirect endpoints.

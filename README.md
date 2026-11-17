@@ -106,7 +106,7 @@ A summary of the Git Map extension settings are:
     * **Commit Message**: Enable generating commit messages from uncommitted changes in the Source Control view and the Git Map View (`git-map.ai.commitMessage.enabled`, default: enabled).
     * **Explain Commit**: Show an "Explain" tab in the Commit Details View, where a language model explains the commit (default: disabled).
     * **Model**: The model ID (or endpoint ID) sent when calling a provider directly (`git-map.ai.model`).
-    * **Provider**: The provider of the language model (`git-map.ai.provider`): `VS Code` (default), `DeepSeek`, `Kimi`, `Doubao`, `Qwen`, `OpenAI`, `Ollama`, or `OpenAI Compatible`. API keys are managed in Git Map's Settings panel or with the `Git Map: Set AI API Key...` and `Git Map: Clear AI API Key` commands.
+    * **Provider**: The provider of the language model (`git-map.ai.provider`): `VS Code` (default), `DeepSeek`, `Kimi`, `Doubao`, `Qwen`, `OpenAI`, `Ollama`, `Magpie` (its local gateway), `CC Switch` (its local routing), or `OpenAI Compatible`. API keys are managed in Git Map's Settings panel or with the `Git Map: Set AI API Key...` and `Git Map: Clear AI API Key` commands.
 * **Blame**:
     * **Current Line**: Show who last changed the line the cursor is on, and when & why (the author, date & subject of the commit), at the end of the line in the editor (default: enabled).
     * **Ignore Revs File**: The file listing the commits that blame ignores, e.g. commits that only reformat code (default: `.git-blame-ignore-revs`, used when it exists).
