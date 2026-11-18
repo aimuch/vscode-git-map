@@ -8,6 +8,7 @@ import { GitFeatures } from './gitFeatures';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
+import { AsyncRequestSequencer } from './stateMachines';
 import { GitFileStatus, GitFileTimelineCommit } from './types';
 import { UNCOMMITTED, copyToClipboard, getNonce, getPathFromUri, showErrorMessage, showInformationMessage, viewDiff, viewFileAtRevision } from './utils';
 import { Disposable } from './utils/disposable';
@@ -60,6 +61,7 @@ export class FileTimeMachine extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly logger: Logger;
 	private readonly gitFeatures: GitFeatures;
+	private readonly compareSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
 	private panel: vscode.WebviewPanel | null = null;
 	private shown: ShownTimeMachine | null = null;
 
@@ -74,6 +76,7 @@ export class FileTimeMachine extends Disposable {
 			vscode.commands.registerCommand('git-map.fileTimeMachine', (arg: unknown) => this.show(arg)),
 			{
 				dispose: () => {
+					this.compareSeq.cancel();
 					if (this.panel !== null) this.panel.dispose();
 					if (FileTimeMachine.instance === this) FileTimeMachine.instance = null;
 				}
@@ -356,6 +359,7 @@ export class FileTimeMachine extends Disposable {
 			const baseEntry = shown.entries[message.baseIndex];
 			const targetEntry = shown.entries[message.targetIndex];
 			if (typeof baseEntry === 'undefined' || typeof targetEntry === 'undefined') return;
+			const cmpSeq = this.compareSeq.begin();
 			let diff = '', err: string | null = null;
 			if (baseEntry.hash === targetEntry.hash) {
 				diff = '';
@@ -379,7 +383,7 @@ export class FileTimeMachine extends Disposable {
 				diff = res.diff;
 				err = res.error;
 			}
-			if (this.panel !== null && this.shown === shown) {
+			if (this.compareSeq.complete(cmpSeq) && this.panel !== null && this.shown === shown) {
 				this.panel.webview.postMessage({
 					command: 'comparisonData',
 					baseIndex: message.baseIndex,
@@ -1030,6 +1034,8 @@ const SCRIPT = `
 
 	function renderHeader() {
 		var e = ENTRIES[currentIndex];
+		document.body.dataset.smMode = mode;
+		document.body.dataset.smPinned = baseIndex > -1 ? 'true' : 'false';
 		document.querySelectorAll('.ftmModes button').forEach(function (btn) {
 			var active = btn.dataset.mode === mode;
 			btn.classList.toggle('active', active);
@@ -1269,6 +1275,7 @@ const SCRIPT = `
 			var rect = track.getBoundingClientRect();
 			var pinned = indexForY(e.clientY - rect.top, rect.height);
 			baseIndex = (baseIndex === pinned) ? -1 : pinned;
+			if (baseIndex > -1 && mode === 'snapshot') mode = 'changes';
 			updatePlayheadPosition(null, false);
 			renderHeader();
 			renderCode();
@@ -1316,6 +1323,7 @@ const SCRIPT = `
 		}
 		if (t.closest('#ftmPinBase')) {
 			baseIndex = (baseIndex > -1) ? -1 : currentIndex;
+			if (baseIndex > -1 && mode === 'snapshot') mode = 'changes';
 			updatePlayheadPosition(null, false);
 			renderHeader();
 			renderCode();

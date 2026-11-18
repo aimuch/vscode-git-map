@@ -21,14 +21,17 @@ const HTTP_TIMEOUT_MS = 4500;
 
 let hostingSecrets: vscode.SecretStorage | null = null;
 const prCache = new Map<string, { expiresAt: number, badges: { [branch: string]: PullRequestBadgeInfo } }>();
+const inFlightPrRequests = new Map<string, Promise<{ [branch: string]: PullRequestBadgeInfo }>>();
 
 export function setHostingSecretStorage(secrets: vscode.SecretStorage | null) {
 	hostingSecrets = secrets;
 	prCache.clear();
+	inFlightPrRequests.clear();
 }
 
 export function clearPrStatusCache() {
 	prCache.clear();
+	inFlightPrRequests.clear();
 }
 
 export function parseHostingRemoteUrl(remoteName: string, rawUrl: string): ParsedHostingRemote | null {
@@ -160,6 +163,22 @@ export async function fetchRepoPullRequestBadges(dataSource: DataSource, repo: s
 	if (!force && typeof cached !== 'undefined' && cached.expiresAt > Date.now()) {
 		return cached.badges;
 	}
+	const existingInFlight = !force ? inFlightPrRequests.get(repo) : undefined;
+	if (typeof existingInFlight !== 'undefined') {
+		return existingInFlight;
+	}
+	const task = performFetchRepoPullRequestBadges(dataSource, repo);
+	inFlightPrRequests.set(repo, task);
+	try {
+		return await task;
+	} finally {
+		if (inFlightPrRequests.get(repo) === task) {
+			inFlightPrRequests.delete(repo);
+		}
+	}
+}
+
+async function performFetchRepoPullRequestBadges(dataSource: DataSource, repo: string): Promise<{ [branch: string]: PullRequestBadgeInfo }> {
 	const remote = await detectHostingRemote(dataSource, repo);
 	if (remote === null) return {};
 	const token = await getHostingToken(remote.host);

@@ -221,6 +221,9 @@ class GitGraphView {
 			if (e.target.closest('.undoToastAction, .undoToastClose') !== null) this.hideUndoToast();
 		});
 
+		this.findWidget = new FindWidget(this);
+		this.settingsWidget = new SettingsWidget(this);
+
 		this.refreshBtnElem = document.getElementById('refreshBtn')!;
 		this.refreshBtnElem.addEventListener('click', () => {
 			if (!this.refreshBtnElem.classList.contains(CLASS_REFRESHING)) {
@@ -228,9 +231,6 @@ class GitGraphView {
 			}
 		});
 		this.renderRefreshButton();
-
-		this.findWidget = new FindWidget(this);
-		this.settingsWidget = new SettingsWidget(this);
 		this.observeOverviews();
 
 		alterClass(document.body, CLASS_BRANCH_LABELS_ALIGNED_TO_GRAPH, this.config.referenceLabels.branchLabelsAlignedToGraph);
@@ -2080,6 +2080,7 @@ class GitGraphView {
 		this.refreshBtnElem.title = enabled ? t('Refresh') : t('Refreshing');
 		this.refreshBtnElem.innerHTML = enabled ? SVG_ICONS.refresh : SVG_ICONS.loading;
 		alterClass(this.refreshBtnElem, CLASS_REFRESHING, !enabled);
+		this.syncAxState();
 	}
 
 	public renderTagDetails(tagName: string, commitHash: string, details: GG.GitTagDetails) {
@@ -2431,10 +2432,14 @@ class GitGraphView {
 				} else if (this.findWidget.isVisible()) {
 					this.findWidget.close();
 					handledEvent(e);
+				} else if (this.cdvComparePending) {
+					this.cancelCdvComparePending();
+					handledEvent(e);
 				} else if (this.expandedCommit !== null) {
 					this.closeCommitDetails(true);
 					handledEvent(e);
 				}
+				this.syncAxState();
 			}
 		});
 	}
@@ -2810,6 +2815,7 @@ class GitGraphView {
 		}
 		GitGraphView.closeCdvContextMenuIfOpen(expandedCommit);
 		this.expandedCommit = null;
+		this.syncAxState();
 		if (saveAndRender) {
 			this.saveState();
 			if (!isDocked) {
@@ -3087,6 +3093,7 @@ class GitGraphView {
 		}
 
 		this.makeCdvResizable();
+		this.syncAxState();
 		document.getElementById('cdvClose')!.addEventListener('click', () => {
 			this.closeCommitDetails(true);
 		});
@@ -3466,6 +3473,61 @@ class GitGraphView {
 			this.cdvComparePending = !this.cdvComparePending;
 			alterClass(compareElem, CLASS_ACTIVE, this.cdvComparePending);
 			compareElem.innerHTML = SVG_ICONS.compare + (this.cdvComparePending ? t('Click on a commit to compare with') : t('Compare with…'));
+			this.syncAxState();
+		});
+	}
+
+	public cancelCdvComparePending() {
+		if (!this.cdvComparePending) return;
+		this.cdvComparePending = false;
+		const compareElem = document.getElementById('cdvCompare');
+		if (compareElem !== null) {
+			alterClass(compareElem, CLASS_ACTIVE, false);
+			compareElem.innerHTML = SVG_ICONS.compare + t('Compare with…');
+		}
+		this.syncAxState();
+	}
+
+	public getActiveOverlay(): string {
+		if (dialog.isOpen()) return 'dialog';
+		if (contextMenu.isOpen()) return 'context-menu';
+		if (this.isHunkModalOpen()) return 'hunk-modal';
+		if (this.isCdvActionsCustomizerOpen()) return 'cdv-actions-modal';
+		if (this.commitExplainer && this.commitExplainer.isCommitMessageModalOpen()) return 'ai-commit-modal';
+		if (this.rebaseEditor && this.rebaseEditor.isOpen()) return 'rebase-editor';
+		if (this.branchCleanup && this.branchCleanup.isOpen()) return 'branch-cleanup';
+		if (this.selectedCommits.size > 0) return 'multi-select';
+		if (this.worktreeList && this.worktreeList.isListOpen()) return 'worktree-list';
+		if (this.stashList && this.stashList.isStashListOpen()) return 'stash-list';
+		if (this.repoDropdown && this.repoDropdown.isOpen()) return 'repo-dropdown';
+		if (this.branchDropdown && this.branchDropdown.isOpen()) return 'branch-dropdown';
+		if (this.authorDropdown && this.authorDropdown.isOpen()) return 'author-dropdown';
+		if (this.settingsWidget && this.settingsWidget.isVisible()) return 'settings';
+		if (this.findWidget && this.findWidget.isVisible()) return 'find';
+		if (this.cdvComparePending) return 'cdv-compare-pick';
+		if (this.expandedCommit !== null) return 'cdv';
+		return 'none';
+	}
+
+	public syncAxState() {
+		const refreshStatus = !this.currentRepoRefreshState.inProgress
+			? 'idle'
+			: (this.currentRepoRefreshState.requestingRepoInfo ? 'loading-info' : 'loading-commits');
+		const cdvStatus = this.expandedCommit === null
+			? 'closed'
+			: this.cdvComparePending
+				? 'await-compare'
+				: this.expandedCommit.loading
+					? 'loading'
+					: this.expandedCommit.compareWithHash !== null
+						? 'comparison'
+						: this.expandedCommit.commitHash === UNCOMMITTED
+							? 'uncommitted'
+							: 'commit';
+		syncBodyStateAttrs({
+			smRefresh: refreshStatus,
+			smCdv: cdvStatus,
+			smOverlay: this.getActiveOverlay()
 		});
 	}
 
@@ -4327,6 +4389,7 @@ class GitGraphView {
 			this.hunkModalElem = null;
 		}
 		this.hunkModalState = null;
+		this.syncAxState();
 	}
 
 	public openHunkStagingModal(filePath: string, staged: boolean) {
@@ -4359,6 +4422,7 @@ class GitGraphView {
 		});
 		document.body.appendChild(modal);
 		this.hunkModalElem = modal;
+		this.syncAxState();
 		sendMessage({ command: 'loadFileHunkDiff', repo: this.currentRepo, filePath: filePath, staged: staged });
 	}
 
@@ -4378,20 +4442,22 @@ class GitGraphView {
 		const selectedByHunk: Set<number>[] = parsed.hunks.map(() => new Set<number>());
 		let lastClicked: { hunkIdx: number, lineIdx: number } | null = null;
 
+		const renderHunkBtnsHtml = (idx: number) => {
+			const selCount = selectedByHunk[idx].size;
+			return (selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="stage" data-hunk-partial="1">+ ' + t('Stage Selected ({0})', selCount) + '</button>' : '') +
+				(selCount > 0 && msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="unstage" data-hunk-partial="1">&minus; ' + t('Unstage Selected ({0})', selCount) + '</button>' : '') +
+				(selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard" data-hunk-partial="1">&times; ' + t('Discard Selected ({0})', selCount) + '</button>' : '') +
+				(!msg.staged ? '<button type="button" class="cdvMiniBtn' + (selCount === 0 ? ' primary' : '') + '" data-hunk-idx="' + idx + '" data-hunk-act="stage">+ ' + t('Stage Hunk') + '</button>' : '') +
+				(msg.staged ? '<button type="button" class="cdvMiniBtn" data-hunk-idx="' + idx + '" data-hunk-act="unstage">&minus; ' + t('Unstage Hunk') + '</button>' : '') +
+				(!msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard">&times; ' + t('Discard Hunk') + '</button>' : '');
+		};
+
 		const renderHunkBlocks = () => {
 			body.innerHTML = '<div class="cdvHunkHint">' + escapeHtml(t('Click or Shift+click changed (+ / −) lines to stage, unstage, or discard individual lines.')) + '</div>' +
 				parsed.hunks.map((hunk, idx) => {
-					const selCount = selectedByHunk[idx].size;
-					return '<div class="cdvHunkBlock">' +
+					return '<div class="cdvHunkBlock" data-hunk-block="' + idx + '">' +
 						'<div class="cdvHunkBlockHdr"><code>' + escapeHtml(hunk.headerLine) + '</code>' +
-						'<span class="cdvHunkBlockBtns">' +
-						(selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="stage" data-hunk-partial="1">+ ' + t('Stage Selected ({0})', selCount) + '</button>' : '') +
-						(selCount > 0 && msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="unstage" data-hunk-partial="1">&minus; ' + t('Unstage Selected ({0})', selCount) + '</button>' : '') +
-						(selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard" data-hunk-partial="1">&times; ' + t('Discard Selected ({0})', selCount) + '</button>' : '') +
-						(!msg.staged ? '<button type="button" class="cdvMiniBtn' + (selCount === 0 ? ' primary' : '') + '" data-hunk-idx="' + idx + '" data-hunk-act="stage">+ ' + t('Stage Hunk') + '</button>' : '') +
-						(msg.staged ? '<button type="button" class="cdvMiniBtn" data-hunk-idx="' + idx + '" data-hunk-act="unstage">&minus; ' + t('Unstage Hunk') + '</button>' : '') +
-						(!msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard">&times; ' + t('Discard Hunk') + '</button>' : '') +
-						'</span></div>' +
+						'<span class="cdvHunkBlockBtns">' + renderHunkBtnsHtml(idx) + '</span></div>' +
 						'<pre class="cdvHunkPre">' + hunk.lines.map((ln, lIdx) => {
 						const selectable = ln.startsWith('+') || ln.startsWith('-');
 						const cls = (ln.startsWith('+') ? 'add' : ln.startsWith('-') ? 'del' : 'ctx') + (selectable ? ' selectable' : '') + (selectedByHunk[idx].has(lIdx) ? ' selected' : '');
@@ -4399,6 +4465,22 @@ class GitGraphView {
 					}).join('') + '</pre></div>';
 				}).join('');
 		};
+
+		const updateHunkSelectionInPlace = (idx: number) => {
+			const block = body.querySelector('.cdvHunkBlock[data-hunk-block="' + idx + '"]');
+			if (block === null) {
+				renderHunkBlocks();
+				return;
+			}
+			const btnsElem = block.querySelector('.cdvHunkBlockBtns');
+			if (btnsElem !== null) btnsElem.innerHTML = renderHunkBtnsHtml(idx);
+			const set = selectedByHunk[idx];
+			block.querySelectorAll<HTMLElement>('.cdvHunkLine[data-sel-line]').forEach((el) => {
+				const lIdx = parseInt(el.dataset.selLine || '-1', 10);
+				el.classList.toggle('selected', set.has(lIdx));
+			});
+		};
+
 		renderHunkBlocks();
 
 		body.onclick = (e: MouseEvent) => {
@@ -4421,7 +4503,7 @@ class GitGraphView {
 					set.add(lIdx);
 				}
 				lastClicked = { hunkIdx: hIdx, lineIdx: lIdx };
-				renderHunkBlocks();
+				updateHunkSelectionInPlace(hIdx);
 				return;
 			}
 			const btn = <HTMLElement | null>e.target.closest('[data-hunk-act]');

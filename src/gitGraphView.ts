@@ -14,6 +14,7 @@ import { Logger } from './logger';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
 import { fetchRepoPullRequestBadges } from './prStatusIntegration';
+import { PanelSyncMachine } from './stateMachines';
 import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, fillScmCommitMessage, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, syncDiffHideUnchanged, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
@@ -51,18 +52,22 @@ export class GitGraphView extends Disposable {
 	private explainCancellation: vscode.CancellationTokenSource | null = null;
 	private commitMessageCancellation: vscode.CancellationTokenSource | null = null;
 	private searchCancellation: vscode.CancellationTokenSource | null = null;
-	private isGraphViewLoaded: boolean = false;
+	private readonly panelSync: PanelSyncMachine = new PanelSyncMachine(true);
 	private fileIconThemeWatcher: vscode.Disposable | null = null;
 	private fileIconThemeWatched: string | null = null; // The path of the definition of the file icon theme that's watched
 	private fileIconThemeRetry: NodeJS.Timeout | null = null;
 	private fileIconThemeRetries: number = 0;
-	private isPanelVisible: boolean = true;
 	private currentRepo: string | null = null;
 	private lastHiddenRepo: string | null = null;
-	private needsFullUpdate: boolean = false;
-	private needsAiSync: boolean = false;
-	private needsCdvSync: boolean = false;
 	private loadViewTo: LoadGitGraphViewTo = null; // Is used by the next call to getHtmlForWebview, and is then reset to null
+
+	private get isPanelVisible(): boolean {
+		return this.panelSync.state.visible;
+	}
+
+	private get isGraphViewLoaded(): boolean {
+		return this.panelSync.state.loaded;
+	}
 
 	private loadRepoInfoRefreshId: number = 0;
 	private loadCommitsRefreshId: number = 0;
@@ -160,27 +165,23 @@ export class GitGraphView extends Disposable {
 				if (this.panel.visible !== this.isPanelVisible) {
 					if (this.panel.visible) {
 						const repos = this.repoManager.getRepos();
-						if (this.retainContextWhenHidden && this.isGraphViewLoaded && this.panel.webview.html !== '' && !this.needsFullUpdate && Object.keys(repos).length > 0) {
+						const dirty = this.panelSync.consumeDirty();
+						if (this.retainContextWhenHidden && this.isGraphViewLoaded && this.panel.webview.html !== '' && dirty.kind !== 'full' && Object.keys(repos).length > 0) {
 							const loadViewTo = this.loadViewTo;
 							this.loadViewTo = null;
 							if (this.lastHiddenRepo !== null && typeof repos[this.lastHiddenRepo] !== 'undefined') {
 								this.currentRepo = this.lastHiddenRepo;
 								this.repoFileWatcher.start(this.currentRepo);
 							}
-							if (this.needsAiSync) {
-								this.needsAiSync = false;
+							if (dirty.kind === 'partial' && dirty.ai) {
 								void this.sendAiState();
 							}
-							if (this.needsCdvSync) {
-								this.needsCdvSync = false;
+							if (dirty.kind === 'partial' && dirty.cdv) {
 								this.sendCdvConfig();
 							}
 							this.respondLoadRepos(repos, loadViewTo);
 							if (loadViewTo === null) this.sendMessage({ command: 'refresh' });
 						} else {
-							this.needsFullUpdate = false;
-							this.needsAiSync = false;
-							this.needsCdvSync = false;
 							this.update();
 						}
 					} else {
@@ -188,7 +189,7 @@ export class GitGraphView extends Disposable {
 						this.currentRepo = null;
 						this.repoFileWatcher.stop();
 					}
-					this.isPanelVisible = this.panel.visible;
+					this.panelSync.setVisible(this.panel.visible);
 				}
 			}),
 
@@ -196,22 +197,21 @@ export class GitGraphView extends Disposable {
 			vscode.workspace.onDidChangeConfiguration((event) => {
 				if (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language')) {
 					if (this.panel.visible) {
-						this.needsFullUpdate = false;
 						this.update();
 					} else {
-						this.needsFullUpdate = true;
+						this.panelSync.markFullDirty();
 					}
 				} else if (event.affectsConfiguration('git-map.ai.explainCommit.enabled') || event.affectsConfiguration('git-map.ai.commitMessage.enabled') || event.affectsConfiguration('git-map.ai.provider') || event.affectsConfiguration('git-map.ai.baseUrl') || event.affectsConfiguration('git-map.ai.model')) {
 					if (this.panel.visible && this.isGraphViewLoaded) {
 						void this.sendAiState();
 					} else {
-						this.needsAiSync = true;
+						this.panelSync.markAiDirty();
 					}
 				} else if (event.affectsConfiguration('git-map.commitDetailsView.actions') || event.affectsConfiguration('git-map.diff.hideUnchangedRegions') || event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled') || event.affectsConfiguration('git-map.integrations.pullRequestStatus.enabled')) {
 					if (this.panel.visible && this.isGraphViewLoaded) {
 						this.sendCdvConfig();
 					} else {
-						this.needsCdvSync = true;
+						this.panelSync.markCdvDirty();
 					}
 				} else if (this.panel.visible && this.isGraphViewLoaded && event.affectsConfiguration('workbench.iconTheme')) {
 					this.fileIconThemeRetries = 0;
@@ -224,7 +224,7 @@ export class GitGraphView extends Disposable {
 				if (this.panel.visible && this.isGraphViewLoaded) {
 					void this.sendAiState();
 				} else {
-					this.needsAiSync = true;
+					this.panelSync.markAiDirty();
 				}
 			}),
 
@@ -233,7 +233,7 @@ export class GitGraphView extends Disposable {
 				if (!this.panel.visible) {
 					if (event.loadRepo !== null) this.loadViewTo = { repo: event.loadRepo };
 					if ((event.numRepos === 0 && this.isGraphViewLoaded) || (event.numRepos > 0 && !this.isGraphViewLoaded)) {
-						this.needsFullUpdate = true;
+						this.panelSync.markFullDirty();
 					}
 					return;
 				}
@@ -1253,7 +1253,7 @@ export class GitGraphView extends Disposable {
 		if (panel.panel.visible && panel.isGraphViewLoaded) {
 			panel.sendCdvConfig();
 		} else {
-			panel.needsCdvSync = true;
+			panel.panelSync.markCdvDirty();
 		}
 	}
 
@@ -1536,7 +1536,7 @@ export class GitGraphView extends Disposable {
 			<script nonce="${nonce}">(function(){ var api = acquireVsCodeApi(); document.getElementById('rescanForReposBtn').addEventListener('click', function(){ api.postMessage({command: 'rescanForRepos'}); }); })();</script>
 			</body>`;
 		}
-		this.isGraphViewLoaded = numRepos > 0;
+		this.panelSync.markGraphRendered(numRepos > 0 && !this.dataSource.isGitExecutableUnknown(), this.panel.visible);
 		this.loadViewTo = null;
 
 		return `<!DOCTYPE html>

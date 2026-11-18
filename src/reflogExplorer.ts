@@ -6,6 +6,7 @@ import { runGit } from './historyRewrite';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
+import { AsyncRequestSequencer } from './stateMachines';
 import { GitResetMode } from './types';
 import { getUndoManager } from './undoManager';
 import { abbrevCommit, getNonce, getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
@@ -69,6 +70,8 @@ export class ReflogExplorer extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
+	private readonly entriesSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
+	private readonly previewSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
 	private panel: vscode.WebviewPanel | null = null;
 	private currentRepo: string | null = null;
 
@@ -83,6 +86,8 @@ export class ReflogExplorer extends Disposable {
 			vscode.commands.registerCommand('git-map.reflogExplorer', (arg?: unknown) => this.show(arg)),
 			{
 				dispose: () => {
+					this.entriesSeq.cancel();
+					this.previewSeq.cancel();
 					if (this.panel !== null) this.panel.dispose();
 					if (ReflogExplorer.instance === this) ReflogExplorer.instance = null;
 				}
@@ -109,7 +114,6 @@ export class ReflogExplorer extends Disposable {
 			return;
 		}
 		this.currentRepo = repo;
-		const entries = await this.loadReflogEntries(repo);
 		const title = t('Reflog Explorer: {0}', getRepoName(repo));
 		if (this.panel === null) {
 			this.panel = vscode.window.createWebviewPanel(
@@ -124,6 +128,8 @@ export class ReflogExplorer extends Disposable {
 				msgSub.dispose();
 				dispSub.dispose();
 				if (this.panel === created) {
+					this.entriesSeq.cancel();
+					this.previewSeq.cancel();
 					this.panel = null;
 					this.currentRepo = null;
 				}
@@ -132,20 +138,37 @@ export class ReflogExplorer extends Disposable {
 			this.panel.title = title;
 			this.panel.reveal();
 		}
-		this.panel.webview.html = getReflogExplorerHtml(getRepoName(repo), entries, this.panel.webview.cspSource);
-		this.logger.log('Opened Reflog Explorer for ' + repo + ' (' + entries.length + ' entries)');
+		this.panel.webview.html = getReflogExplorerHtml(getRepoName(repo), null, this.panel.webview.cspSource);
+		const seq = this.entriesSeq.begin();
+		const entries = await this.loadReflogEntries(repo);
+		if (this.entriesSeq.complete(seq) && this.panel !== null && this.currentRepo === repo) {
+			this.panel.webview.postMessage({ command: 'entries', entries: entries });
+			this.logger.log('Opened Reflog Explorer for ' + repo + ' (' + entries.length + ' entries)');
+		}
 	}
 
 	private async loadReflogEntries(repo: string): Promise<ReflogEntry[]> {
-		const [reflogRes, reachableRes] = await Promise.all([
-			runGit(this.dataSource, repo, ['-c', 'log.showSignature=false', 'reflog', 'show', '-n', '250', '--format=%x1e%H%x1f%gD%x1f%gs%x1f%an%x1f%ct', 'HEAD']),
-			runGit(this.dataSource, repo, ['rev-list', '--branches', '--tags', '--remotes'], null, null, undefined, 2 * 1024 * 1024)
-		]);
+		const reflogRes = await runGit(this.dataSource, repo, ['-c', 'log.showSignature=false', 'reflog', 'show', '-n', '250', '--format=%x1e%H%x1f%gD%x1f%gs%x1f%an%x1f%ct', 'HEAD']);
 		if (reflogRes.code !== 0) return [];
-		const reachable = new Set<string>(
-			reachableRes.code === 0 ? reachableRes.stdout.toString().split(/\r?\n/).filter((h) => h !== '') : []
+		const rawReflog = reflogRes.stdout.toString();
+		const uniqueHashes: string[] = [];
+		const seen = new Set<string>();
+		const matches = rawReflog.match(/[0-9a-f]{40,64}/g);
+		if (matches !== null) {
+			for (const h of matches) {
+				if (!seen.has(h)) {
+					seen.add(h);
+					uniqueHashes.push(h);
+				}
+			}
+		}
+		if (uniqueHashes.length === 0) return [];
+		const unreachableRes = await runGit(this.dataSource, repo, ['rev-list', ...uniqueHashes, '--not', '--branches', '--tags', '--remotes']);
+		const unreachable = new Set<string>(
+			unreachableRes.code === 0 ? unreachableRes.stdout.toString().split(/\r?\n/).filter((h) => h !== '') : []
 		);
-		return parseReflogOutput(reflogRes.stdout.toString(), reachable);
+		const reachable = new Set<string>(uniqueHashes.filter((h) => !unreachable.has(h)));
+		return parseReflogOutput(rawReflog, reachable);
 	}
 
 	private async onMessage(raw: unknown) {
@@ -153,15 +176,19 @@ export class ReflogExplorer extends Disposable {
 		const repo = this.currentRepo;
 		const msg = <{ command?: unknown, hash?: unknown }>raw;
 		if (msg.command === 'refresh') {
+			const seq = this.entriesSeq.begin();
 			const entries = await this.loadReflogEntries(repo);
-			this.panel.webview.postMessage({ command: 'entries', entries: entries });
+			if (this.entriesSeq.complete(seq) && this.panel !== null && this.currentRepo === repo) {
+				this.panel.webview.postMessage({ command: 'entries', entries: entries });
+			}
 			return;
 		}
 		if (typeof msg.hash !== 'string' || !/^[0-9a-f]{40,64}$/.test(msg.hash)) return;
 		const hash = msg.hash;
 		if (msg.command === 'previewCommit') {
+			const pSeq = this.previewSeq.begin();
 			const details = await this.dataSource.getCommitDetails(repo, hash, true);
-			if (this.panel !== null) {
+			if (this.previewSeq.complete(pSeq) && this.panel !== null && this.currentRepo === repo) {
 				this.panel.webview.postMessage({
 					command: 'previewData',
 					hash: hash,
@@ -216,7 +243,7 @@ function escH(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function getReflogExplorerHtml(repoName: string, entries: ReadonlyArray<ReflogEntry>, cspSource: string) {
+function getReflogExplorerHtml(repoName: string, entries: ReadonlyArray<ReflogEntry> | null, cspSource: string) {
 	const nonce = getNonce();
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
 	const strings = {
@@ -232,12 +259,13 @@ function getReflogExplorerHtml(repoName: string, entries: ReadonlyArray<ReflogEn
 		cherryPick: t('Cherry-Pick Here'),
 		resetHere: t('Reset Current Branch Here…'),
 		viewInGitMap: t('View in Git Map'),
+		loading: t('Loading ...'),
 		empty: t('No matching reflog entries.'),
 		selectHint: t('Select a reflog entry on the left to inspect its changed files and recovery actions.')
 	};
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
-		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + RL_STYLES + '</style></head><body>' +
+		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + RL_STYLES + '</style></head><body data-sm-status="' + (entries === null ? 'loading' : 'ready') + '">' +
 		'<header class="rlHeader">' +
 			'<h1>' + escH(strings.title) + ' <span class="rlRepo">' + escH(repoName) + '</span></h1>' +
 			'<input id="rlSearch" class="rlSearch" type="search" placeholder="' + escH(strings.searchPlaceholder) + '">' +
@@ -289,6 +317,8 @@ button,input{font:inherit;color:inherit}
 const RL_SCRIPT = `
 (function () {
 	var vscode = acquireVsCodeApi();
+	var loading = ENTRIES === null;
+	if (loading) ENTRIES = [];
 	var filter = 'all', query = '', selectedHash = ENTRIES.length > 0 ? ENTRIES[0].hash : null, previewCache = {};
 	var dtf = new Intl.DateTimeFormat(LOCALE, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
 	function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
@@ -303,7 +333,9 @@ const RL_SCRIPT = `
 		});
 	}
 	function renderList() {
-		var items = filtered(), listEl = document.getElementById('rlList');
+		var listEl = document.getElementById('rlList');
+		if (loading) { listEl.innerHTML = '<div class="rlEmpty">' + esc(STRINGS.loading) + '</div>'; return; }
+		var items = filtered();
 		if (items.length === 0) { listEl.innerHTML = '<div class="rlEmpty">' + esc(STRINGS.empty) + '</div>'; return; }
 		listEl.innerHTML = items.map(function (e, idx) {
 			return '<div class="rlItem' + (e.hash === selectedHash ? ' selected' : '') + '" data-hash="' + esc(e.hash) + '" data-idx="' + idx + '">' +
@@ -339,7 +371,12 @@ const RL_SCRIPT = `
 		if (h && !previewCache[h]) vscode.postMessage({ command: 'previewCommit', hash: h });
 	}
 	document.getElementById('rlSearch').addEventListener('input', function (e) { query = e.target.value; renderList(); });
-	document.getElementById('rlRefresh').addEventListener('click', function () { vscode.postMessage({ command: 'refresh' }); });
+	document.getElementById('rlRefresh').addEventListener('click', function () {
+		loading = true;
+		document.body.dataset.smStatus = 'loading';
+		renderList();
+		vscode.postMessage({ command: 'refresh' });
+	});
 	document.addEventListener('click', function (e) {
 		var t = e.target instanceof Element ? e.target : null;
 		if (!t) return;
@@ -357,7 +394,17 @@ const RL_SCRIPT = `
 	window.addEventListener('message', function (ev) {
 		var msg = ev.data;
 		if (!msg) return;
-		if (msg.command === 'entries') { ENTRIES = msg.entries || []; renderList(); renderDetail(); }
+		if (msg.command === 'entries') {
+			loading = false;
+			document.body.dataset.smStatus = 'ready';
+			ENTRIES = msg.entries || [];
+			if (!selectedHash && ENTRIES.length > 0) {
+				selectHash(ENTRIES[0].hash);
+			} else {
+				renderList();
+				renderDetail();
+			}
+		}
 		else if (msg.command === 'previewData') { previewCache[msg.hash] = msg; if (msg.hash === selectedHash) renderDetail(); }
 	});
 	renderList();

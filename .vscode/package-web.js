@@ -8,6 +8,7 @@ const STYLES_DIRECTORY = './web/styles';
 const MAIN_CSS_FILE = 'main.css';
 const MAIN_JS_FILE = 'main.js';
 const UTILS_JS_FILE = 'utils.js';
+const STATE_MACHINES_JS_FILE = 'stateMachines.js';
 
 const OUTPUT_MIN_CSS_FILE = 'out.min.css';
 const OUTPUT_MIN_JS_FILE = 'out.min.js';
@@ -16,10 +17,10 @@ const OUTPUT_TMP_JS_FILE = 'out.tmp.js';
 const DEBUG = process.argv.length > 2 && process.argv[2] === 'debug';
 
 
-// Determine the JS files to be packaged. The order is: utils.ts, *.ts, and then main.ts
-let packageJsFiles = [path.join(MEDIA_DIRECTORY, UTILS_JS_FILE)];
+// Determine the JS files to be packaged. The order is: utils.ts, stateMachines.ts, *.ts, and then main.ts
+let packageJsFiles = [path.join(MEDIA_DIRECTORY, UTILS_JS_FILE), path.join(MEDIA_DIRECTORY, STATE_MACHINES_JS_FILE)];
 fs.readdirSync(MEDIA_DIRECTORY).forEach((fileName) => {
-	if (fileName.endsWith('.js') && fileName !== OUTPUT_MIN_JS_FILE && fileName !== UTILS_JS_FILE && fileName !== MAIN_JS_FILE) {
+	if (fileName.endsWith('.js') && fileName !== OUTPUT_MIN_JS_FILE && fileName !== UTILS_JS_FILE && fileName !== STATE_MACHINES_JS_FILE && fileName !== MAIN_JS_FILE) {
 		packageJsFiles.push(path.join(MEDIA_DIRECTORY, fileName));
 	}
 });

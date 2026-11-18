@@ -1,3 +1,13 @@
+type BranchCompareMachineState =
+	| { readonly status: 'inactive' }
+	| { readonly status: 'loading'; readonly previousBranches: string[] | null }
+	| { readonly status: 'active'; readonly previousBranches: string[] | null };
+
+type BranchCompareMachineEvent =
+	| { readonly type: 'START'; readonly previousBranches: string[] | null }
+	| { readonly type: 'LOADED' }
+	| { readonly type: 'RESET' };
+
 /**
  * Compares two branches in the Git Map View ("Compare with Branch…"): a bar below the control bar shows the branches, their merge base and
  * how many commits each has that the other doesn't, the graph shows only those commits (marked with the colour of their branch), and a
@@ -5,12 +15,12 @@
  */
 class BranchCompare {
 	private readonly view: GitGraphView;
+	private readonly machine: WebStateMachine<BranchCompareMachineState, BranchCompareMachineEvent>;
 	private left: string | null = null;
 	private right: string | null = null;
 	private comparison: GG.GitBranchComparison | null = null;
 	private fileChanges: ReadonlyArray<GG.GitFileChange> = [];
 	private mode: 'left' | 'right' | 'both' = 'both';
-	private previousBranches: string[] | null | undefined = undefined; // The branches shown before the comparison started (undefined => not comparing)
 	private panelOpen: boolean = false;
 	private fromMergeBase: boolean = true; // Are the changes since the merge base (A...B) shown, otherwise between the latest commits (A..B)
 	private readonly sides: Map<string, 'left' | 'right' | 'base'> = new Map();
@@ -21,6 +31,22 @@ class BranchCompare {
 	 */
 	constructor(view: GitGraphView) {
 		this.view = view;
+		this.machine = new WebStateMachine<BranchCompareMachineState, BranchCompareMachineEvent>(
+			{ status: 'inactive' },
+			(state, event) => {
+				switch (event.type) {
+					case 'START':
+						return {
+							status: 'loading',
+							previousBranches: state.status === 'inactive' ? event.previousBranches : state.previousBranches
+						};
+					case 'LOADED':
+						return state.status === 'inactive' ? state : { status: 'active', previousBranches: state.previousBranches };
+					case 'RESET':
+						return state.status === 'inactive' ? state : { status: 'inactive' };
+				}
+			}
+		).bindDataset(document.body, 'smCompare');
 		document.getElementById('compareBar')!.addEventListener('click', (e) => {
 			const target = e.target instanceof Element ? <HTMLElement | null>e.target.closest('[data-compare]') : null;
 			if (target === null) return;
@@ -63,7 +89,7 @@ class BranchCompare {
 	 * @param right The branch it's compared with (e.g. the branch it would be merged into).
 	 */
 	public start(left: string, right: string) {
-		if (this.previousBranches === undefined) this.previousBranches = this.view.getShownBranches();
+		this.machine.send({ type: 'START', previousBranches: this.view.getShownBranches() });
 		this.left = left;
 		this.right = right;
 		this.comparison = null;
@@ -86,13 +112,14 @@ class BranchCompare {
 	 * @param msg The message containing the comparison.
 	 */
 	public processCompareBranchesResponse(msg: GG.ResponseCompareBranches) {
-		if (this.previousBranches === undefined || msg.comparison === null || msg.comparison.left !== this.left || msg.comparison.right !== this.right) {
-			if (msg.error !== null && this.previousBranches !== undefined) {
+		if (this.machine.status === 'inactive' || msg.comparison === null || msg.comparison.left !== this.left || msg.comparison.right !== this.right) {
+			if (msg.error !== null && this.machine.status !== 'inactive') {
 				dialog.showError(t('Unable to Compare Branches'), msg.error, null, null);
 				this.exit();
 			}
 			return;
 		}
+		this.machine.send({ type: 'LOADED' });
 		this.comparison = msg.comparison;
 		this.fileChanges = msg.fileChanges;
 		this.sides.clear();
@@ -108,9 +135,10 @@ class BranchCompare {
 	 * Stop comparing the branches, showing the branches that were shown before.
 	 */
 	public exit() {
-		if (this.previousBranches === undefined) return;
-		const previousBranches = this.previousBranches;
-		this.previousBranches = undefined;
+		const cur = this.machine.state;
+		if (cur.status === 'inactive') return;
+		const previousBranches = cur.previousBranches;
+		this.machine.send({ type: 'RESET' });
 		this.left = this.right = this.comparison = null;
 		this.fileChanges = [];
 		this.sides.clear();
@@ -124,7 +152,7 @@ class BranchCompare {
 	 * Stop comparing the branches without reloading the view (e.g. when another repository is loaded).
 	 */
 	public reset() {
-		this.previousBranches = undefined;
+		this.machine.send({ type: 'RESET' });
 		this.left = this.right = this.comparison = null;
 		this.sides.clear();
 		this.setPanelOpen(false);
@@ -135,15 +163,16 @@ class BranchCompare {
 	 * Are branches being compared.
 	 */
 	public isActive() {
-		return this.previousBranches !== undefined;
+		return this.machine.status !== 'inactive';
 	}
 
 	/**
 	 * Get the serialisable state of the comparison, or NULL if no comparison is active.
 	 */
 	public getState(): { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null {
-		if (this.previousBranches === undefined || this.left === null || this.right === null) return null;
-		return { left: this.left, right: this.right, previousBranches: this.previousBranches, mode: this.mode, fromMergeBase: this.fromMergeBase };
+		const cur = this.machine.state;
+		if (cur.status === 'inactive' || this.left === null || this.right === null) return null;
+		return { left: this.left, right: this.right, previousBranches: cur.previousBranches, mode: this.mode, fromMergeBase: this.fromMergeBase };
 	}
 
 	/**
@@ -151,7 +180,8 @@ class BranchCompare {
 	 */
 	public restoreState(state: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null | undefined) {
 		if (!state || typeof state.left !== 'string' || typeof state.right !== 'string') return;
-		this.previousBranches = state.previousBranches;
+		this.machine.send({ type: 'RESET' });
+		this.machine.send({ type: 'START', previousBranches: state.previousBranches });
 		this.left = state.left;
 		this.right = state.right;
 		this.mode = state.mode || 'both';
@@ -216,8 +246,9 @@ class BranchCompare {
 	 */
 	private render() {
 		const elem = document.getElementById('compareBar')!;
-		alterClass(elem, CLASS_ACTIVE, this.previousBranches !== undefined);
-		if (this.previousBranches === undefined || this.left === null || this.right === null) {
+		const active = this.isActive();
+		alterClass(elem, CLASS_ACTIVE, active);
+		if (!active || this.left === null || this.right === null) {
 			elem.innerHTML = '';
 			return;
 		}

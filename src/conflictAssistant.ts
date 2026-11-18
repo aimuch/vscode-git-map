@@ -102,6 +102,7 @@ export class ConflictAssistant extends Disposable {
 	private currentRepo: string | null = null;
 	private activeAiCancellation: vscode.CancellationTokenSource | null = null;
 	private lastContextValue: boolean | null = null;
+	private contextDebounceTimer: NodeJS.Timeout | null = null;
 
 	constructor(dataSource: DataSource, repoManager: RepoManager, extensionState: ExtensionState, logger: Logger) {
 		super();
@@ -114,6 +115,10 @@ export class ConflictAssistant extends Disposable {
 			vscode.commands.registerCommand('git-map.conflictAssistant', (arg?: unknown) => this.show(arg)),
 			{
 				dispose: () => {
+					if (this.contextDebounceTimer !== null) {
+						clearTimeout(this.contextDebounceTimer);
+						this.contextDebounceTimer = null;
+					}
 					this.cancelActiveAi();
 					if (this.panel !== null) this.panel.dispose();
 					if (ConflictAssistant.instance === this) ConflictAssistant.instance = null;
@@ -125,9 +130,22 @@ export class ConflictAssistant extends Disposable {
 		}
 		if (typeof vscode.workspace.onDidChangeTextDocument === 'function') {
 			disposables.push(vscode.workspace.onDidChangeTextDocument((e) => {
-				if (vscode.window.activeTextEditor && e.document === vscode.window.activeTextEditor.document) {
-					this.updateEditorConflictContext();
+				if (!vscode.window.activeTextEditor || e.document !== vscode.window.activeTextEditor.document) return;
+				if (
+					this.lastContextValue === false &&
+					Array.isArray(e.contentChanges) &&
+					e.contentChanges.length > 0 &&
+					!e.contentChanges.some((c) => typeof c.text === 'string' && (c.text.includes('<') || c.text.includes('=') || c.text.includes('>')))
+				) {
+					return;
 				}
+				if (this.contextDebounceTimer !== null) clearTimeout(this.contextDebounceTimer);
+				const timer = setTimeout(() => {
+					this.contextDebounceTimer = null;
+					this.updateEditorConflictContext();
+				}, 180);
+				if (typeof timer === 'object' && timer !== null && typeof timer.unref === 'function') timer.unref();
+				this.contextDebounceTimer = timer;
 			}));
 		}
 		this.registerDisposables(...disposables);
@@ -517,14 +535,34 @@ const CA_SCRIPT = `
 	window.addEventListener('message', function (ev) {
 		var msg = ev.data;
 		if (!msg) return;
-		if (msg.command === 'conflictState') { suggestions = {}; STATE = msg.state; render(); }
+		if (msg.command === 'conflictState') {
+			var nextSuggestions = {};
+			if (msg.state && Array.isArray(msg.state.files)) {
+				msg.state.files.forEach(function (f) {
+					var prevFile = STATE && Array.isArray(STATE.files) ? STATE.files.find(function (pf) { return pf.path === f.path; }) : null;
+					if (!prevFile) return;
+					f.blocks.forEach(function (b) {
+						var matchPrev = prevFile.blocks.find(function (pb) { return pb.ours === b.ours && pb.theirs === b.theirs; });
+						if (matchPrev && suggestions[keyOf(f.path, matchPrev.index)]) {
+							nextSuggestions[keyOf(f.path, b.index)] = suggestions[keyOf(f.path, matchPrev.index)];
+						}
+					});
+				});
+			}
+			suggestions = nextSuggestions;
+			STATE = msg.state;
+			document.body.dataset.smStatus = Object.keys(suggestions).some(function (k) { return suggestions[k] && (suggestions[k].loading || suggestions[k].streaming); }) ? 'streaming' : 'idle';
+			render();
+		}
 		else if (msg.command === 'aiSuggestion') {
 			var k = keyOf(msg.file, msg.blockIndex);
 			var existingTa = msg.streaming ? document.querySelector('[data-sg-input="' + CSS.escape(k) + '"]') : null;
 			suggestions[k] = { loading: false, streaming: !!msg.streaming, text: msg.suggestion || '', error: msg.error };
+			document.body.dataset.smStatus = msg.streaming ? 'streaming' : 'idle';
 			if (existingTa) { existingTa.value = msg.suggestion || ''; } else { render(); }
 		}
 	});
+	document.body.dataset.smStatus = 'idle';
 	render();
 })();
 `;

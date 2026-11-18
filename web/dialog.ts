@@ -358,16 +358,18 @@ class Dialog {
 	 * @param target The target that the dialog was triggered on.
 	 */
 	private show(type: DialogType, html: string, actionName: string | null, secondaryActionName: string, actioned: (() => void) | null, secondaryActioned: (() => void) | null, target: DialogTarget | null) {
+		const pendingDangerous = this.dangerous;
+		this.dangerous = false;
 		closeDialogAndContextMenu();
 
 		this.type = type;
 		this.target = target;
+		syncBodyStateAttrs({ smDialog: type === DialogType.Form ? 'form' : type === DialogType.ActionRunning ? 'running' : 'message' });
 		eventOverlay.create('dialogBacking', null, null);
 
 		const dialog = document.createElement('div'), dialogContent = document.createElement('div');
-		const isDangerousForm = this.dangerous && type === DialogType.Form;
+		const isDangerousForm = pendingDangerous && type === DialogType.Form;
 		dialog.className = isDangerousForm ? 'dialog danger' : 'dialog';
-		this.dangerous = false;
 		dialogContent.className = 'dialogContent';
 		let bodyHtml = html;
 		if (type === DialogType.Form && html.indexOf('<svg') === -1) {
@@ -449,6 +451,7 @@ class Dialog {
 	 * Close the dialog (if one is currently open in the Git Map View).
 	 */
 	public close() {
+		this.dangerous = false;
 		eventOverlay.remove();
 		if (this.elem !== null) {
 			this.elem.remove();
@@ -460,6 +463,7 @@ class Dialog {
 		this.customSelects = {};
 		this.actioned = null;
 		this.type = null;
+		syncBodyStateAttrs({ smDialog: 'closed' });
 	}
 
 	/**

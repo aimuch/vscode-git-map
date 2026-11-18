@@ -2134,14 +2134,18 @@
 				await waitFor('quick stage rows to render', () => document.querySelectorAll('#cdvInlineCommitBox .cdvQuickStageRow').length === 2);
 
 				// Open Hunk Staging modal on README.md, select ONLY '-beta' and '+BETA_NEW', and stage selected lines
+				assert(document.body.dataset.smRefresh === 'idle' && document.body.dataset.smCdv === 'uncommitted' && document.body.dataset.smCompare === 'inactive', 'Unexpected initial AX dataset: ' + JSON.stringify(document.body.dataset));
 				const hunksBtn = document.querySelector('#cdvInlineCommitBox [data-inline-file="README.md"][data-inline-op="hunks"]');
 				assert(hunksBtn !== null, 'Missing Hunks button for README.md');
 				mouse(hunksBtn, 'click');
 				const hunkBody = await waitFor('hunk diff lines in #cdvHunkModal', () => document.querySelector('#cdvHunkBody .cdvHunkLine.del') ? document.getElementById('cdvHunkBody') : null);
+				assert(document.body.dataset.smOverlay === 'hunk-modal', 'Expected smOverlay=hunk-modal, got ' + document.body.dataset.smOverlay);
 				const selectableLines = Array.from(hunkBody.querySelectorAll('.cdvHunkLine.selectable'));
 				assert(selectableLines.length === 4, 'Expected 4 selectable +/- lines, got ' + selectableLines.length);
 				mouse(selectableLines[0], 'click'); // -beta
-				mouse(hunkBody.querySelectorAll('.cdvHunkLine.selectable')[2], 'click'); // +BETA_NEW (re-queried after re-render)
+				// In-place DOM update (D-3): selectableLines[2] stays mounted in DOM without resetting scroll!
+				assert(selectableLines[2].isConnected && selectableLines[0].classList.contains('selected'), 'Hunk line click replaced DOM instead of updating in place');
+				mouse(selectableLines[2], 'click'); // +BETA_NEW
 				const partialBtn = await waitFor('Stage Selected (2) button', () => document.querySelector('#cdvHunkBody [data-hunk-partial="1"][data-hunk-act="stage"]'));
 				const applyHunkBefore = requestsOf('applyHunkPatch').length;
 				mouse(partialBtn, 'click');
@@ -2149,6 +2153,7 @@
 				assert(hunkReq.action === 'stage' && hunkReq.patch.includes('-beta\n+BETA_NEW\n gamma'), 'Unexpected partial hunk patch:\n' + hunkReq.patch);
 				key(document.body, 'Escape');
 				await waitFor('#cdvHunkModal to close', () => document.getElementById('cdvHunkModal') === null);
+				assert(document.body.dataset.smOverlay === 'cdv', 'Expected smOverlay=cdv after closing hunk modal, got ' + document.body.dataset.smOverlay);
 
 				// Clear any draft left from earlier checks, toggle Amend -> pre-fills HEAD message, then submit Commit
 				commitInput.value = '';
@@ -2162,7 +2167,17 @@
 				mouse(document.querySelector('#cdvInlineCommitBox [data-inline-stage="commit"]'), 'click');
 				const commitReq = await waitFor('commitStagedChanges request', () => requestsOf('commitStagedChanges').length > commitBefore ? requestsOf('commitStagedChanges').slice(-1)[0] : null);
 				assert(commitReq.amend === true && commitReq.message === 'Fix #12 and rename files', 'Unexpected commitStagedChanges: ' + JSON.stringify(commitReq));
-				return 'Tools menu, PR badge #42, Drag & Drop moveBranch, partial line hunk patch (-beta/+BETA_NEW), and Amend commit verified';
+
+				// 5. Escape cancels cdvComparePending ("Compare with…") before closing the Commit Details View (D-4 / SM-4)
+				await openDetails(commitRow(1));
+				const cdvCompareBtn = document.getElementById('cdvCompare');
+				if (cdvCompareBtn !== null) {
+					mouse(cdvCompareBtn, 'click');
+					assert(document.body.dataset.smCdv === 'await-compare' && document.body.dataset.smOverlay === 'cdv-compare-pick', 'Expected await-compare state, got ' + document.body.dataset.smCdv);
+					key(document.body, 'Escape');
+					assert(document.getElementById('cdv') !== null && document.body.dataset.smCdv === 'commit' && !cdvCompareBtn.classList.contains('active'), 'Escape closed CDV instead of cancelling Compare with…');
+				}
+				return 'Tools menu, PR badge #42, Drag & Drop moveBranch, in-place partial hunk patch, Amend commit, and AX state machines verified';
 			} finally {
 				if (document.getElementById('cdvHunkModal') !== null) document.getElementById('cdvHunkModal').remove();
 				await closeDetails();

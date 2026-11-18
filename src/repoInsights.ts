@@ -6,6 +6,7 @@ import { runGit } from './historyRewrite';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
+import { AsyncRequestSequencer } from './stateMachines';
 import { getNonce, getPathFromUri, getRepoName, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
@@ -165,6 +166,7 @@ export class RepoInsights extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
+	private readonly dataSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
 	private panel: vscode.WebviewPanel | null = null;
 	private currentRepo: string | null = null;
 
@@ -179,6 +181,7 @@ export class RepoInsights extends Disposable {
 			vscode.commands.registerCommand('git-map.repoInsights', (arg?: unknown) => this.show(arg)),
 			{
 				dispose: () => {
+					this.dataSeq.cancel();
 					if (this.panel !== null) this.panel.dispose();
 					if (RepoInsights.instance === this) RepoInsights.instance = null;
 				}
@@ -205,7 +208,6 @@ export class RepoInsights extends Disposable {
 			return;
 		}
 		this.currentRepo = repo;
-		const data = await this.loadData(repo, 90);
 		const title = t('Insights: {0}', getRepoName(repo));
 		if (this.panel === null) {
 			this.panel = vscode.window.createWebviewPanel(
@@ -220,6 +222,7 @@ export class RepoInsights extends Disposable {
 				msgSub.dispose();
 				dispSub.dispose();
 				if (this.panel === created) {
+					this.dataSeq.cancel();
 					this.panel = null;
 					this.currentRepo = null;
 				}
@@ -228,8 +231,13 @@ export class RepoInsights extends Disposable {
 			this.panel.title = title;
 			this.panel.reveal();
 		}
-		this.panel.webview.html = getRepoInsightsHtml(getRepoName(repo), data, this.panel.webview.cspSource);
-		this.logger.log('Opened Repository Insights for ' + repo);
+		this.panel.webview.html = getRepoInsightsHtml(getRepoName(repo), null, this.panel.webview.cspSource);
+		const seq = this.dataSeq.begin();
+		const data = await this.loadData(repo, 90);
+		if (this.dataSeq.complete(seq) && this.panel !== null && this.currentRepo === repo) {
+			this.panel.webview.postMessage({ command: 'insightsData', data: data });
+			this.logger.log('Opened Repository Insights for ' + repo);
+		}
 	}
 
 	private async loadData(repo: string, days: number): Promise<RepoInsightsData> {
@@ -247,8 +255,11 @@ export class RepoInsights extends Disposable {
 		const repo = this.currentRepo;
 		const msg = <{ command?: unknown, days?: unknown, filePath?: unknown }>raw;
 		if (msg.command === 'changeRange' && typeof msg.days === 'number') {
+			const seq = this.dataSeq.begin();
 			const data = await this.loadData(repo, msg.days);
-			if (this.panel !== null) this.panel.webview.postMessage({ command: 'insightsData', data: data });
+			if (this.dataSeq.complete(seq) && this.panel !== null && this.currentRepo === repo) {
+				this.panel.webview.postMessage({ command: 'insightsData', data: data });
+			}
 		} else if (msg.command === 'openTimeMachine' && typeof msg.filePath === 'string') {
 			await vscode.commands.executeCommand('git-map.fileTimeMachine', { repo: repo, filePath: msg.filePath });
 		} else if (msg.command === 'openVisualHistory' && typeof msg.filePath === 'string') {
@@ -261,7 +272,7 @@ function escI(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function getRepoInsightsHtml(repoName: string, data: RepoInsightsData, cspSource: string) {
+function getRepoInsightsHtml(repoName: string, data: RepoInsightsData | null, cspSource: string) {
 	const nonce = getNonce();
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
 	const strings = {
@@ -278,12 +289,13 @@ function getRepoInsightsHtml(repoName: string, data: RepoInsightsData, cspSource
 		timeMachine: t('Time Machine'),
 		visual: t('Chart'),
 		soleOwner: t('Primary owner: {0} ({1}%)'),
+		loading: t('Loading ...'),
 		empty: t('No commits in this time range.'),
 		weekdays: locale === 'zh-CN' ? ['日', '一', '二', '三', '四', '五', '六'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 	};
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
-		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + RI_STYLES + '</style></head><body>' +
+		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + RI_STYLES + '</style></head><body data-sm-status="' + (data === null ? 'loading' : 'ready') + '">' +
 		'<header class="riHeader"><h1>' + escI(strings.title) + ' <span class="riRepo">' + escI(repoName) + '</span></h1>' +
 		'<div class="riRanges" role="group"><button type="button" data-days="90" class="active">' + escI(strings.days90) + '</button><button type="button" data-days="365">' + escI(strings.year) + '</button><button type="button" data-days="0">' + escI(strings.all) + '</button></div></header>' +
 		'<main id="riMain" class="riMain"></main>' +
@@ -325,9 +337,11 @@ button{font:inherit;color:inherit}
 const RI_SCRIPT = `
 (function () {
 	var vscode = acquireVsCodeApi();
+	var loading = DATA === null;
 	function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 	function render() {
 		var main = document.getElementById('riMain');
+		if (loading) { main.innerHTML = '<div class="riCard">' + esc(STRINGS.loading) + '</div>'; return; }
 		if (!DATA || DATA.totalCommits === 0) { main.innerHTML = '<div class="riCard">' + esc(STRINGS.empty) + '</div>'; return; }
 		var maxHeat = 1;
 		DATA.heatmap.forEach(function (row) { row.forEach(function (v) { if (v > maxHeat) maxHeat = v; }); });
@@ -376,6 +390,9 @@ const RI_SCRIPT = `
 		var rb = t.closest('[data-days]'), tm = t.closest('[data-tm]'), vfh = t.closest('[data-vfh]');
 		if (rb) {
 			document.querySelectorAll('.riRanges button').forEach(function (b) { b.classList.toggle('active', b === rb); });
+			loading = true;
+			document.body.dataset.smStatus = 'loading';
+			render();
 			vscode.postMessage({ command: 'changeRange', days: parseInt(rb.dataset.days, 10) });
 		} else if (tm) {
 			vscode.postMessage({ command: 'openTimeMachine', filePath: tm.dataset.tm });
@@ -384,7 +401,12 @@ const RI_SCRIPT = `
 		}
 	});
 	window.addEventListener('message', function (ev) {
-		if (ev.data && ev.data.command === 'insightsData') { DATA = ev.data.data; render(); }
+		if (ev.data && ev.data.command === 'insightsData') {
+			loading = false;
+			document.body.dataset.smStatus = 'ready';
+			DATA = ev.data.data;
+			render();
+		}
 	});
 	render();
 })();

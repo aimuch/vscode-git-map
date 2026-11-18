@@ -1,5 +1,16 @@
 # Change Log
 
+## 2.3.2 - 2026-11-18
+* Explicit State Machines & Async Request Sequencing (`src/stateMachines.ts`, `web/stateMachines.ts`):
+    * Replaced implicit boolean/nullable state flags across `GitGraphView` (`PanelSyncMachine` dirty-sync lattice), `BranchCompare`, `Dialog` (atomic `dangerous` consumption), Commit Details View overlay / `Escape` resolution, and companion panels (`AsyncRequestSequencer` out-of-order response protection across Reflog Explorer, Repository Insights, Multi-Repo Overview, and File Time Machine).
+    * Added live `data-sm-*` DOM state telemetry attributes (`data-sm-refresh`, `data-sm-cdv`, `data-sm-compare`, `data-sm-overlay`, `data-sm-dialog`, `data-sm-status`, `data-sm-mode`, `data-sm-pinned`) for deterministic inspection and end-to-end verification.
+* UX & Performance improvements:
+    * **Reflog Explorer**: replaced full-repository `git rev-list --branches --tags --remotes` enumeration with targeted `git rev-list <reflog-hashes> --not --branches --tags --remotes`, eliminating multi-megabyte SHA transfers and truncation false positives on large repositories.
+    * **Instant Panel Shells**: Repository Insights, Visual Reflog Explorer, and Multi-Repository Overview now open immediately with responsive loading states instead of waiting on background Git queries.
+    * **Hunk & Line Staging**: clicking or `Shift+Click`ing lines in the Hunk Staging modal updates line selection and action buttons in place without resetting scroll position.
+    * **Commit Details & Time Machine**: pressing `Escape` while "Compare with…" target selection is active cancels compare-pick mode instead of closing the Commit Details View; pinning a base revision in File Time Machine while in **Full File** mode switches automatically to **Changes Only** so the comparison is immediately visible.
+    * **Conflict Assistant & PR Badges**: debounced and marker-gated editor conflict detection (`<<<<<<<` / `=======` / `>>>>>>>`), preserved AI merge suggestions across unrelated conflict-block resolutions, and deduplicated concurrent Pull Request / CI badge requests per repository.
+
 ## 2.3.1 - 2026-11-18
 * Line-level Hunk Staging: click or `Shift+Click` individual `+` / `-` lines inside the Hunk Staging modal to stage, unstage, or discard selected lines within a hunk while leaving adjacent lines untouched.
 * Expanded PR & CI Status Badges & Settings Drawer controls:

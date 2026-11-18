@@ -6,6 +6,7 @@ import { runGit } from './historyRewrite';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
+import { AsyncRequestSequencer } from './stateMachines';
 import { GitOperation } from './types';
 import { getNonce, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
@@ -33,6 +34,7 @@ export class MultiRepoOverview extends Disposable {
 	private readonly repoManager: RepoManager;
 	private readonly logger: Logger;
 	private readonly gitFeatures: GitFeatures;
+	private readonly statusSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
 	private panel: vscode.WebviewPanel | null = null;
 
 	constructor(dataSource: DataSource, repoManager: RepoManager, logger: Logger) {
@@ -46,6 +48,7 @@ export class MultiRepoOverview extends Disposable {
 			vscode.commands.registerCommand('git-map.multiRepoOverview', () => this.show()),
 			{
 				dispose: () => {
+					this.statusSeq.cancel();
 					if (this.panel !== null) this.panel.dispose();
 					if (MultiRepoOverview.instance === this) MultiRepoOverview.instance = null;
 				}
@@ -58,12 +61,12 @@ export class MultiRepoOverview extends Disposable {
 	}
 
 	public async show() {
-		const cards = await this.collectAllStatuses();
-		if (cards.length === 0) {
+		const repoPaths = Object.keys(this.repoManager.getRepos());
+		if (repoPaths.length === 0) {
 			showErrorMessage(t('No Git repositories were found in the current workspace.'));
 			return;
 		}
-		const title = t('Multi-Repository Overview ({0})', String(cards.length));
+		const title = t('Multi-Repository Overview ({0})', String(repoPaths.length));
 		if (this.panel === null) {
 			this.panel = vscode.window.createWebviewPanel(
 				'git-map.multiRepoOverview',
@@ -76,14 +79,23 @@ export class MultiRepoOverview extends Disposable {
 			const dispSub = created.onDidDispose(() => {
 				msgSub.dispose();
 				dispSub.dispose();
-				if (this.panel === created) this.panel = null;
+				if (this.panel === created) {
+					this.statusSeq.cancel();
+					this.panel = null;
+				}
 			});
 		} else {
 			this.panel.title = title;
 			this.panel.reveal();
 		}
-		this.panel.webview.html = getMultiRepoHtml(cards, this.panel.webview.cspSource);
-		this.logger.log('Opened Multi-Repository Overview (' + cards.length + ' repos)');
+		this.panel.webview.html = getMultiRepoHtml(null, this.panel.webview.cspSource);
+		const seq = this.statusSeq.begin();
+		const cards = await this.collectAllStatuses();
+		if (this.statusSeq.complete(seq) && this.panel !== null) {
+			this.panel.title = t('Multi-Repository Overview ({0})', String(cards.length));
+			this.panel.webview.postMessage({ command: 'cards', cards: cards });
+			this.logger.log('Opened Multi-Repository Overview (' + cards.length + ' repos)');
+		}
 	}
 
 	private async inspectSingleRepo(repoPath: string, customName: string | null): Promise<MultiRepoStatusCard> {
@@ -165,8 +177,11 @@ export class MultiRepoOverview extends Disposable {
 		const validRepos = Array.isArray(msg.repos) ? msg.repos.filter((r): r is string => typeof r === 'string' && typeof known[r] !== 'undefined') : [];
 
 		if (msg.command === 'refresh') {
+			const seq = this.statusSeq.begin();
 			const cards = await this.collectAllStatuses();
-			if (this.panel !== null) this.panel.webview.postMessage({ command: 'cards', cards: cards });
+			if (this.statusSeq.complete(seq) && this.panel !== null) {
+				this.panel.webview.postMessage({ command: 'cards', cards: cards });
+			}
 		} else if (msg.command === 'openRepo' && typeof msg.repo === 'string' && typeof known[msg.repo] !== 'undefined') {
 			await vscode.commands.executeCommand('git-map.view', vscode.Uri.file(msg.repo));
 		} else if (msg.command === 'openTerminal' && typeof msg.repo === 'string' && typeof known[msg.repo] !== 'undefined') {
@@ -224,7 +239,7 @@ function escM(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
-function getMultiRepoHtml(cards: ReadonlyArray<MultiRepoStatusCard>, cspSource: string) {
+function getMultiRepoHtml(cards: ReadonlyArray<MultiRepoStatusCard> | null, cspSource: string) {
 	const nonce = getNonce();
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
 	const strings = {
@@ -239,11 +254,12 @@ function getMultiRepoHtml(cards: ReadonlyArray<MultiRepoStatusCard>, cspSource: 
 		detached: t('Detached HEAD'),
 		staged: t('staged'),
 		modified: t('modified'),
-		untracked: t('untracked')
+		untracked: t('untracked'),
+		loading: t('Loading ...')
 	};
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
-		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + MR_STYLES + '</style></head><body>' +
+		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + MR_STYLES + '</style></head><body data-sm-status="' + (cards === null ? 'loading' : 'ready') + '">' +
 		'<header class="mrHeader"><h1>' + escM(strings.title) + '</h1><div class="mrActions">' +
 			'<button type="button" class="mrBtn primary" data-batch="batchFetch">' + escM(strings.fetchAll) + '</button>' +
 			'<button type="button" class="mrBtn" data-batch="batchPull">' + escM(strings.pullAll) + '</button>' +
@@ -278,11 +294,15 @@ button,input{font:inherit;color:inherit}
 const MR_SCRIPT = `
 (function () {
 	var vscode = acquireVsCodeApi();
+	var loading = CARDS === null;
+	if (loading) CARDS = [];
 	var selected = {};
 	CARDS.forEach(function (c) { selected[c.repo] = true; });
 	function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 	function render() {
-		document.getElementById('mrGrid').innerHTML = CARDS.map(function (c) {
+		var grid = document.getElementById('mrGrid');
+		if (loading) { grid.innerHTML = '<div class="mrCard">' + esc(STRINGS.loading) + '</div>'; return; }
+		grid.innerHTML = CARDS.map(function (c) {
 			var dirtyParts = [];
 			if (c.staged > 0) dirtyParts.push(c.staged + ' ' + STRINGS.staged);
 			if (c.unstaged > 0) dirtyParts.push(c.unstaged + ' ' + STRINGS.modified);
@@ -299,7 +319,12 @@ const MR_SCRIPT = `
 				'<button type="button" class="mrBtn" data-term="' + esc(c.repo) + '">' + esc(STRINGS.terminal) + '</button></div></div>';
 		}).join('');
 	}
-	document.getElementById('mrRefresh').addEventListener('click', function () { vscode.postMessage({ command: 'refresh' }); });
+	document.getElementById('mrRefresh').addEventListener('click', function () {
+		loading = true;
+		document.body.dataset.smStatus = 'loading';
+		render();
+		vscode.postMessage({ command: 'refresh' });
+	});
 	document.addEventListener('change', function (e) {
 		if (e.target instanceof HTMLInputElement && e.target.dataset.repoChk) {
 			selected[e.target.dataset.repoChk] = e.target.checked;
@@ -319,7 +344,13 @@ const MR_SCRIPT = `
 		}
 	});
 	window.addEventListener('message', function (ev) {
-		if (ev.data && ev.data.command === 'cards') { CARDS = ev.data.cards || []; render(); }
+		if (ev.data && ev.data.command === 'cards') {
+			loading = false;
+			document.body.dataset.smStatus = 'ready';
+			CARDS = ev.data.cards || [];
+			CARDS.forEach(function (c) { if (typeof selected[c.repo] === 'undefined') selected[c.repo] = true; });
+			render();
+		}
 	});
 	render();
 })();
