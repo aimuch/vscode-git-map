@@ -331,22 +331,32 @@ class ViewActions {
 				visible: visibility.bisect && bisect === null,
 				onClick: () => this.startBisectAction(hash, false, target)
 			}, {
+				id: 'bisectGood',
 				title: t('Mark as Good'),
 				icon: MENU_ICONS.bisectGood,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'good', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}, {
+				id: 'bisectBad',
 				title: t('Mark as Bad'),
 				icon: MENU_ICONS.bisectBad,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'bad', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}, {
+				id: 'bisectSkip',
 				title: t('Skip (Can\'t Be Tested)'),
 				icon: MENU_ICONS.bisectSkip,
 				visible: visibility.bisect && bisect !== null && bisect.firstBad === null,
 				onClick: () => runAction({ command: 'bisect', repo: this.view.currentRepo, action: 'skip', commitHash: hash, goodRef: null }, t('Bisecting'))
 			}
 		], [
+			{
+				id: 'aiReview',
+				title: t('AI Review Commit') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'commit', commitHash: hash, label: abbrevCommit(hash) + ' ' + commit.message })
+			},
 			{
 				id: 'copyHash',
 				title: t('Copy Commit Hash to Clipboard'),
@@ -397,6 +407,24 @@ class ViewActions {
 				icon: MENU_ICONS.cherrypick,
 				visible: visibility.cherrypick,
 				onClick: () => this.cherrypickCommitsAction(commits, target)
+			}, {
+				title: t('AI Review Selected Range') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: commits.length >= 2,
+				onClick: () => {
+					const oldest = commits[0], newest = commits[commits.length - 1];
+					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
+					sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'range', fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + '..' + abbrevCommit(newest.hash) });
+				}
+			}, {
+				title: t('AI PR / Release Notes for Selection') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: commits.length >= 2,
+				onClick: () => {
+					const oldest = commits[0], newest = commits[commits.length - 1];
+					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
+					sendMessage({ command: 'openCompanionFeature', feature: 'aiReleaseNotes', repo: this.view.currentRepo, fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + ' → ' + abbrevCommit(newest.hash) });
+				}
 			}
 		], [
 			{
@@ -676,6 +704,11 @@ class ViewActions {
 				icon: MENU_ICONS.sparkle,
 				visible: this.view.config.ai.commitMessage && visibility.generateCommitMessage,
 				onClick: () => this.view.commitExplainer.openCommitMessageModal()
+			}, {
+				title: t('AI Review Uncommitted Changes') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'uncommitted' })
 			}, {
 				title: t('Stash uncommitted changes') + ELLIPSIS,
 				icon: MENU_ICONS.stash,
@@ -1165,7 +1198,7 @@ class ViewActions {
 		runAction({ command: 'fetch', repo: this.view.currentRepo, name: null, prune: this.view.config.fetchAndPrune, pruneTags: this.view.config.fetchAndPruneTags }, t('Fetching from Remote(s)'));
 	}
 
-	private mergeAction(obj: string, name: string, actionOn: GG.MergeActionOn, target: DialogTarget & (CommitTarget | RefTarget)) {
+	public mergeAction(obj: string, name: string, actionOn: GG.MergeActionOn, target: (DialogTarget & (CommitTarget | RefTarget)) | null) {
 		dialog.showForm(t('Are you sure you want to merge {0} <b><i>{1}</i></b> into {2}?', t(actionOn).toLowerCase(), escapeHtml(name), (this.view.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.view.gitBranchHead)) : t('the current branch'))), [
 			{ type: DialogInputType.Checkbox, name: t('Create a new commit even if fast-forward is possible'), value: this.view.config.dialogDefaults.merge.noFastForward },
 			{ type: DialogInputType.Checkbox, name: t('Squash Commits'), value: this.view.config.dialogDefaults.merge.squash, info: t('Create a single commit on the current branch whose effect is the same as merging this {0}.', t(actionOn).toLowerCase()) },
@@ -1175,7 +1208,7 @@ class ViewActions {
 		}, target);
 	}
 
-	private rebaseAction(obj: string, name: string, actionOn: GG.RebaseActionOn, target: DialogTarget & (CommitTarget | RefTarget)) {
+	public rebaseAction(obj: string, name: string, actionOn: GG.RebaseActionOn, target: (DialogTarget & (CommitTarget | RefTarget)) | null) {
 		dialog.showForm(t('Are you sure you want to rebase {0} on {1} <b><i>{2}</i></b>?', (this.view.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.view.gitBranchHead)) : t('the current branch')), actionOn.toLowerCase(), escapeHtml(name)), [
 			{ type: DialogInputType.Checkbox, name: t('Interactive Rebase'), value: this.view.config.dialogDefaults.rebase.interactive, info: t('Choose how each commit is rebased (reorder, reword, squash or drop commits) in the Rebase Editor.') },
 			{ type: DialogInputType.Checkbox, name: t('Ignore Date'), value: this.view.config.dialogDefaults.rebase.ignoreDate, info: t('Only applicable to a non-interactive rebase.') }

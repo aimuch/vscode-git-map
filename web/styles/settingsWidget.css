@@ -375,6 +375,50 @@
 .settingsSelect:focus, .settingsInput:focus{
 	border-color:var(--vscode-focusBorder);
 }
+.settingsAiModelField{
+	display:flex;
+	flex-direction:column;
+	gap:6px;
+	min-width:0;
+}
+.settingsAiModelInputRow{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	min-width:0;
+}
+.settingsDetectBtn{
+	flex:0 0 auto;
+	height:28px;
+	white-space:nowrap;
+}
+.settingsAiModelChips{
+	display:flex;
+	flex-wrap:wrap;
+	gap:5px;
+}
+.settingsAiModelChip{
+	padding:2px 8px;
+	border:1px solid var(--vscode-dropdown-border, rgba(128,128,128,0.35));
+	border-radius:11px;
+	background-color:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.12));
+	color:var(--vscode-foreground);
+	font-family:var(--vscode-editor-font-family);
+	font-size:11.5px;
+	cursor:pointer;
+}
+.settingsAiModelChip:hover{
+	background-color:var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.22));
+}
+.settingsAiModelChip.active{
+	border-color:var(--vscode-focusBorder);
+	background-color:color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
+	font-weight:600;
+}
+.settingsAiModelHint{
+	font-size:11.5px;
+	color:var(--vscode-descriptionForeground);
+}
 .settingsAiKeyStatus.ok{
 	color:var(--vscode-testing-iconPassed, #3fb950);
 }

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
@@ -153,7 +154,7 @@ export class VisualFileHistory extends Disposable {
 				await vscode.commands.executeCommand('git-map.viewCommitInGitMap', shown.repo, commit.hash);
 				break;
 			case 'viewFileHistory':
-				await vscode.commands.executeCommand('git-map.viewFileHistory', vscode.Uri.file(shown.repo + '/' + shown.filePath));
+				await vscode.commands.executeCommand('git-map.viewFileHistory', vscode.Uri.file(path.join(shown.repo, shown.filePath)));
 				break;
 			case 'fileTimeMachine':
 				await vscode.commands.executeCommand('git-map.fileTimeMachine', { repo: shown.repo, filePath: shown.filePath, commitHash: commit.hash });
@@ -200,16 +201,29 @@ export function getVisualFileHistoryPage(filePath: string, commits: ReadonlyArra
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
 		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + STYLES + '</style></head><body>' +
-		'<header class="vfhHeader"><h1>' + escapeHtml(t('Visual File History')) + '</h1><span class="vfhPath">' + escapeHtml(filePath) + '</span><span class="vfhSpacer"></span>' +
+		'<header class="vfhHeader"><h1>' + VFH_ICONS.chart + escapeHtml(t('Visual File History')) + '</h1><span class="vfhPath" title="' + escapeHtml(filePath) + '">' + escapeHtml(filePath) + '</span><span class="vfhSpacer"></span>' +
 		'<div class="vfhRange" role="group" aria-label="' + escapeHtml(t('Time range')) + '"><button type="button" data-range="90">' + escapeHtml(strings.days90) + '</button><button type="button" data-range="365">' + escapeHtml(strings.year) + '</button><button type="button" data-range="0">' + escapeHtml(strings.all) + '</button></div>' +
-		'<button type="button" class="vfhButton primary" data-action="fileTimeMachine">' + escapeHtml(strings.fileTimeMachine) + '</button>' +
-		'<button type="button" class="vfhButton" data-action="viewFileHistory">' + escapeHtml(strings.viewFileHistory) + '</button></header>' +
+		'<button type="button" class="vfhButton primary" data-action="fileTimeMachine">' + VFH_ICONS.clock + escapeHtml(strings.fileTimeMachine) + '</button>' +
+		'<button type="button" class="vfhButton" data-action="viewFileHistory">' + VFH_ICONS.history + escapeHtml(strings.viewFileHistory) + '</button></header>' +
 		'<div id="summary" class="vfhSummary"></div>' +
 		'<div class="vfhBody"><figure class="vfhChart" aria-label="' + escapeHtml(t('Commits that changed the file, by author')) + '"><div class="vfhPlot"><div id="lanes" class="vfhLanes"></div><div id="plot" class="vfhArea"></div></div><div id="axis" class="vfhAxis"></div><div id="bars" class="vfhBars"></div>' +
 		'<figcaption class="vfhLegend"><span>' + escapeHtml(strings.sizeLegend) + '</span><span><i class="add"></i><i class="del"></i>' + escapeHtml(strings.barsLegend) + '</span><span>' + escapeHtml(strings.hint) + '</span><span>' + escapeHtml(strings.zoomHint) + '</span></figcaption></figure>' +
 		'<aside id="details" class="vfhDetails" aria-live="polite"></aside></div>' +
-		'<script nonce="' + nonce + '">var COMMITS = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ', STRINGS = ' + JSON.stringify(strings).replace(/</g, '\\u003c') + ', LOCALE = ' + JSON.stringify(locale) + ', FILE = ' + JSON.stringify(filePath).replace(/</g, '\\u003c') + ';' + SCRIPT + '</script></body></html>';
+		'<script nonce="' + nonce + '">var COMMITS = ' + JSON.stringify(data).replace(/</g, '\\u003c') + ', STRINGS = ' + JSON.stringify(strings).replace(/</g, '\\u003c') + ', ICONS = ' + JSON.stringify(VFH_ICONS).replace(/</g, '\\u003c') + ', LOCALE = ' + JSON.stringify(locale) + ', FILE = ' + JSON.stringify(filePath).replace(/</g, '\\u003c') + ';' + SCRIPT + '</script></body></html>';
 }
+
+function vfhIcon(paths: string) {
+	return '<svg class="vfhIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+
+const VFH_ICONS = {
+	chart: vfhIcon('<path d="M2.5 13.5h11M4.5 13.5V8.5M8 13.5V4.5M11.5 13.5V6.5"/>'),
+	clock: vfhIcon('<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.4 1.5"/>'),
+	history: vfhIcon('<path d="M3 5.5A5.5 5.5 0 1 1 4.2 11.8M2.8 2.8v3h3M8 5.2V8l2.2 1.4"/>'),
+	diff: vfhIcon('<rect x="2" y="2.5" width="12" height="11" rx="1.2"/><path d="M8 2.5v11M4 6.5h2.2M5.1 5.4v2.2M9.8 9.5H12"/>'),
+	file: vfhIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13"/>'),
+	commit: vfhIcon('<circle cx="8" cy="8" r="2.6"/><path d="M1.5 8h3.9M10.6 8h3.9"/>')
+};
 
 function escapeHtml(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -218,15 +232,16 @@ function escapeHtml(text: string) {
 const STYLES = `
 body{margin:0;padding:16px 20px;font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-editor-background)}
 button{font:inherit;color:inherit}
+.vfhIcon{width:14px;height:14px;flex:0 0 auto}
 .vfhHeader{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
-.vfhHeader h1{margin:0;font-size:16px;font-weight:600}
-.vfhPath{padding:2px 8px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));border-radius:4px;background:var(--vscode-dropdown-background,rgba(128,128,128,.1));font-family:var(--vscode-editor-font-family);font-size:12px}
+.vfhHeader h1{margin:0;font-size:16px;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+.vfhPath{padding:2px 8px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));border-radius:4px;background:var(--vscode-dropdown-background,rgba(128,128,128,.1));font-family:var(--vscode-editor-font-family);font-size:12px}
 .vfhSpacer{flex:1 1 auto}
 .vfhRange{display:inline-flex;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));border-radius:6px;overflow:hidden}
 .vfhRange button{height:26px;padding:0 10px;border:0;border-right:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));background:transparent;cursor:pointer}
 .vfhRange button:last-child{border-right:0}
 .vfhRange button[aria-pressed="true"]{background:var(--vscode-button-background);color:var(--vscode-button-foreground)}
-.vfhButton{height:26px;padding:0 10px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));border-radius:6px;background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer}
+.vfhButton{height:26px;padding:0 10px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.45));border-radius:6px;background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.15));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .vfhButton.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
 .vfhButton:focus-visible,.vfhRange button:focus-visible,.vfhBubble:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:2px}
 .vfhSummary{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0;font-size:12px}
@@ -332,7 +347,7 @@ const SCRIPT = `
 			'<div class="meta">' + esc(c.a) + ' \\u00b7 ' + esc(date(c.d)) + ' \\u00b7 <span class="hash">' + esc(c.h.substring(0, 8)) + '</span></div>' +
 			'<div><span class="add">+' + c.p + '</span> <span class="del">\\u2212' + c.m + '</span></div>' +
 			'<div class="ratio" style="background:linear-gradient(90deg, var(--vscode-gitDecoration-addedResourceForeground,#3fb950) 0 ' + (c.p / total * 100).toFixed(1) + '%, var(--vscode-gitDecoration-deletedResourceForeground,#f85149) ' + (c.p / total * 100).toFixed(1) + '% 100%)"></div>' +
-			'<div class="actions"><button type="button" class="vfhButton primary" data-action="openChanges">' + esc(STRINGS.openChanges) + '</button><button type="button" class="vfhButton" data-action="openFile">' + esc(STRINGS.openFile) + '</button><button type="button" class="vfhButton" data-action="viewCommit">' + esc(STRINGS.viewCommit) + '</button></div>';
+			'<div class="actions"><button type="button" class="vfhButton primary" data-action="openChanges">' + ICONS.diff + esc(STRINGS.openChanges) + '</button><button type="button" class="vfhButton" data-action="openFile">' + ICONS.file + esc(STRINGS.openFile) + '</button><button type="button" class="vfhButton" data-action="viewCommit">' + ICONS.commit + esc(STRINGS.viewCommit) + '</button></div>';
 	}
 	document.addEventListener('click', function (e) {
 		var target = e.target instanceof Element ? e.target : null;

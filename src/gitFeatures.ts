@@ -631,6 +631,180 @@ export class GitFeatures {
 	}
 
 	/**
+	 * Get commit log & diff summary between two revisions (for AI Code Review or AI PR / Release Notes).
+	 */
+	public async getRangeForReviewOrReleaseNotes(repo: string, fromRef: string, toRef: string): Promise<{ commitsText: string, diffText: string, truncated: boolean, error: GitFeatureError }> {
+		const fromHash = await this.resolveCommit(repo, fromRef);
+		const toHash = await this.resolveCommit(repo, toRef);
+		if (fromHash === null || toHash === null) {
+			return { commitsText: '', diffText: '', truncated: false, error: 'Unable to resolve "' + (fromHash === null ? fromRef : toRef) + '" to a commit.' };
+		}
+		const [logRes, diffRes] = await Promise.all([
+			runGit(this.git, repo, ['-c', 'log.showSignature=false', 'log', '--no-merges', '--max-count=150', '--format=- %h (%an): %s', fromHash + '..' + toHash, '--'], null, null, undefined, MAX_EXPLAIN_BYTES),
+			runGit(this.git, repo, ['diff', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', fromHash, toHash, '--'], null, null, undefined, MAX_EXPLAIN_BYTES)
+		]);
+		if (diffRes.code !== 0 && !diffRes.truncated) {
+			return { commitsText: '', diffText: '', truncated: false, error: errorOf(diffRes) };
+		}
+		const capped = truncateModelInput(diffRes.stdout.toString(), diffRes.truncated);
+		return {
+			commitsText: logRes.code === 0 ? logRes.stdout.toString().trim() : '',
+			diffText: capped.text,
+			truncated: capped.truncated || logRes.truncated,
+			error: null
+		};
+	}
+
+	/* Inline Staging, Hunk Staging, Committing & Moving Branches */
+
+	/**
+	 * Get the staged, unstaged, untracked & conflicted status of every file in the working tree, plus the HEAD commit message (for Amend).
+	 */
+	public async getWorkingTreeStatus(repo: string): Promise<{
+		files: { path: string, oldPath: string | null, indexStatus: string, workTreeStatus: string, staged: boolean, unstaged: boolean, untracked: boolean, conflicted: boolean }[],
+		headMessage: string | null,
+		error: GitFeatureError
+	}> {
+		const [statusRes, headHash] = await Promise.all([
+			this.run(repo, ['-c', 'core.quotepath=false', 'status', '--porcelain=v1', '-z', '-uall']),
+			this.resolveCommit(repo, 'HEAD')
+		]);
+		if (statusRes.code !== 0) return { files: [], headMessage: null, error: errorOf(statusRes) };
+		const headMessage = headHash !== null ? await this.getCommitMessage(repo, headHash) : null;
+		const tokens = statusRes.stdout.toString().split('\0');
+		const files: { path: string, oldPath: string | null, indexStatus: string, workTreeStatus: string, staged: boolean, unstaged: boolean, untracked: boolean, conflicted: boolean }[] = [];
+		const conflictPairs = new Set(['DD', 'AU', 'UD', 'UA', 'DU', 'AA', 'UU']);
+		for (let i = 0; i < tokens.length; i++) {
+			const entry = tokens[i];
+			if (entry.length < 4) continue;
+			const x = entry[0], y = entry[1], xy = x + y;
+			const filePath = entry.substring(3);
+			let oldPath: string | null = null;
+			if ((x === 'R' || x === 'C') && i + 1 < tokens.length) {
+				oldPath = tokens[++i] || null;
+			}
+			const untracked = xy === '??';
+			const conflicted = conflictPairs.has(xy);
+			const staged = !untracked && !conflicted && x !== ' ';
+			const unstaged = untracked || conflicted || y !== ' ';
+			files.push({
+				path: filePath,
+				oldPath: oldPath,
+				indexStatus: x,
+				workTreeStatus: y,
+				staged: staged,
+				unstaged: unstaged,
+				untracked: untracked,
+				conflicted: conflicted
+			});
+		}
+		return { files: files, headMessage: headMessage, error: null };
+	}
+
+	/**
+	 * Stage specific files, or all files when `paths` is NULL.
+	 */
+	public async stageFiles(repo: string, paths: ReadonlyArray<string> | null): Promise<GitFeatureError> {
+		if (paths === null) return this.change(repo, ['add', '-A']);
+		if (paths.length === 0) return null;
+		return this.change(repo, ['add', '--', ...paths]);
+	}
+
+	/**
+	 * Unstage specific files, or all staged files when `paths` is NULL.
+	 */
+	public async unstageFiles(repo: string, paths: ReadonlyArray<string> | null): Promise<GitFeatureError> {
+		const head = await this.resolveCommit(repo, 'HEAD');
+		if (head === null) {
+			return paths === null
+				? this.change(repo, ['rm', '--cached', '-r', '-q', '--', '.'])
+				: (paths.length === 0 ? null : this.change(repo, ['rm', '--cached', '-r', '-q', '--', ...paths]));
+		}
+		return paths === null
+			? this.change(repo, ['reset', '-q', 'HEAD', '--'])
+			: (paths.length === 0 ? null : this.change(repo, ['reset', '-q', 'HEAD', '--', ...paths]));
+	}
+
+	/**
+	 * Discard working-tree changes to tracked files and/or delete untracked files inside the repository.
+	 */
+	public async discardWorkingChanges(repo: string, trackedPaths: ReadonlyArray<string>, untrackedPaths: ReadonlyArray<string>): Promise<GitFeatureError> {
+		if (trackedPaths.length > 0) {
+			const err = await this.change(repo, ['checkout', '--', ...trackedPaths]);
+			if (err !== null) return err;
+		}
+		if (untrackedPaths.length > 0) {
+			const repoResolved = path.resolve(repo);
+			for (const relPath of untrackedPaths) {
+				const abs = path.resolve(repoResolved, relPath);
+				const rel = path.relative(repoResolved, abs);
+				if (rel.startsWith('..') || path.isAbsolute(rel)) return 'Refusing to delete path outside repository: ' + relPath;
+				try {
+					await fs.promises.rm(abs, { recursive: true, force: true });
+				} catch (e) {
+					return String(e);
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Get the unified diff of a single file in the index (`staged = true`) or working tree (`staged = false`) for hunk-by-hunk staging.
+	 */
+	public async getFileHunkDiff(repo: string, filePath: string, staged: boolean): Promise<{ diff: string, error: GitFeatureError }> {
+		const args = staged
+			? ['-c', 'core.quotepath=false', 'diff', '--cached', '--no-color', '--no-ext-diff', '-U3', '--', filePath]
+			: ['-c', 'core.quotepath=false', 'diff', '--no-color', '--no-ext-diff', '-U3', '--', filePath];
+		const res = await runGit(this.git, repo, args, null, null, undefined, MAX_EXPLAIN_BYTES);
+		if (res.code !== 0 && !res.truncated) return { diff: '', error: errorOf(res) };
+		return { diff: res.stdout.toString(), error: null };
+	}
+
+	/**
+	 * Stage, unstage, or discard an individual unified-diff hunk via `git apply`.
+	 */
+	public async applyHunkPatch(repo: string, patch: string, action: 'stage' | 'unstage' | 'discard'): Promise<GitFeatureError> {
+		const normalized = patch.endsWith('\n') ? patch : patch + '\n';
+		const args = action === 'stage'
+			? ['apply', '--cached', '--unidiff-zero', '--whitespace=nowarn', '-']
+			: action === 'unstage'
+				? ['apply', '--cached', '-R', '--unidiff-zero', '--whitespace=nowarn', '-']
+				: ['apply', '-R', '--unidiff-zero', '--whitespace=nowarn', '-'];
+		const res = await runGit(this.git, repo, args, normalized, null, { GIT_EDITOR: ':' });
+		return res.code === 0 ? null : errorOf(res);
+	}
+
+	/**
+	 * Create a commit (or amend HEAD) from staged changes, optionally staging all working-tree changes first when nothing is staged.
+	 */
+	public async commitStagedChanges(repo: string, message: string, amend: boolean, stageAllIfEmpty: boolean, sign: boolean): Promise<GitFeatureError> {
+		if (message.trim() === '') return 'The commit message can\'t be empty.';
+		if (!amend && stageAllIfEmpty) {
+			const cached = await this.run(repo, ['diff', '--cached', '--quiet', '--']);
+			if (cached.code === 0) {
+				const stageErr = await this.stageFiles(repo, null);
+				if (stageErr !== null) return stageErr;
+			}
+		}
+		const args = ['commit', ...(sign ? ['-S'] : []), ...(amend ? ['--amend'] : [])];
+		return this.withMessageFile(message, (file) => this.change(repo, [...args, '-F', file]));
+	}
+
+	/**
+	 * Move a non-checked-out local branch pointer to a target commit (`git branch -f`).
+	 */
+	public async moveBranch(repo: string, branchName: string, targetHash: string): Promise<GitFeatureError> {
+		if (branchName.startsWith('-') || branchName === '') return 'Invalid branch name.';
+		if (!HASH_REGEXP.test(targetHash)) return 'Invalid commit hash.';
+		const current = (await this.run(repo, ['symbolic-ref', '-q', '--short', 'HEAD'])).stdout.toString().trim();
+		if (current === branchName) {
+			return 'The checked-out branch "' + branchName + '" must be moved with Reset instead.';
+		}
+		return this.change(repo, ['branch', '-f', '--', branchName, targetHash]);
+	}
+
+	/**
 	 * Run a Git command that changes a repository (no editor is opened by Git).
 	 * @returns The error, or NULL.
 	 */
@@ -679,4 +853,145 @@ function truncateModelInput(raw: string, alreadyTruncated: boolean) {
 		truncated = true;
 	}
 	return { text: text, truncated: truncated };
+}
+
+/**
+ * Construct a unified-diff patch that stages, unstages, or discards only the selected `+` / `-` line indices within a single hunk.
+ */
+export function buildPartialHunkPatch(
+	diffHeader: string,
+	hunkHeaderLine: string,
+	hunkLines: ReadonlyArray<string>,
+	selectedIndices: ReadonlySet<number>,
+	action: 'stage' | 'unstage' | 'discard',
+	filePath?: string
+): string | null {
+	const m = hunkHeaderLine.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+	if (m === null) return null;
+	let oldStart = parseInt(m[1], 10);
+	let newStart = parseInt(m[3], 10);
+	const tail = m[5] || '';
+	const forward = action === 'stage';
+	const out: string[] = [];
+	let oldCount = 0, newCount = 0, changedCount = 0;
+	let k = 0;
+	while (k < hunkLines.length) {
+		const ln = hunkLines[k];
+		if (ln.startsWith(' ')) {
+			out.push(ln);
+			oldCount++;
+			newCount++;
+			k++;
+			continue;
+		}
+		if (ln.startsWith('\\')) {
+			out.push(ln);
+			k++;
+			continue;
+		}
+		// Collect a contiguous [-... / +...] change group (preserving any trailing "\ No newline" attached to the last - or +)
+		const dels: { idx: number, text: string, noEol: string | null }[] = [];
+		const adds: { idx: number, text: string, noEol: string | null }[] = [];
+		while (k < hunkLines.length && (hunkLines[k].startsWith('-') || hunkLines[k].startsWith('\\'))) {
+			if (hunkLines[k].startsWith('-')) {
+				const item = { idx: k, text: hunkLines[k].substring(1), noEol: <string | null>null };
+				if (k + 1 < hunkLines.length && hunkLines[k + 1].startsWith('\\')) {
+					item.noEol = hunkLines[++k];
+				}
+				dels.push(item);
+			}
+			k++;
+		}
+		while (k < hunkLines.length && (hunkLines[k].startsWith('+') || hunkLines[k].startsWith('\\'))) {
+			if (hunkLines[k].startsWith('+')) {
+				const item = { idx: k, text: hunkLines[k].substring(1), noEol: <string | null>null };
+				if (k + 1 < hunkLines.length && hunkLines[k + 1].startsWith('\\')) {
+					item.noEol = hunkLines[++k];
+				}
+				adds.push(item);
+			}
+			k++;
+		}
+
+		let pendingDel: { text: string, noEol: string | null }[] = [];
+		let pendingAdd: { text: string, noEol: string | null }[] = [];
+		const flushPending = () => {
+			for (const d of pendingDel) {
+				out.push('-' + d.text);
+				if (d.noEol !== null) out.push(d.noEol);
+				oldCount++;
+				changedCount++;
+			}
+			for (const a of pendingAdd) {
+				out.push('+' + a.text);
+				if (a.noEol !== null) out.push(a.noEol);
+				newCount++;
+				changedCount++;
+			}
+			pendingDel = [];
+			pendingAdd = [];
+		};
+
+		const maxLen = Math.max(dels.length, adds.length);
+		for (let i = 0; i < maxLen; i++) {
+			const d = i < dels.length ? dels[i] : null;
+			const a = i < adds.length ? adds[i] : null;
+			if (forward) {
+				if (d !== null) {
+					if (selectedIndices.has(d.idx)) {
+						pendingDel.push(d);
+					} else {
+						flushPending();
+						out.push(' ' + d.text);
+						if (d.noEol !== null) out.push(d.noEol);
+						oldCount++;
+						newCount++;
+					}
+				}
+				if (a !== null && selectedIndices.has(a.idx)) {
+					pendingAdd.push(a);
+				}
+			} else {
+				if (d !== null && selectedIndices.has(d.idx)) {
+					pendingDel.push(d);
+				}
+				if (a !== null) {
+					if (selectedIndices.has(a.idx)) {
+						pendingAdd.push(a);
+					} else {
+						flushPending();
+						out.push(' ' + a.text);
+						if (a.noEol !== null) out.push(a.noEol);
+						oldCount++;
+						newCount++;
+					}
+				}
+			}
+		}
+		flushPending();
+	}
+
+	if (changedCount === 0) return null;
+	if (oldStart === 0 && oldCount > 0) oldStart = 1;
+	if (newStart === 0 && newCount > 0) newStart = 1;
+
+	let header = diffHeader;
+	const inferredPath = filePath || (header.match(/^\+\+\+ b\/(.+)$/m) || header.match(/^--- a\/(.+)$/m) || [])[1] || '';
+	if (oldCount > 0 && header.includes('--- /dev/null') && inferredPath !== '') {
+		header = header
+			.split('\n')
+			.filter((l) => !l.startsWith('new file mode ') && !l.startsWith('index '))
+			.map((l) => l === '--- /dev/null' ? ('--- a/' + inferredPath) : l)
+			.join('\n');
+	}
+	if (newCount > 0 && header.includes('+++ /dev/null') && inferredPath !== '') {
+		header = header
+			.split('\n')
+			.filter((l) => !l.startsWith('deleted file mode ') && !l.startsWith('index '))
+			.map((l) => l === '+++ /dev/null' ? ('+++ b/' + inferredPath) : l)
+			.join('\n');
+	}
+
+	const newHeaderLine = '@@ -' + oldStart + ',' + oldCount + ' +' + newStart + ',' + newCount + ' @@' + tail;
+	return header + '\n' + newHeaderLine + '\n' + out.join('\n') + '\n';
 }

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getApiKey, getDirectAiConfig, getDirectAiProblem, getHost, streamChatCompletion } from './aiProviders';
+import { AiProvider, DirectAiConfig, fetchProviderModels, getDirectAiConfig, getDirectAiProblem, getEffectiveApiKey, getHost, isAutoModelDiscoveryProvider, streamChatCompletion } from './aiProviders';
 import { Language } from './l10n';
 import { LanguageModelInfo } from './types';
 
@@ -30,6 +30,30 @@ function getApi(): { lm: LanguageModelApi, userMessage: (text: string) => any } 
 	return { lm: api.lm, userMessage: (text: string) => createUserMessage.call(api.LanguageModelChatMessage, text) };
 }
 
+async function resolveDirectModels(direct: DirectAiConfig): Promise<{ models: LanguageModelInfo[], error: string | null, needsApiKey: boolean }> {
+	const endpoint = getHost(direct.baseUrl);
+	if (direct.model === '' && direct.baseUrl !== '' && /^https?:\/\//i.test(direct.baseUrl) && isAutoModelDiscoveryProvider(direct.provider)) {
+		const discovered = await fetchProviderModels(direct);
+		if (discovered.models.length > 0) {
+			return {
+				models: discovered.models.map((id) => ({ id: id, name: id, vendor: direct.name, endpoint: endpoint })),
+				error: null,
+				needsApiKey: false
+			};
+		}
+		if (direct.provider === AiProvider.CCSwitch && discovered.reachable && discovered.error === null) {
+			return {
+				models: [{ id: 'default', name: 'default', vendor: direct.name, endpoint: endpoint }],
+				error: null,
+				needsApiKey: false
+			};
+		}
+	}
+	const problem = await getDirectAiProblem(direct);
+	if (problem !== null) return { models: [], error: problem.error, needsApiKey: problem.needsApiKey };
+	return { models: [{ id: direct.model, name: direct.model, vendor: direct.name, endpoint: endpoint }], error: null, needsApiKey: false };
+}
+
 /**
  * Get the language models that can explain commits.
  * @returns The models, and an error if none are available.
@@ -37,10 +61,7 @@ function getApi(): { lm: LanguageModelApi, userMessage: (text: string) => any } 
 export async function getLanguageModels(): Promise<{ models: LanguageModelInfo[], error: string | null, needsApiKey: boolean }> {
 	const direct = getDirectAiConfig();
 	if (direct !== null) {
-		// The API of the provider configured is called directly: its model is the only one
-		const problem = await getDirectAiProblem(direct);
-		if (problem !== null) return { models: [], error: problem.error, needsApiKey: problem.needsApiKey };
-		return { models: [{ id: direct.model, name: direct.model, vendor: direct.name, endpoint: getHost(direct.baseUrl) }], error: null, needsApiKey: false };
+		return resolveDirectModels(direct);
 	}
 	const api = getApi();
 	if (api === null) return { models: [], error: UNAVAILABLE, needsApiKey: false };
@@ -52,7 +73,7 @@ export async function getLanguageModels(): Promise<{ models: LanguageModelInfo[]
 	}
 }
 
-function wrapUntrustedBlock(tag: string, content: string) {
+export function wrapUntrustedBlock(tag: string, content: string) {
 	let marker = tag;
 	while (content.includes(marker + '>>>') || content.includes('<<<' + marker)) marker += '_';
 	return '<<<' + marker + '\n' + content + '\n' + marker + '>>>';
@@ -118,11 +139,18 @@ export function cleanGeneratedCommitMessage(raw: string) {
 async function runLanguageModel(prompt: string, modelId: string | null, unavailableMessage: string, onProgress: (text: string, model: string) => void, token: vscode.CancellationToken): Promise<{ text: string, model: string | null, error: string | null }> {
 	const direct = getDirectAiConfig();
 	if (direct !== null) {
-		const problem = await getDirectAiProblem(direct);
-		if (problem !== null) return { text: '', model: null, error: problem.error };
-		const modelName = direct.model + ' (' + direct.name + ')';
+		let chosenModel = direct.model !== '' ? direct.model : (modelId !== null && modelId !== '' ? modelId : '');
+		if (chosenModel === '') {
+			const resolved = await resolveDirectModels(direct);
+			if (resolved.error !== null || resolved.models.length === 0) return { text: '', model: null, error: resolved.error };
+			chosenModel = resolved.models[0].id;
+		} else {
+			const problem = await getDirectAiProblem(Object.assign({}, direct, { model: chosenModel }));
+			if (problem !== null) return { text: '', model: null, error: problem.error };
+		}
+		const modelName = chosenModel + ' (' + direct.name + ')';
 		let text = '';
-		const error = await streamChatCompletion(direct.baseUrl, direct.model, await getApiKey(direct.provider), prompt, (part) => {
+		const error = await streamChatCompletion(direct.baseUrl, chosenModel, await getEffectiveApiKey(direct.provider), prompt, (part) => {
 			text += part;
 			onProgress(text, modelName);
 		}, token);
@@ -170,4 +198,11 @@ export async function generateCommitMessage(changes: string, recentSubjects: Rea
 		onProgress(cleanGeneratedCommitMessage(raw), model);
 	}, token);
 	return { text: cleanGeneratedCommitMessage(result.text), model: result.model, error: result.error };
+}
+
+/**
+ * Run a custom AI workflow prompt (such as AI Code Review, AI Release Notes, or AI Conflict Resolution) using the configured model.
+ */
+export async function runCustomAiPrompt(prompt: string, modelId: string | null, onProgress: (text: string, model: string) => void, token: vscode.CancellationToken): Promise<{ text: string, model: string | null, error: string | null }> {
+	return runLanguageModel(prompt, modelId, UNAVAILABLE_COMMIT_MESSAGE, onProgress, token);
 }

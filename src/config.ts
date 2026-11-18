@@ -46,8 +46,8 @@ export const GRAPH_COLOUR_PRESET_NAMES: ReadonlyArray<string> = ['Default', 'Pas
 export const COMMIT_ACTION_IDS: ReadonlyArray<string> = [
 	'checkout', 'createBranch', 'cherrypick', 'addTag', 'createWorktree',
 	'revert', 'drop', 'editMessage', 'undoCommit', 'fixup',
-	'merge', 'rebase', 'reset', 'bisectBad', 'bisectGood',
-	'copyHash', 'copySubject', 'savePatch', 'copyPatch'
+	'merge', 'rebase', 'reset', 'bisectBad', 'bisectGood', 'bisectSkip',
+	'aiReview', 'copyHash', 'copySubject', 'savePatch', 'copyPatch'
 ];
 export const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
 
@@ -837,6 +837,10 @@ class Config {
 	 * @param defaultValue The default keybinding.
 	 * @returns The normalised keybinding.
 	 */
+	public get pullRequestStatusEnabled() {
+		return this.config.get<boolean>('integrations.pullRequestStatus.enabled', true);
+	}
+
 	private getKeybinding(section: string, defaultValue: string) {
 		const configValue = this.config.get<string>(section);
 		if (typeof configValue === 'string') {

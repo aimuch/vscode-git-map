@@ -65,40 +65,102 @@ function generateFileDiffHtml(diff: string, maxLines: number, onlyChanges: boole
 		html += '<div class="cdvFileDiffLine ' + type + '"><span>' + (oldNumber !== null ? oldNumber : '') + '</span><span>' + (newNumber !== null ? newNumber : '') + '</span><span>' + (type === 'add' ? '+' : type === 'del' ? '\u2212' : ' ') + '</span><span>' + escapeHtml(text) + '</span></div>';
 		shown++;
 	};
-	diff.split('\n').forEach((line) => {
-		const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
-		if (hunk !== null) {
-			hunks++;
-			if (shown >= maxLines) {
-				hiddenHunks++;
-				inHunk = false;
+	const rawLines = diff.split('\n');
+	if (!onlyChanges) {
+		rawLines.forEach((line) => {
+			const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+			if (hunk !== null) {
+				hunks++;
+				if (shown >= maxLines) {
+					hiddenHunks++;
+					inHunk = false;
+					return;
+				}
+				oldLine = parseInt(hunk[1]);
+				newLine = parseInt(hunk[2]);
+				inHunk = true;
+				html += '<div class="cdvFileDiffHunk">' + escapeHtml(line) + '</div>';
 				return;
 			}
-			oldLine = parseInt(hunk[1]);
-			newLine = parseInt(hunk[2]);
-			inHunk = true;
-			html += '<div class="cdvFileDiffHunk">' + escapeHtml(line) + '</div>';
-			return;
-		}
-		if (!inHunk) return;
-		if (shown >= maxLines) {
-			truncatedHunk = true;
-			return;
-		}
-		const type = line.charAt(0), text = line.substring(1);
-		if (type === '+') {
-			row(null, newLine++, 'add', text);
-		} else if (type === '-') {
-			row(oldLine++, null, 'del', text);
-		} else if (type === ' ') {
-			if (onlyChanges) {
-				oldLine++;
-				newLine++;
-			} else {
+			if (!inHunk) return;
+			if (shown >= maxLines) {
+				truncatedHunk = true;
+				return;
+			}
+			const type = line.charAt(0), text = line.substring(1);
+			if (type === '+') {
+				row(null, newLine++, 'add', text);
+			} else if (type === '-') {
+				row(oldLine++, null, 'del', text);
+			} else if (type === ' ') {
 				row(oldLine++, newLine++, 'context', text);
 			}
+		});
+	} else {
+		// In Changes Only mode, keep 1 adjacent context line around edits and render a divider when unchanged lines are skipped
+		type ParsedDiffItem =
+			| { kind: 'hunk'; header: string }
+			| { kind: 'add'; newNumber: number; text: string }
+			| { kind: 'del'; oldNumber: number; text: string }
+			| { kind: 'ctx'; oldNumber: number; newNumber: number; text: string };
+		const parsed: ParsedDiffItem[] = [];
+		rawLines.forEach((line) => {
+			const hunk = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+			if (hunk !== null) {
+				hunks++;
+				oldLine = parseInt(hunk[1]);
+				newLine = parseInt(hunk[2]);
+				inHunk = true;
+				parsed.push({ kind: 'hunk', header: line });
+				return;
+			}
+			if (!inHunk) return;
+			const type = line.charAt(0), text = line.substring(1);
+			if (type === '+') parsed.push({ kind: 'add', newNumber: newLine++, text: text });
+			else if (type === '-') parsed.push({ kind: 'del', oldNumber: oldLine++, text: text });
+			else if (type === ' ') parsed.push({ kind: 'ctx', oldNumber: oldLine++, newNumber: newLine++, text: text });
+		});
+		const keep = new Array<boolean>(parsed.length).fill(false);
+		for (let i = 0; i < parsed.length; i++) {
+			if (parsed[i].kind === 'add' || parsed[i].kind === 'del') {
+				keep[i] = true;
+				if (i > 0 && parsed[i - 1].kind === 'ctx') keep[i - 1] = true;
+				if (i + 1 < parsed.length && parsed[i + 1].kind === 'ctx') keep[i + 1] = true;
+			}
 		}
-	});
+		let skippedInHunk = 0;
+		const flushSkipped = () => {
+			if (skippedInHunk > 0 && shown < maxLines) {
+				html += '<div class="cdvFileDiffCollapsed">' + t('⋯ {0} unchanged lines collapsed ⋯', skippedInHunk) + '</div>';
+			}
+			skippedInHunk = 0;
+		};
+		for (let i = 0; i < parsed.length; i++) {
+			const item = parsed[i];
+			if (item.kind === 'hunk') {
+				flushSkipped();
+				if (shown >= maxLines) {
+					hiddenHunks++;
+					inHunk = false;
+				} else {
+					inHunk = true;
+					html += '<div class="cdvFileDiffHunk">' + escapeHtml(item.header) + '</div>';
+				}
+			} else if (inHunk) {
+				if (item.kind === 'ctx' && !keep[i]) {
+					skippedInHunk++;
+				} else if (shown >= maxLines) {
+					truncatedHunk = true;
+				} else {
+					flushSkipped();
+					if (item.kind === 'add') row(null, item.newNumber, 'add', item.text);
+					else if (item.kind === 'del') row(item.oldNumber, null, 'del', item.text);
+					else if (item.kind === 'ctx') row(item.oldNumber, item.newNumber, 'context', item.text);
+				}
+			}
+		}
+		flushSkipped();
+	}
 	if (hunks === 0) {
 		return '<div class="cdvFileDiffMessage">' + (/^Binary files /m.test(diff) ? t('This is a binary file') : t('There are no changes to display')) + '</div>';
 	}

@@ -363,6 +363,7 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 	'graph.freezeColumnHeaders': [true, false],
 	'graph.freezeFooter': [true, false],
 	'graph.nodeStyle': ['Dot', 'Avatar'],
+	'integrations.pullRequestStatus.enabled': [true, false],
 	'graph.style': ['rounded', 'angular'],
 	'language': ['Auto', 'English', 'Simplified Chinese'],
 	'statusBarItemDisplay': ['Icon & Text', 'Icon', 'Text']
@@ -411,9 +412,12 @@ export async function setDiffHideUnchangedRegions(enabled: boolean): Promise<voi
 		await saveSettingFallback('diff.hideUnchangedRegions', wrote ? undefined : enabled);
 		await syncEditorHideUnchangedRegions(enabled);
 	} finally {
-		setTimeout(() => {
+		const timer = setTimeout(() => {
 			if (syncingHideUnchangedDepth > 0) syncingHideUnchangedDepth--;
 		}, 50);
+		if (typeof timer === 'object' && timer !== null && typeof timer.unref === 'function') {
+			timer.unref();
+		}
 	}
 }
 

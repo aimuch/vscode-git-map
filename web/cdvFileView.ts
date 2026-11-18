@@ -355,6 +355,42 @@ class CdvFileView {
 						onClick: () => triggerResetFileToRevision(file, fileElem)
 					},
 					{
+						title: t('Stage File'),
+						icon: MENU_ICONS.plus,
+						visible: isUncommitted && expandedCommit.compareWithHash === null,
+						onClick: () => runAction({ command: 'stageFiles', repo: this.view.currentRepo, paths: [file.newFilePath] }, t('Staging File'))
+					},
+					{
+						title: t('Unstage File'),
+						icon: MENU_ICONS.revert,
+						visible: isUncommitted && expandedCommit.compareWithHash === null && file.type !== GG.GitFileStatus.Untracked,
+						onClick: () => runAction({ command: 'unstageFiles', repo: this.view.currentRepo, paths: [file.newFilePath] }, t('Unstaging File'))
+					},
+					{
+						title: t('Stage / Unstage Hunks') + ELLIPSIS,
+						icon: MENU_ICONS.diff,
+						visible: isUncommitted && expandedCommit.compareWithHash === null && file.type !== GG.GitFileStatus.Untracked,
+						onClick: () => this.view.openHunkStagingModal(file.newFilePath, false)
+					},
+					{
+						title: t('Discard File Changes') + ELLIPSIS,
+						icon: MENU_ICONS.trash,
+						visible: isUncommitted && expandedCommit.compareWithHash === null,
+						onClick: () => {
+							dialog.asDangerous().showConfirmation(
+								t('Are you sure you want to permanently discard uncommitted changes to <b><i>{0}</i></b>?', escapeHtml(file.newFilePath)),
+								t('Yes, discard'),
+								() => runAction({
+									command: 'discardWorkingChanges',
+									repo: this.view.currentRepo,
+									trackedPaths: file.type === GG.GitFileStatus.Untracked ? [] : [file.newFilePath],
+									untrackedPaths: file.type === GG.GitFileStatus.Untracked ? [file.newFilePath] : []
+								}, t('Discarding Changes')),
+								target
+							);
+						}
+					},
+					{
 						title: t('Stash this File') + ELLIPSIS,
 						icon: MENU_ICONS.stash,
 						visible: visibility.stashFile && isUncommitted && expandedCommit.compareWithHash === null,

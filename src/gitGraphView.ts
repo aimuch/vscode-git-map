@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { getDirectAiConfig, getHost, loadAiSettingsSnapshot, onDidChangeAiApiKey } from './aiProviders';
+import { fetchProviderModels, getDirectAiConfig, getHost, loadAiSettingsSnapshot, onDidChangeAiApiKey } from './aiProviders';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource, GitConfigKey } from './dataSource';
@@ -13,6 +13,7 @@ import { GitFeatures } from './gitFeatures';
 import { Logger } from './logger';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
+import { fetchRepoPullRequestBadges } from './prStatusIntegration';
 import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
 import { UNABLE_TO_FIND_GIT_MSG, UNCOMMITTED, abbrevCommit, archive, copyFilePathToClipboard, copyToClipboard, createPullRequest, fillScmCommitMessage, getNonce, openExtensionSettings, openExternalUrl, openFile, openFolderInNewWindow, showErrorMessage, syncDiffHideUnchanged, updateExtensionSetting, viewDiff, viewDiffWithWorkingFile, viewFileAtRevision, viewScm } from './utils';
@@ -206,7 +207,7 @@ export class GitGraphView extends Disposable {
 					} else {
 						this.needsAiSync = true;
 					}
-				} else if (event.affectsConfiguration('git-map.commitDetailsView.actions') || event.affectsConfiguration('git-map.diff.hideUnchangedRegions') || event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled')) {
+				} else if (event.affectsConfiguration('git-map.commitDetailsView.actions') || event.affectsConfiguration('git-map.diff.hideUnchangedRegions') || event.affectsConfiguration('diffEditor.hideUnchangedRegions.enabled') || event.affectsConfiguration('git-map.integrations.pullRequestStatus.enabled')) {
 					if (this.panel.visible && this.isGraphViewLoaded) {
 						this.sendCdvConfig();
 					} else {
@@ -1045,6 +1046,11 @@ export class GitGraphView extends Disposable {
 			case 'loadAiConfig':
 				await this.sendAiConfig();
 				break;
+			case 'fetchAiModels': {
+				const discovered = await fetchProviderModels();
+				this.sendMessage({ command: 'fetchAiModels', models: discovered.models, error: discovered.error });
+				break;
+			}
 			case 'setAiApiKey':
 				// Ask for the API key (from the Explain tab or Settings), then refresh AI config & models
 				await vscode.commands.executeCommand('git-map.ai.setApiKey');
@@ -1085,6 +1091,90 @@ export class GitGraphView extends Disposable {
 					const copyError = await copyToClipboard(trimmed);
 					if (copyError === null) vscode.window.setStatusBarMessage(t('Copied the generated commit message to the clipboard.'), 4000);
 					this.sendMessage({ command: 'useGeneratedCommitMessage', copiedToClipboard: copyError === null, error: copyError });
+				}
+				break;
+			}
+			case 'loadWorkingTreeStatus': {
+				const wt = await this.gitFeatures.getWorkingTreeStatus(msg.repo);
+				this.sendMessage({ command: 'loadWorkingTreeStatus', repo: msg.repo, files: wt.files, headMessage: wt.headMessage, error: wt.error });
+				break;
+			}
+			case 'stageFiles':
+				this.sendMessage({ command: 'stageFiles', error: await this.gitFeatures.stageFiles(msg.repo, msg.paths) });
+				break;
+			case 'unstageFiles':
+				this.sendMessage({ command: 'unstageFiles', error: await this.gitFeatures.unstageFiles(msg.repo, msg.paths) });
+				break;
+			case 'discardWorkingChanges':
+				this.sendMessage({ command: 'discardWorkingChanges', error: await this.gitFeatures.discardWorkingChanges(msg.repo, msg.trackedPaths, msg.untrackedPaths) });
+				break;
+			case 'loadFileHunkDiff': {
+				const hunkDiff = await this.gitFeatures.getFileHunkDiff(msg.repo, msg.filePath, msg.staged);
+				this.sendMessage({ command: 'loadFileHunkDiff', filePath: msg.filePath, staged: msg.staged, diff: hunkDiff.diff, error: hunkDiff.error });
+				break;
+			}
+			case 'applyHunkPatch':
+				this.sendMessage({ command: 'applyHunkPatch', filePath: msg.filePath, staged: msg.staged, error: await this.gitFeatures.applyHunkPatch(msg.repo, msg.patch, msg.action) });
+				break;
+			case 'commitStagedChanges':
+				this.sendMessage({
+					command: 'commitStagedChanges',
+					error: await this.undoManager.trackHead(
+						msg.repo,
+						msg.amend ? t('Amend Commit') : t('Commit Changes'),
+						() => this.gitFeatures.commitStagedChanges(msg.repo, msg.message, msg.amend, msg.stageAllIfEmpty, signCommits),
+						(err) => err === null,
+						!msg.amend
+					)
+				});
+				break;
+			case 'moveBranch':
+				this.sendMessage({
+					command: 'moveBranch',
+					error: await this.gitFeatures.moveBranch(msg.repo, msg.branchName, msg.targetHash)
+				});
+				break;
+			case 'loadPullRequestBadges': {
+				const badges = await fetchRepoPullRequestBadges(this.dataSource, msg.repo, !!msg.force);
+				this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: badges });
+				break;
+			}
+			case 'openCompanionFeature': {
+				const payload = { repo: msg.repo, mode: msg.mode, commitHash: msg.commitHash, fromRef: msg.fromRef, toRef: msg.toRef, label: msg.label };
+				switch (msg.feature) {
+					case 'aiReview':
+						vscode.commands.executeCommand('git-map.ai.reviewChanges', payload).then(() => { }, () => { });
+						break;
+					case 'aiReleaseNotes':
+						vscode.commands.executeCommand('git-map.ai.generateReleaseNotes', payload).then(() => { }, () => { });
+						break;
+					case 'conflictAssistant':
+						vscode.commands.executeCommand('git-map.conflictAssistant', payload).then(() => { }, () => { });
+						break;
+					case 'reflogExplorer':
+						vscode.commands.executeCommand('git-map.reflogExplorer', payload).then(() => { }, () => { });
+						break;
+					case 'repoInsights':
+						vscode.commands.executeCommand('git-map.repoInsights', payload).then(() => { }, () => { });
+						break;
+					case 'multiRepoOverview':
+						vscode.commands.executeCommand('git-map.multiRepoOverview').then(() => { }, () => { });
+						break;
+					case 'checkoutPullRequest':
+						vscode.commands.executeCommand('git-map.checkoutPullRequest', payload).then(() => { }, () => { });
+						break;
+					case 'setHostingToken':
+						await vscode.commands.executeCommand('git-map.setHostingToken');
+						if (typeof msg.repo === 'string' && msg.repo !== '') {
+							this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: await fetchRepoPullRequestBadges(this.dataSource, msg.repo, true) });
+						}
+						break;
+					case 'clearHostingToken':
+						await vscode.commands.executeCommand('git-map.clearHostingToken');
+						if (typeof msg.repo === 'string' && msg.repo !== '') {
+							this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: await fetchRepoPullRequestBadges(this.dataSource, msg.repo, true) });
+						}
+						break;
 				}
 				break;
 			}
@@ -1171,8 +1261,9 @@ export class GitGraphView extends Disposable {
 	 * Send updated Commit Details View action bar & diff settings to the front-end.
 	 */
 	private sendCdvConfig() {
-		const cdv = getConfig().commitDetailsView;
-		this.sendMessage({ command: 'updateCdvConfig', actions: cdv.actions, hideUnchangedRegions: cdv.hideUnchangedRegions });
+		const cfg = getConfig();
+		const cdv = cfg.commitDetailsView;
+		this.sendMessage({ command: 'updateCdvConfig', actions: cdv.actions, hideUnchangedRegions: cdv.hideUnchangedRegions, pullRequestStatusEnabled: cfg.pullRequestStatusEnabled });
 	}
 
 	/**
@@ -1375,6 +1466,7 @@ export class GitGraphView extends Disposable {
 				mute: config.muteCommits,
 				onlyFollowFirstParent: config.onlyFollowFirstParent,
 				onRepoLoad: config.onRepoLoad,
+				pullRequestStatusEnabled: config.pullRequestStatusEnabled,
 				referenceLabels: config.referenceLabels,
 				repoDropdownOrder: config.repoDropdownOrder,
 				showRemoteBranches: config.showRemoteBranches,
@@ -1417,6 +1509,7 @@ export class GitGraphView extends Disposable {
 					<div id="syncControl" role="group"><div id="fetchBtn" class="syncBtn"></div><div id="pullBtn" class="syncBtn"></div><div id="pushBtn" class="syncBtn"></div></div>
 					<div id="undoBtn" class="controlBtn hidden"></div>
 					<div id="refreshBtn" class="controlBtn"></div>
+					<div id="toolsMenuBtn" class="controlBtn" title="${t('Tools, Insights & AI')}"></div>
 					<div id="terminalBtn" class="controlBtn" title="${t('Open a Terminal for this Repository')}"></div>
 					<div id="settingsBtn" class="controlBtn" title="${t('Repository Settings')}"></div>
 					<div id="fileHistoryBar"></div>

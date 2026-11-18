@@ -2,7 +2,7 @@ import * as http from 'http';
 import * as vscode from './mocks/vscode';
 jest.mock('vscode', () => vscode, { virtual: true });
 
-import { clearApiKey, setAiSecretStorage, setApiKey } from '../src/aiProviders';
+import { clearApiKey, fetchProviderModels, setAiSecretStorage, setApiKey } from '../src/aiProviders';
 import { cleanGeneratedCommitMessage, explainCommit, generateCommitMessage, getCommitMessagePrompt, getExplainPrompt, getLanguageModels } from '../src/explainCommit';
 
 const UNAVAILABLE = 'Explaining commits requires a language model provided in Visual Studio Code (e.g. by GitHub Copilot Chat), and Visual Studio Code 1.90 or later.';
@@ -511,6 +511,64 @@ describe('explainCommit', () => {
 			// No stored keys -> honest info message
 			await clearApiKey();
 			expect(vscode.window.showInformationMessage).toHaveBeenLastCalledWith('No AI API keys are stored in Git Map.');
+		});
+
+		it('Should auto-discover /v1/models for Magpie & fall back to default route for CC Switch when ai.model is blank', async () => {
+			let lastAuth = '';
+			let modelsStatus = 200;
+			let modelsPayload: any = { data: [{ id: 'claude-sonnet-4-5' }, { id: 'deepseek-chat' }] };
+			const server = await startMockServer((req, body, res) => {
+				lastAuth = String(req.headers['authorization'] || '');
+				if (req.url === '/v1/models') {
+					res.writeHead(modelsStatus, { 'Content-Type': 'application/json' });
+					res.end(JSON.stringify(modelsPayload));
+					return;
+				}
+				const parsed = JSON.parse(body);
+				res.writeHead(200, { 'Content-Type': 'application/json' });
+				res.end(JSON.stringify({ choices: [{ message: { content: 'Handled by ' + parsed.model } }] }));
+			});
+			try {
+				mockSecretStorage();
+				vscode.mockExtensionSettingReturnValue('ai.provider', 'Magpie');
+				vscode.mockExtensionSettingReturnValue('ai.baseUrl', server.baseUrl);
+				vscode.mockExtensionSettingReturnValue('ai.model', '');
+
+				const discovered = await fetchProviderModels();
+				expect(discovered).toStrictEqual({ models: ['claude-sonnet-4-5', 'deepseek-chat'], reachable: true, error: null });
+				expect(lastAuth).toBe('Bearer magpie');
+
+				const magpieModels = await getLanguageModels();
+				expect(magpieModels).toStrictEqual({
+					models: [
+						{ id: 'claude-sonnet-4-5', name: 'claude-sonnet-4-5', vendor: 'Magpie', endpoint: server.host },
+						{ id: 'deepseek-chat', name: 'deepseek-chat', vendor: 'Magpie', endpoint: server.host }
+					],
+					error: null,
+					needsApiKey: false
+				});
+				const magpieRun = await explainCommit('Subject: Fix', 'deepseek-chat', 'en', () => { }, TOKEN);
+				expect(magpieRun).toStrictEqual({ text: 'Handled by deepseek-chat', model: 'deepseek-chat (Magpie)', error: null });
+
+				// CC Switch reachable without /v1/models listing (404) -> falls back to 'default' route
+				modelsStatus = 404;
+				modelsPayload = { error: 'not found' };
+				vscode.mockExtensionSettingReturnValue('ai.provider', 'CC Switch');
+				vscode.mockExtensionSettingReturnValue('ai.baseUrl', server.baseUrl);
+				vscode.mockExtensionSettingReturnValue('ai.model', '');
+
+				const ccModels = await getLanguageModels();
+				expect(ccModels).toStrictEqual({
+					models: [{ id: 'default', name: 'default', vendor: 'CC Switch', endpoint: server.host }],
+					error: null,
+					needsApiKey: false
+				});
+				const ccRun = await explainCommit('Subject: Fix', null, 'en', () => { }, TOKEN);
+				expect(ccRun).toStrictEqual({ text: 'Handled by default', model: 'default (CC Switch)', error: null });
+				expect(lastAuth).toBe('Bearer cc-switch');
+			} finally {
+				await server.close();
+			}
 		});
 	});
 

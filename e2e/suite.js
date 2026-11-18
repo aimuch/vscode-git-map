@@ -2034,10 +2034,12 @@ async function run() {
 			const cdvActionsOk = await send('commitDetailsView.actions', ['savePatch', 'checkout']);
 			const cdvActionsBad = await send('commitDetailsView.actions', ['checkout', 'unknownAction']);
 			const hideUnchangedOk = await send('diff.hideUnchangedRegions', true);
+			const prStatusOk = await send('integrations.pullRequestStatus.enabled', false);
 			const config = vscode.workspace.getConfiguration('git-map');
 			assert(freeze.error === null && config.inspect('graph.freezeFooter').globalValue === false && freezeString.error !== null && config.inspect('graph.freezeColumnHeaders').globalValue === undefined, 'Unexpected boolean settings: ' + freeze.error + ' / ' + freezeString.error);
 			assert(cdvActionsOk.error === null && JSON.stringify(config.inspect('commitDetailsView.actions').globalValue) === JSON.stringify(['savePatch', 'checkout']) && cdvActionsBad.error !== null, 'Unexpected commitDetailsView.actions setting: ' + cdvActionsOk.error + ' / ' + cdvActionsBad.error);
 			assert(hideUnchangedOk.error === null && config.inspect('diff.hideUnchangedRegions').globalValue === true && vscode.workspace.getConfiguration('diffEditor').get('hideUnchangedRegions.enabled') === true, 'diff.hideUnchangedRegions didn\'t sync diffEditor.hideUnchangedRegions.enabled');
+			assert(prStatusOk.error === null && config.inspect('integrations.pullRequestStatus.enabled').globalValue === false, 'integrations.pullRequestStatus.enabled wasn\'t updated');
 			// Diff Editor title bar commands (git-map.diff.showFullFile / git-map.diff.showChangesOnly) toggle both settings and notify the open view
 			const pkg = JSON.parse(fs.readFileSync(path.join(extension.extensionPath, 'package.json'), 'utf8'));
 			const editorTitle = pkg.contributes.menus['editor/title'];
@@ -2051,6 +2053,7 @@ async function run() {
 			await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', undefined, vscode.ConfigurationTarget.Global);
 			await vscode.workspace.getConfiguration('git-map').update('commitDetailsView.actions', undefined, vscode.ConfigurationTarget.Global);
 			await vscode.workspace.getConfiguration('git-map').update('diff.hideUnchangedRegions', undefined, vscode.ConfigurationTarget.Global);
+			await vscode.workspace.getConfiguration('git-map').update('integrations.pullRequestStatus.enabled', undefined, vscode.ConfigurationTarget.Global);
 			await vscode.workspace.getConfiguration('diffEditor').update('hideUnchangedRegions.enabled', undefined, vscode.ConfigurationTarget.Global);
 			// Changing the setting re-renders the open view, which must happen before the next check waits for the view to be re-rendered
 			const renders = record.html.length;
@@ -2102,6 +2105,37 @@ async function run() {
 		});
 		assert(html.includes('data-label="Repo"') && html.includes('"l10n":null'), 'The view wasn\'t re-rendered in English');
 		return 'vscode.env.language: ' + vscode.env.language;
+	});
+
+	await check('companion-panels-e2e', 'File Time Machine, Visual Reflog Explorer, Repository Insights, Multi-Repo Overview & Conflict Assistant open cleanly in VS Code', async () => {
+		const scratch = createScratchRepo('companion-e2e', { 'hello.txt': 'line 1\nline 2\n' });
+		commitFile(scratch, 'hello.txt', 'line 1\nline 2 updated\n', 'Second commit');
+		// Create an orphaned commit then reset back so Reflog Explorer detects an orphaned commit
+		const orphanHash = commitFile(scratch, 'hello.txt', 'orphan line\n', 'Orphaned experiment');
+		git(scratch, 'reset', '--hard', 'HEAD~1');
+
+		await vscode.commands.executeCommand('git-map.fileTimeMachine', vscode.Uri.file(path.join(main, 'file.txt')));
+		await vscode.commands.executeCommand('git-map.reflogExplorer', { repo: scratch });
+		await vscode.commands.executeCommand('git-map.repoInsights', { repo: scratch });
+		await vscode.commands.executeCommand('git-map.multiRepoOverview');
+
+		// Create a real merge conflict in scratch so Git status reports UU and Conflict Assistant opens it
+		git(scratch, 'checkout', '-q', '-b', 'conflict-topic');
+		commitFile(scratch, 'hello.txt', 'topic version\n', 'Topic change');
+		git(scratch, 'checkout', '-q', 'main');
+		commitFile(scratch, 'hello.txt', 'main version\n', 'Main change');
+		try { git(scratch, 'merge', 'conflict-topic'); } catch (_) { /* expected merge conflict */ }
+		await vscode.window.showTextDocument(vscode.Uri.file(path.join(scratch, 'hello.txt')));
+		await vscode.commands.executeCommand('git-map.conflictAssistant', { repo: scratch });
+
+		const openLabels = await waitFor('all 5 companion tabs to register in tabGroups', () => {
+			const labels = vscode.window.tabGroups.all.flatMap((g) => g.tabs).map((t) => t.label);
+			const ok = ['Time Machine: file.txt', 'Reflog Explorer: companion-e2e', 'Insights: companion-e2e', 'Conflict Assistant: companion-e2e'].every((expected) => labels.includes(expected))
+				&& labels.some((l) => l.startsWith('Multi-Repository Overview'));
+			return ok ? labels : null;
+		});
+		await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		return 'Opened & verified all 5 companion Webview panels (' + openLabels.join(', ') + ', orphan ' + orphanHash.slice(0, 8) + ')';
 	});
 
 	const report = {

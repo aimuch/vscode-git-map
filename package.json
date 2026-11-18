@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.2.2",
+	"version": "2.3.1",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -334,6 +334,60 @@
 				"command": "git-map.fileTimeMachine",
 				"title": "%command.fileTimeMachine.title%",
 				"icon": "$(history)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.reviewChanges",
+				"title": "%command.ai.reviewChanges.title%",
+				"icon": "$(shield)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.generateReleaseNotes",
+				"title": "%command.ai.generateReleaseNotes.title%",
+				"icon": "$(note)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.conflictAssistant",
+				"title": "%command.conflictAssistant.title%",
+				"icon": "$(git-merge)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.reflogExplorer",
+				"title": "%command.reflogExplorer.title%",
+				"icon": "$(history)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.repoInsights",
+				"title": "%command.repoInsights.title%",
+				"icon": "$(pulse)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.multiRepoOverview",
+				"title": "%command.multiRepoOverview.title%",
+				"icon": "$(repo)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.checkoutPullRequest",
+				"title": "%command.checkoutPullRequest.title%",
+				"icon": "$(git-pull-request)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.setHostingToken",
+				"title": "%command.setHostingToken.title%",
+				"icon": "$(key)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.clearHostingToken",
+				"title": "%command.clearHostingToken.title%",
+				"icon": "$(trash)"
 			}
 		],
 		"configuration": {
@@ -439,6 +493,8 @@
 							"reset",
 							"bisectBad",
 							"bisectGood",
+							"bisectSkip",
+							"aiReview",
 							"copyHash",
 							"copySubject",
 							"savePatch",
@@ -1407,6 +1463,11 @@
 					"description": "%config.integratedTerminalShell.description%",
 					"scope": "machine"
 				},
+				"git-map.integrations.pullRequestStatus.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.integrations.pullRequestStatus.enabled.description%"
+				},
 				"git-map.keyboardShortcut.find": {
 					"type": "string",
 					"enum": [
@@ -2372,6 +2433,11 @@
 					"command": "git-map.fileTimeMachine",
 					"group": "navigation@-96",
 					"when": "resourceScheme == git-map"
+				},
+				{
+					"command": "git-map.conflictAssistant",
+					"group": "navigation@-95",
+					"when": "resourceScheme == file && git-map:hasMergeConflictMarkers"
 				}
 			],
 			"scm/title": [
@@ -2379,6 +2445,21 @@
 					"when": "scmProvider == git && config.git-map.ai.commitMessage.enabled",
 					"command": "git-map.ai.generateCommitMessage",
 					"group": "navigation"
+				},
+				{
+					"when": "scmProvider == git",
+					"command": "git-map.ai.reviewChanges",
+					"group": "navigation"
+				},
+				{
+					"when": "scmProvider == git",
+					"command": "git-map.conflictAssistant",
+					"group": "2_gitMap@1"
+				},
+				{
+					"when": "scmProvider == git",
+					"command": "git-map.reflogExplorer",
+					"group": "2_gitMap@2"
 				},
 				{
 					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",

@@ -13,12 +13,18 @@ import { GitGraphView } from './gitGraphView';
 import { LineBlame } from './lineBlame';
 import { LineHistory } from './lineHistory';
 import { Logger } from './logger';
+import { MultiRepoOverview } from './multiRepoOverview';
+import { ReflogExplorer } from './reflogExplorer';
 import { RemoveFromHistory } from './removeFromHistory';
+import { RepoInsights } from './repoInsights';
 import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
 import { VisualFileHistory } from './visualFileHistory';
+import { AiAssistantPanel } from './aiAssistantPanel';
 import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMessage';
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
+import { ConflictAssistant } from './conflictAssistant';
+import { checkoutPullRequestCommand, clearHostingTokenCommand, setHostingSecretStorage, setHostingTokenCommand } from './prStatusIntegration';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
 import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, isInternalHideUnchangedWrite, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
@@ -87,7 +93,13 @@ export async function activate(context: vscode.ExtensionContext) {
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
 	const fileTimeMachine = new FileTimeMachine(dataSource, repoManager, logger);
 	setAiSecretStorage(context.secrets);
+	setHostingSecretStorage(context.secrets);
 	setSettingFallbackStorage(context.globalState);
+	const aiAssistantPanel = new AiAssistantPanel(dataSource, repoManager, extensionState, logger);
+	const conflictAssistant = new ConflictAssistant(dataSource, repoManager, extensionState, logger);
+	const reflogExplorer = new ReflogExplorer(dataSource, repoManager, extensionState, logger);
+	const repoInsights = new RepoInsights(dataSource, repoManager, extensionState, logger);
+	const multiRepoOverview = new MultiRepoOverview(dataSource, repoManager, logger);
 
 	const applyDiffViewMode = async (onlyChanges: boolean) => {
 		await setDiffHideUnchangedRegions(onlyChanges);
@@ -99,6 +111,9 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('git-map.ai.generateCommitMessage', (arg?: unknown) => generateScmCommitMessage(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.ai.setApiKey', (key?: unknown) => setApiKey(key)),
 		vscode.commands.registerCommand('git-map.ai.clearApiKey', () => clearApiKey()),
+		vscode.commands.registerCommand('git-map.setHostingToken', () => setHostingTokenCommand()),
+		vscode.commands.registerCommand('git-map.clearHostingToken', () => clearHostingTokenCommand()),
+		vscode.commands.registerCommand('git-map.checkoutPullRequest', (arg?: unknown) => checkoutPullRequestCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.diff.showChangesOnly', () => applyDiffViewMode(true)),
 		vscode.commands.registerCommand('git-map.diff.showFullFile', () => applyDiffViewMode(false)),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
@@ -157,6 +172,11 @@ export async function activate(context: vscode.ExtensionContext) {
 		removeFromHistory,
 		visualFileHistory,
 		fileTimeMachine,
+		aiAssistantPanel,
+		conflictAssistant,
+		reflogExplorer,
+		repoInsights,
+		multiRepoOverview,
 		commandManager,
 		statusBarItem,
 		repoManager,

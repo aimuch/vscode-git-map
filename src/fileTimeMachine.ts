@@ -9,7 +9,7 @@ import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { GitFileStatus, GitFileTimelineCommit } from './types';
-import { UNCOMMITTED, getNonce, getPathFromUri, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
+import { UNCOMMITTED, copyToClipboard, getNonce, getPathFromUri, showErrorMessage, showInformationMessage, viewDiff, viewFileAtRevision } from './utils';
 import { Disposable } from './utils/disposable';
 
 const MAX_COMMITS = 2000;
@@ -33,6 +33,20 @@ interface ShownTimeMachine {
 	readonly repo: string;
 	readonly filePath: string;
 	readonly entries: ReadonlyArray<TimeMachineEntry>;
+}
+
+type TimeMachineWebviewMessage =
+	| { readonly command: 'loadRevision'; readonly index: number }
+	| { readonly command: 'compareRevisions'; readonly baseIndex: number; readonly targetIndex: number }
+	| { readonly command: 'applySelectedLines'; readonly startLine: number; readonly endLine: number; readonly text: string; readonly mode: 'copy' | 'apply' }
+	| { readonly command: 'visualFileHistory' }
+	| { readonly command: 'openChanges' | 'openFile' | 'viewCommit'; readonly index: number };
+
+interface WorkingTreeSnapshot {
+	readonly text: string;
+	readonly binary: boolean;
+	readonly dirtyBuffer: boolean;
+	readonly exists: boolean;
 }
 
 /**
@@ -221,11 +235,33 @@ export class FileTimeMachine extends Disposable {
 		this.logger.log('Showing File Time Machine for ' + target.path + ' (' + entries.length + ' revisions)');
 	}
 
-	private async getWorkingTreeStats(repo: string, filePath: string): Promise<{ additions: number, deletions: number }> {
-		const diffRes = await this.dataSource.getFileDiff(repo, UNCOMMITTED, 'HEAD', filePath, filePath).catch(() => null);
-		if (diffRes === null || diffRes.diff === '') return { additions: 0, deletions: 0 };
+	private async readWorkingTreeFile(repo: string, filePath: string): Promise<WorkingTreeSnapshot> {
+		const repoResolved = path.resolve(repo);
+		const abs = path.resolve(repoResolved, filePath);
+		const rel = path.relative(repoResolved, abs);
+		if (rel.startsWith('..') || path.isAbsolute(rel)) {
+			return { text: '', binary: false, dirtyBuffer: false, exists: false };
+		}
+		const docs = Array.isArray(vscode.workspace.textDocuments) ? vscode.workspace.textDocuments : [];
+		const normalizedAbs = abs.replace(/\\/g, '/');
+		const openDirty = docs.find((doc) => doc && doc.isDirty && doc.uri && doc.uri.scheme === 'file' && getPathFromUri(doc.uri) === normalizedAbs);
+		if (typeof openDirty !== 'undefined') {
+			const text = openDirty.getText();
+			return { text: text, binary: text.includes('\0'), dirtyBuffer: true, exists: true };
+		}
+		try {
+			const buf = await fs.promises.readFile(abs);
+			if (buf.includes(0)) return { text: '', binary: true, dirtyBuffer: false, exists: true };
+			return { text: buf.toString('utf8'), binary: false, dirtyBuffer: false, exists: true };
+		} catch (_) {
+			return { text: '', binary: false, dirtyBuffer: false, exists: false };
+		}
+	}
+
+	private countDiffLines(diffText: string): { additions: number, deletions: number } {
+		if (diffText === '') return { additions: 0, deletions: 0 };
 		let additions = 0, deletions = 0;
-		const lines = diffRes.diff.split(/\r?\n/);
+		const lines = diffText.split(/\r?\n/);
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
 			if (line.startsWith('+') && !line.startsWith('+++')) additions++;
@@ -234,64 +270,71 @@ export class FileTimeMachine extends Disposable {
 		return { additions, deletions };
 	}
 
-	private async loadEntryData(shown: ShownTimeMachine, index: number): Promise<{ diff: string, snapshot: string, error: string | null }> {
+	private async getWorkingTreeStats(repo: string, filePath: string): Promise<{ additions: number, deletions: number }> {
+		const work = await this.readWorkingTreeFile(repo, filePath);
+		if (!work.dirtyBuffer) {
+			const diffRes = await this.dataSource.getFileDiff(repo, UNCOMMITTED, 'HEAD', filePath, filePath).catch(() => null);
+			if (diffRes !== null && diffRes.diff !== '') {
+				return this.countDiffLines(diffRes.diff);
+			}
+		}
+		if (work.binary) return { additions: 0, deletions: 0 };
+		const headContent = await this.dataSource.getCommitFile(repo, 'HEAD', filePath).catch(() => '');
+		return this.countDiffLines(buildMultiHunkUnifiedDiff(filePath, headContent, work.text));
+	}
+
+	private async loadEntryData(shown: ShownTimeMachine, index: number): Promise<{ diff: string, snapshot: string, binary: boolean, deleted: boolean, error: string | null }> {
 		const entry = shown.entries[index];
-		if (typeof entry === 'undefined') return { diff: '', snapshot: '', error: 'Invalid revision index.' };
+		if (typeof entry === 'undefined') return { diff: '', snapshot: '', binary: false, deleted: false, error: 'Invalid revision index.' };
 
 		if (entry.hash === UNCOMMITTED) {
-			const repoResolved = path.resolve(shown.repo);
-			const abs = path.resolve(repoResolved, entry.filePath);
-			const rel = path.relative(repoResolved, abs);
-			let snapshot = '';
-			if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
-				try {
-					const buf = await fs.promises.readFile(abs);
-					snapshot = buf.includes(0) ? t('(Binary file)') : buf.toString('utf8').slice(0, MAX_SNAPSHOT_CHARS);
-				} catch (_) {
-					snapshot = '';
+			const work = await this.readWorkingTreeFile(shown.repo, entry.filePath);
+			if (work.binary) {
+				return { diff: '', snapshot: '', binary: true, deleted: false, error: null };
+			}
+			let diff = '';
+			let error: string | null = null;
+			if (!work.dirtyBuffer) {
+				const diffRes = await this.dataSource.getFileDiff(shown.repo, UNCOMMITTED, 'HEAD', entry.filePath, entry.filePath);
+				diff = diffRes.diff;
+				error = diffRes.error;
+			}
+			if (diff === '' && error === null) {
+				const headContent = await this.dataSource.getCommitFile(shown.repo, 'HEAD', entry.filePath).catch(() => '');
+				if (headContent !== work.text) {
+					diff = buildMultiHunkUnifiedDiff(entry.filePath, headContent, work.text);
 				}
 			}
-			const diffRes = await this.getWorkingTreeDiff(shown.repo, entry.filePath);
-			return { diff: diffRes.diff, snapshot: snapshot, error: diffRes.error };
+			const snapshot = work.text.length > MAX_SNAPSHOT_CHARS ? work.text.slice(0, MAX_SNAPSHOT_CHARS) : work.text;
+			return { diff: diff, snapshot: snapshot, binary: false, deleted: !work.exists, error: error };
 		}
 
 		const older = shown.entries[index + 1];
 		const oldFilePath = entry.oldFilePath !== null ? entry.oldFilePath : (typeof older !== 'undefined' ? older.filePath : entry.filePath);
-		const parentCommit = entry.added && typeof older === 'undefined'
-			? await this.gitFeatures.resolveCommit(shown.repo, entry.hash + '^')
-			: (await this.gitFeatures.resolveCommit(shown.repo, entry.hash + '^'));
+		const parentCommit = entry.added && entry.oldFilePath === null
+			? null
+			: await this.gitFeatures.resolveCommit(shown.repo, entry.hash + '^');
 
-		const [diffRes, snapshot] = await Promise.all([
+		let fileMissingAtCommit = false;
+		const [diffRes, rawSnapshot] = await Promise.all([
 			this.dataSource.getFileDiff(shown.repo, entry.hash, parentCommit, oldFilePath, entry.filePath),
-			this.dataSource.getCommitFile(shown.repo, entry.hash, entry.filePath).then(
-				(content) => content.length > MAX_SNAPSHOT_CHARS ? content.substring(0, MAX_SNAPSHOT_CHARS) : content,
-				() => ''
-			)
+			this.dataSource.getCommitFile(shown.repo, entry.hash, entry.filePath).catch(() => {
+				fileMissingAtCommit = true;
+				return '';
+			})
 		]);
-		return { diff: diffRes.diff, snapshot: snapshot, error: diffRes.error };
+		const binary = rawSnapshot.includes('\0') || /^Binary files /m.test(diffRes.diff);
+		const deleted = fileMissingAtCommit && (/^deleted file mode /m.test(diffRes.diff) || (entry.additions === 0 && entry.deletions > 0));
+		const snapshot = binary
+			? ''
+			: (rawSnapshot.length > MAX_SNAPSHOT_CHARS ? rawSnapshot.substring(0, MAX_SNAPSHOT_CHARS) : rawSnapshot);
+		return { diff: diffRes.diff, snapshot: snapshot, binary: binary, deleted: deleted, error: diffRes.error };
 	}
 
-	private async getWorkingTreeDiff(repo: string, filePath: string): Promise<{ diff: string, error: string | null }> {
-		// Compare working tree file against HEAD via DataSource's git executable
-		const headContent = await this.dataSource.getCommitFile(repo, 'HEAD', filePath).catch(() => '');
-		const repoResolved = path.resolve(repo);
-		const abs = path.resolve(repoResolved, filePath);
-		const rel = path.relative(repoResolved, abs);
-		if (rel.startsWith('..') || path.isAbsolute(rel)) return { diff: '', error: null };
-		let workContent = '';
-		try {
-			const buf = await fs.promises.readFile(abs);
-			if (buf.includes(0)) return { diff: '', error: null };
-			workContent = buf.toString('utf8');
-		} catch (_) {
-			workContent = '';
-		}
-		return { diff: buildSimpleUnifiedDiff(filePath, headContent, workContent), error: null };
-	}
-
-	private async onMessage(message: any) {
+	private async onMessage(rawMessage: unknown) {
 		const shown = this.shown;
-		if (shown === null || this.panel === null || typeof message !== 'object' || message === null) return;
+		if (shown === null || this.panel === null || typeof rawMessage !== 'object' || rawMessage === null) return;
+		const message = <Partial<TimeMachineWebviewMessage>>rawMessage;
 
 		if (message.command === 'loadRevision' && typeof message.index === 'number') {
 			const data = await this.loadEntryData(shown, message.index);
@@ -301,8 +344,81 @@ export class FileTimeMachine extends Disposable {
 					index: message.index,
 					diff: data.diff,
 					snapshot: data.snapshot,
+					binary: data.binary,
+					deleted: data.deleted,
 					error: data.error
 				});
+			}
+			return;
+		}
+
+		if (message.command === 'compareRevisions' && typeof message.baseIndex === 'number' && typeof message.targetIndex === 'number') {
+			const baseEntry = shown.entries[message.baseIndex];
+			const targetEntry = shown.entries[message.targetIndex];
+			if (typeof baseEntry === 'undefined' || typeof targetEntry === 'undefined') return;
+			let diff = '', err: string | null = null;
+			if (baseEntry.hash === targetEntry.hash) {
+				diff = '';
+			} else if (targetEntry.hash === UNCOMMITTED) {
+				const work = await this.readWorkingTreeFile(shown.repo, targetEntry.filePath);
+				if (!work.dirtyBuffer) {
+					const res = await this.dataSource.getFileDiff(shown.repo, UNCOMMITTED, baseEntry.hash, baseEntry.filePath, targetEntry.filePath);
+					diff = res.diff;
+					err = res.error;
+				}
+				if (diff === '' && err === null && !work.binary) {
+					const baseContent = await this.dataSource.getCommitFile(shown.repo, baseEntry.hash, baseEntry.filePath).catch(() => '');
+					diff = buildMultiHunkUnifiedDiff(targetEntry.filePath, baseContent, work.text);
+				}
+			} else if (baseEntry.hash === UNCOMMITTED) {
+				const work = await this.readWorkingTreeFile(shown.repo, baseEntry.filePath);
+				const targetContent = await this.dataSource.getCommitFile(shown.repo, targetEntry.hash, targetEntry.filePath).catch(() => '');
+				diff = buildMultiHunkUnifiedDiff(targetEntry.filePath, work.text, targetContent);
+			} else {
+				const res = await this.dataSource.getFileDiff(shown.repo, targetEntry.hash, baseEntry.hash, baseEntry.filePath, targetEntry.filePath);
+				diff = res.diff;
+				err = res.error;
+			}
+			if (this.panel !== null && this.shown === shown) {
+				this.panel.webview.postMessage({
+					command: 'comparisonData',
+					baseIndex: message.baseIndex,
+					targetIndex: message.targetIndex,
+					diff: diff,
+					error: err
+				});
+			}
+			return;
+		}
+
+		if (message.command === 'applySelectedLines' && typeof message.text === 'string' && typeof message.startLine === 'number' && typeof message.endLine === 'number') {
+			if (message.mode === 'copy') {
+				const copyErr = await copyToClipboard(message.text);
+				if (copyErr === null) vscode.window.setStatusBarMessage(t('Copied selected lines to the clipboard.'), 3000);
+				return;
+			}
+			const repoResolved = path.resolve(shown.repo);
+			const abs = path.resolve(repoResolved, shown.filePath);
+			const rel = path.relative(repoResolved, abs);
+			if (rel.startsWith('..') || path.isAbsolute(rel)) return;
+			try {
+				const uri = vscode.Uri.file(abs);
+				const doc = await vscode.workspace.openTextDocument(uri);
+				const insertLine = Math.min(Math.max(0, message.startLine - 1), doc.lineCount);
+				const edit = new vscode.WorkspaceEdit();
+				const textWithNewline = message.text.endsWith('\n') ? message.text : message.text + '\n';
+				edit.insert(uri, new vscode.Position(insertLine, 0), textWithNewline);
+				const applied = await vscode.workspace.applyEdit(edit);
+				if (applied) {
+					await vscode.commands.executeCommand('vscode.open', uri, {
+						selection: new vscode.Range(new vscode.Position(insertLine, 0), new vscode.Position(insertLine, 0)),
+						preview: false
+					});
+					showInformationMessage(t('Inserted lines {0}–{1} into {2} (press Undo in the editor to revert).', String(message.startLine), String(message.endLine), shown.filePath));
+				}
+			} catch (_) {
+				const copyErr = await copyToClipboard(message.text);
+				if (copyErr === null) showInformationMessage(t('Working file could not be opened directly; copied the selected lines to the clipboard instead.'));
 			}
 			return;
 		}
@@ -312,7 +428,7 @@ export class FileTimeMachine extends Disposable {
 			return;
 		}
 
-		if (typeof message.index !== 'number') return;
+		if ((message.command !== 'openChanges' && message.command !== 'openFile' && message.command !== 'viewCommit') || typeof message.index !== 'number') return;
 		const entry = shown.entries[message.index];
 		if (typeof entry === 'undefined') return;
 		const older = shown.entries[message.index + 1];
@@ -350,10 +466,18 @@ export class FileTimeMachine extends Disposable {
 	}
 }
 
+interface DiffOp {
+	readonly type: 'equal' | 'del' | 'add';
+	readonly line: string;
+	readonly oldIdx: number;
+	readonly newIdx: number;
+}
+
 /**
- * Lightweight line-by-line unified diff generator for working-tree LIVE preview vs HEAD.
+ * Multi-hunk unified diff generator (with 3 context lines per hunk) for unsaved working-tree buffers or untracked files.
+ * Distant edits in a file are emitted as separate `@@ ... @@` hunks instead of collapsing unchanged middle lines into a giant block.
  */
-function buildSimpleUnifiedDiff(filePath: string, oldText: string, newText: string): string {
+export function buildMultiHunkUnifiedDiff(filePath: string, oldText: string, newText: string): string {
 	if (oldText === newText) return '';
 	const oldLines = oldText === '' ? [] : oldText.replace(/\r\n/g, '\n').split('\n');
 	const newLines = newText === '' ? [] : newText.replace(/\r\n/g, '\n').split('\n');
@@ -364,21 +488,125 @@ function buildSimpleUnifiedDiff(filePath: string, oldText: string, newText: stri
 		oldEnd--;
 		newEnd--;
 	}
-	const ctxBefore = Math.max(0, prefix - 3);
-	const ctxAfterOld = Math.min(oldLines.length - 1, oldEnd + 3);
-	const ctxAfterNew = Math.min(newLines.length - 1, newEnd + 3);
+	const midOldLen = oldEnd - prefix + 1;
+	const midNewLen = newEnd - prefix + 1;
+
+	const ops: DiffOp[] = [];
+	for (let i = 0; i < prefix; i++) {
+		ops.push({ type: 'equal', line: oldLines[i], oldIdx: i, newIdx: i });
+	}
+
+	if (midOldLen === 0) {
+		for (let j = 0; j < midNewLen; j++) {
+			ops.push({ type: 'add', line: newLines[prefix + j], oldIdx: prefix, newIdx: prefix + j });
+		}
+	} else if (midNewLen === 0) {
+		for (let i = 0; i < midOldLen; i++) {
+			ops.push({ type: 'del', line: oldLines[prefix + i], oldIdx: prefix + i, newIdx: prefix });
+		}
+	} else if (midOldLen * midNewLen <= 1600000) {
+		// Exact LCS dynamic programming over the trimmed middle span (up to ~1265 x 1265 lines)
+		const cols = midNewLen + 1;
+		const dp = new Int32Array((midOldLen + 1) * cols);
+		for (let i = midOldLen - 1; i >= 0; i--) {
+			const oLine = oldLines[prefix + i];
+			const rowOff = i * cols;
+			const nextRowOff = (i + 1) * cols;
+			for (let j = midNewLen - 1; j >= 0; j--) {
+				dp[rowOff + j] = oLine === newLines[prefix + j]
+					? dp[nextRowOff + j + 1] + 1
+					: (dp[nextRowOff + j] >= dp[rowOff + j + 1] ? dp[nextRowOff + j] : dp[rowOff + j + 1]);
+			}
+		}
+		let i = 0, j = 0;
+		while (i < midOldLen && j < midNewLen) {
+			if (oldLines[prefix + i] === newLines[prefix + j]) {
+				ops.push({ type: 'equal', line: oldLines[prefix + i], oldIdx: prefix + i, newIdx: prefix + j });
+				i++;
+				j++;
+			} else if (dp[(i + 1) * cols + j] >= dp[i * cols + j + 1]) {
+				ops.push({ type: 'del', line: oldLines[prefix + i], oldIdx: prefix + i, newIdx: prefix + j });
+				i++;
+			} else {
+				ops.push({ type: 'add', line: newLines[prefix + j], oldIdx: prefix + i, newIdx: prefix + j });
+				j++;
+			}
+		}
+		while (i < midOldLen) {
+			ops.push({ type: 'del', line: oldLines[prefix + i], oldIdx: prefix + i, newIdx: prefix + j });
+			i++;
+		}
+		while (j < midNewLen) {
+			ops.push({ type: 'add', line: newLines[prefix + j], oldIdx: prefix + i, newIdx: prefix + j });
+			j++;
+		}
+	} else {
+		for (let i = 0; i < midOldLen; i++) {
+			ops.push({ type: 'del', line: oldLines[prefix + i], oldIdx: prefix + i, newIdx: prefix });
+		}
+		for (let j = 0; j < midNewLen; j++) {
+			ops.push({ type: 'add', line: newLines[prefix + j], oldIdx: oldEnd + 1, newIdx: prefix + j });
+		}
+	}
+
+	const suffixCount = oldLines.length - 1 - oldEnd;
+	for (let k = 0; k < suffixCount; k++) {
+		ops.push({ type: 'equal', line: oldLines[oldEnd + 1 + k], oldIdx: oldEnd + 1 + k, newIdx: newEnd + 1 + k });
+	}
+
+	const CONTEXT = 3;
+	const hunks: { start: number, end: number }[] = [];
+	for (let k = 0; k < ops.length; k++) {
+		if (ops[k].type !== 'equal') {
+			const s = Math.max(0, k - CONTEXT);
+			const e = Math.min(ops.length - 1, k + CONTEXT);
+			if (hunks.length > 0 && s <= hunks[hunks.length - 1].end + 1) {
+				hunks[hunks.length - 1].end = Math.max(hunks[hunks.length - 1].end, e);
+			} else {
+				hunks.push({ start: s, end: e });
+			}
+		}
+	}
+	if (hunks.length === 0) return '';
+
 	const out: string[] = [
 		'diff --git a/' + filePath + ' b/' + filePath,
 		'--- a/' + filePath,
-		'+++ b/' + filePath,
-		'@@ -' + (ctxBefore + 1) + ',' + (ctxAfterOld - ctxBefore + 1) + ' +' + (ctxBefore + 1) + ',' + (ctxAfterNew - ctxBefore + 1) + ' @@'
+		'+++ b/' + filePath
 	];
-	for (let i = ctxBefore; i < prefix; i++) out.push(' ' + oldLines[i]);
-	for (let i = prefix; i <= oldEnd; i++) out.push('-' + oldLines[i]);
-	for (let i = prefix; i <= newEnd; i++) out.push('+' + newLines[i]);
-	for (let i = oldEnd + 1; i <= ctxAfterOld; i++) out.push(' ' + oldLines[i]);
+	for (const h of hunks) {
+		let oldCount = 0, newCount = 0;
+		for (let k = h.start; k <= h.end; k++) {
+			if (ops[k].type !== 'add') oldCount++;
+			if (ops[k].type !== 'del') newCount++;
+		}
+		const first = ops[h.start];
+		const oldStart = oldCount === 0 ? first.oldIdx : first.oldIdx + 1;
+		const newStart = newCount === 0 ? first.newIdx : first.newIdx + 1;
+		out.push('@@ -' + oldStart + ',' + oldCount + ' +' + newStart + ',' + newCount + ' @@');
+		for (let k = h.start; k <= h.end; k++) {
+			const op = ops[k];
+			out.push((op.type === 'add' ? '+' : op.type === 'del' ? '-' : ' ') + op.line);
+		}
+	}
 	return out.join('\n');
 }
+
+function ftmIcon(paths: string) {
+	return '<svg class="ftmIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+
+const FTM_ICONS = {
+	clock: ftmIcon('<circle cx="8" cy="8" r="5.8"/><path d="M8 4.8V8l2.4 1.5"/>'),
+	foldDiff: ftmIcon('<path d="M5.5 2.5L8 5l2.5-2.5M5.5 13.5L8 11l2.5 2.5M2.5 8h11"/>'),
+	diff: ftmIcon('<rect x="2" y="2.5" width="12" height="11" rx="1.2"/><path d="M8 2.5v11M4 6.5h2.2M5.1 5.4v2.2M9.8 9.5H12"/>'),
+	file: ftmIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13"/>'),
+	chart: ftmIcon('<path d="M2.5 13.5h11M4.5 13.5V8.5M8 13.5V4.5M11.5 13.5V6.5"/>'),
+	arrowUp: ftmIcon('<path d="M8 12.5v-9M4.5 7L8 3.5 11.5 7"/>'),
+	arrowDown: ftmIcon('<path d="M8 3.5v9M4.5 9L8 12.5 11.5 9"/>'),
+	commit: ftmIcon('<circle cx="8" cy="8" r="2.6"/><path d="M1.5 8h3.9M10.6 8h3.9"/>'),
+	pin: ftmIcon('<path d="M5.5 2.5h5l-.6 3.5 2.1 2v1.2H4V8l2.1-2zM8 9.2v4.3"/>')
+};
 
 function escapeHtml(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -399,8 +627,8 @@ export function getFileTimeMachineHtml(
 		changesOnly: t('Changes Only'),
 		fullDiff: t('Full Diff'),
 		snapshot: t('Full File'),
-		newer: t('Newer Revision (Up Arrow)'),
-		older: t('Older Revision (Down Arrow)'),
+		newer: t('Newer Revision (↑ or Alt+↑)'),
+		older: t('Older Revision (↓ or Alt+↓)'),
 		openChanges: t('Open Diff in Editor'),
 		openFile: t('Open File at this Revision'),
 		viewCommit: t('View Commit in Git Map'),
@@ -408,10 +636,20 @@ export function getFileTimeMachineHtml(
 		renamedFrom: t('Renamed from {0}'),
 		loading: t('Loading revision…'),
 		noDiff: t('No line changes in this revision.'),
+		binaryFile: t('Binary file — click "Open Diff in Editor" or "Open File at this Revision" above to inspect.'),
+		deletedFile: t('This file was deleted in this revision.'),
 		hiddenLines: t('⋯ {0} unchanged lines collapsed ⋯'),
 		zoomOut: t('Zoom Out Timeline'),
 		zoomIn: t('Zoom In Timeline'),
-		scrubHint: t('Drag playhead, click ticks, or use ↑ / ↓ keys to travel through commits')
+		zoomLevel: t('Timeline Zoom'),
+		pinBase: t('Pin as Base'),
+		clearBase: t('Clear Base ({0})'),
+		comparingWithBase: t('Comparing against pinned base {0}'),
+		linesSelected: t('Lines {0}–{1} selected'),
+		copyLines: t('Copy Lines'),
+		applyLines: t('Insert into Working File'),
+		clearSelection: t('Clear'),
+		scrubHint: t('Drag playhead, Shift+click tick to pin BASE, or press ↑ / ↓ (Alt+↑ / ↓ in code)')
 	};
 	const serialised = entries.map((e) => ({
 		h: e.hash,
@@ -431,46 +669,54 @@ export function getFileTimeMachineHtml(
 		'<div class="ftmLayout">' +
 			'<main class="ftmMain">' +
 				'<header class="ftmTopBar">' +
-					'<span class="ftmBrand">' + escapeHtml(strings.title) + '</span>' +
-					'<span id="ftmPath" class="ftmPath">' + escapeHtml(filePath) + '</span>' +
+					'<span class="ftmBrand">' + FTM_ICONS.clock + escapeHtml(strings.title) + '</span>' +
+					'<span id="ftmPath" class="ftmPath" title="' + escapeHtml(filePath) + '">' + escapeHtml(filePath) + '</span>' +
 					'<span id="ftmRename" class="ftmRename hidden"></span>' +
 					'<span class="ftmSpacer"></span>' +
-					'<div class="ftmModes" role="group">' +
-						'<button type="button" data-mode="changes">' + escapeHtml(strings.changesOnly) + '</button>' +
-						'<button type="button" data-mode="diff">' + escapeHtml(strings.fullDiff) + '</button>' +
-						'<button type="button" data-mode="snapshot">' + escapeHtml(strings.snapshot) + '</button>' +
+					'<div class="ftmModes" role="group" aria-label="' + escapeHtml(strings.title) + '">' +
+						'<button type="button" data-mode="changes" aria-pressed="' + String(initialMode === 'changes') + '">' + FTM_ICONS.foldDiff + escapeHtml(strings.changesOnly) + '</button>' +
+						'<button type="button" data-mode="diff" aria-pressed="' + String(initialMode === 'diff') + '">' + FTM_ICONS.diff + escapeHtml(strings.fullDiff) + '</button>' +
+						'<button type="button" data-mode="snapshot" aria-pressed="' + String(initialMode === 'snapshot') + '">' + FTM_ICONS.file + escapeHtml(strings.snapshot) + '</button>' +
 					'</div>' +
-					'<button type="button" class="ftmBtn" data-action="visualFileHistory">' + escapeHtml(strings.scatterChart) + '</button>' +
+					'<button type="button" class="ftmBtn" data-action="visualFileHistory">' + FTM_ICONS.chart + escapeHtml(strings.scatterChart) + '</button>' +
 				'</header>' +
 				'<section class="ftmCommitBar">' +
 					'<div class="ftmNavBtns">' +
-						'<button type="button" id="ftmNewer" class="ftmIconBtn" title="' + escapeHtml(strings.newer) + '">&#8593;</button>' +
+						'<button type="button" id="ftmNewer" class="ftmIconBtn" title="' + escapeHtml(strings.newer) + '" aria-label="' + escapeHtml(strings.newer) + '">' + FTM_ICONS.arrowUp + '</button>' +
 						'<span id="ftmPos" class="ftmPos"></span>' +
-						'<button type="button" id="ftmOlder" class="ftmIconBtn" title="' + escapeHtml(strings.older) + '">&#8595;</button>' +
+						'<button type="button" id="ftmOlder" class="ftmIconBtn" title="' + escapeHtml(strings.older) + '" aria-label="' + escapeHtml(strings.older) + '">' + FTM_ICONS.arrowDown + '</button>' +
 					'</div>' +
 					'<div class="ftmCommitMeta">' +
 						'<div id="ftmSubject" class="ftmSubject"></div>' +
 						'<div id="ftmSubline" class="ftmSubline"></div>' +
 					'</div>' +
 					'<div class="ftmActions">' +
-						'<button type="button" class="ftmBtn primary" data-action="openChanges">' + escapeHtml(strings.openChanges) + '</button>' +
-						'<button type="button" class="ftmBtn" data-action="openFile">' + escapeHtml(strings.openFile) + '</button>' +
-						'<button type="button" id="ftmViewCommit" class="ftmBtn" data-action="viewCommit">' + escapeHtml(strings.viewCommit) + '</button>' +
+						'<button type="button" id="ftmPinBase" class="ftmBtn">' + FTM_ICONS.pin + '<span id="ftmPinBaseLabel">' + escapeHtml(strings.pinBase) + '</span></button>' +
+						'<button type="button" class="ftmBtn primary" data-action="openChanges">' + FTM_ICONS.diff + escapeHtml(strings.openChanges) + '</button>' +
+						'<button type="button" class="ftmBtn" data-action="openFile">' + FTM_ICONS.file + escapeHtml(strings.openFile) + '</button>' +
+						'<button type="button" id="ftmViewCommit" class="ftmBtn" data-action="viewCommit">' + FTM_ICONS.commit + escapeHtml(strings.viewCommit) + '</button>' +
 					'</div>' +
 				'</section>' +
 				'<div id="ftmCode" class="ftmCode" tabindex="0"></div>' +
+				'<div id="ftmSelectionBar" class="ftmSelectionBar hidden">' +
+					'<span id="ftmSelectionInfo"></span>' +
+					'<button type="button" id="ftmCopyLines" class="ftmBtn">' + escapeHtml(strings.copyLines) + '</button>' +
+					'<button type="button" id="ftmApplyLines" class="ftmBtn primary">' + escapeHtml(strings.applyLines) + '</button>' +
+					'<button type="button" id="ftmClearSel" class="ftmBtn">' + escapeHtml(strings.clearSelection) + '</button>' +
+				'</div>' +
 			'</main>' +
 			'<aside class="ftmRulerDock" aria-label="' + escapeHtml(strings.scrubHint) + '">' +
 				'<div class="ftmZoomCapsule">' +
-					'<button type="button" id="ftmZoomOut" class="ftmZoomBtn" title="' + escapeHtml(strings.zoomOut) + '">&minus;</button>' +
-					'<input id="ftmZoomSlider" class="ftmZoomSlider" type="range" min="1" max="8" step="0.5" value="1">' +
-					'<button type="button" id="ftmZoomIn" class="ftmZoomBtn" title="' + escapeHtml(strings.zoomIn) + '">+</button>' +
+					'<button type="button" id="ftmZoomOut" class="ftmZoomBtn" title="' + escapeHtml(strings.zoomOut) + '" aria-label="' + escapeHtml(strings.zoomOut) + '">&minus;</button>' +
+					'<input id="ftmZoomSlider" class="ftmZoomSlider" type="range" min="1" max="8" step="0.5" value="1" aria-label="' + escapeHtml(strings.zoomLevel) + '">' +
+					'<button type="button" id="ftmZoomIn" class="ftmZoomBtn" title="' + escapeHtml(strings.zoomIn) + '" aria-label="' + escapeHtml(strings.zoomIn) + '">+</button>' +
 				'</div>' +
 				'<div id="ftmRulerScroll" class="ftmRulerScroll">' +
 					'<div id="ftmRulerTrack" class="ftmRulerTrack">' +
 						'<div class="ftmRailBg"></div>' +
 						'<div id="ftmRailFill" class="ftmRailFill"></div>' +
 						'<div id="ftmTicks" class="ftmTicks"></div>' +
+						'<div id="ftmBaseMarker" class="ftmBaseMarker hidden"><span id="ftmBaseBadge" class="ftmBaseBadge">BASE</span></div>' +
 						'<div id="ftmPlayhead" class="ftmPlayhead"><span id="ftmPlayheadBadge" class="ftmPlayheadBadge">LIVE</span></div>' +
 					'</div>' +
 				'</div>' +
@@ -485,24 +731,77 @@ export function getFileTimeMachineHtml(
 }
 
 const STYLES = `
+:root{
+	--ftm-dock-bg:#111318;
+	--ftm-dock-fg:#d6dce8;
+	--ftm-dock-border:rgba(255,255,255,.08);
+	--ftm-capsule-bg:#1b1f27;
+	--ftm-capsule-border:rgba(255,255,255,.08);
+	--ftm-capsule-btn:#c9d1d9;
+	--ftm-capsule-btn-hover-bg:rgba(255,255,255,.1);
+	--ftm-capsule-btn-hover-fg:#ffffff;
+	--ftm-rail-bg:#343942;
+	--ftm-rail-fill:linear-gradient(180deg,#1da1ff 0%,#0b4f8a 100%);
+	--ftm-minor-tick:rgba(255,255,255,.2);
+	--ftm-major-tick:rgba(255,255,255,.48);
+	--ftm-tick-label:#8e97a8;
+	--ftm-tick-label-hover:#ffffff;
+	--ftm-tick-delta:#7d8697;
+	--ftm-pip:#6cb6ff;
+	--ftm-pip-active:#ffffff;
+	--ftm-accent:#1da1ff;
+	--ftm-badge-bg:#188bff;
+	--ftm-badge-fg:#ffffff;
+	--ftm-hint:#7a8291;
+}
+body.vscode-light,body.vscode-high-contrast-light{
+	--ftm-dock-bg:var(--vscode-sideBar-background,#f3f5f8);
+	--ftm-dock-fg:var(--vscode-foreground,#1f2328);
+	--ftm-dock-border:var(--vscode-panel-border,rgba(0,0,0,.12));
+	--ftm-capsule-bg:var(--vscode-editor-background,#ffffff);
+	--ftm-capsule-border:var(--vscode-dropdown-border,rgba(0,0,0,.16));
+	--ftm-capsule-btn:var(--vscode-foreground,#24292f);
+	--ftm-capsule-btn-hover-bg:rgba(0,0,0,.07);
+	--ftm-capsule-btn-hover-fg:#000000;
+	--ftm-rail-bg:#cfd6e2;
+	--ftm-rail-fill:linear-gradient(180deg,#0969da 0%,#54aeff 100%);
+	--ftm-minor-tick:rgba(31,35,40,.18);
+	--ftm-major-tick:rgba(31,35,40,.42);
+	--ftm-tick-label:#57606a;
+	--ftm-tick-label-hover:#0969da;
+	--ftm-tick-delta:#6e7781;
+	--ftm-pip:#0969da;
+	--ftm-pip-active:#ffffff;
+	--ftm-accent:#0969da;
+	--ftm-badge-bg:#0969da;
+	--ftm-badge-fg:#ffffff;
+	--ftm-hint:#57606a;
+}
+body.vscode-high-contrast,body.vscode-high-contrast-light{
+	--ftm-dock-border:var(--vscode-contrastBorder,currentColor);
+	--ftm-capsule-border:var(--vscode-contrastBorder,currentColor);
+}
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;padding:0;overflow:hidden;font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-editor-background)}
 button{font:inherit;color:inherit}
+button:focus-visible,input:focus-visible,.ftmCode:focus-visible{outline:2px solid var(--vscode-focusBorder);outline-offset:-1px}
 .hidden{display:none!important}
+.ftmIcon{width:13.5px;height:13.5px;flex:0 0 auto}
 .ftmLayout{display:flex;height:100%;width:100%}
 .ftmMain{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;height:100%}
-.ftmTopBar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:10px 14px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.22));background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
-.ftmBrand{font-weight:700;font-size:13.5px;white-space:nowrap}
-.ftmPath{padding:2px 8px;min-width:80px;border-radius:4px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:rgba(128,128,128,.1);font-family:var(--vscode-editor-font-family);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ftmRename{font-size:11.5px;color:var(--vscode-descriptionForeground);white-space:nowrap}
-.ftmSpacer{flex:1 1 auto}
+.ftmTopBar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;padding:8px 14px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.22));background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.ftmBrand{font-weight:700;font-size:13.5px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.ftmPath{flex:0 1 320px;max-width:38vw;min-width:72px;padding:2px 8px;border-radius:4px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:rgba(128,128,128,.1);font-family:var(--vscode-editor-font-family);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ftmRename{font-size:11.5px;color:var(--vscode-descriptionForeground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px}
+.ftmSpacer{flex:1 1 8px}
 .ftmModes{display:inline-flex;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.4));border-radius:6px;overflow:hidden;flex:0 0 auto}
-.ftmModes button{height:26px;padding:0 10px;border:0;border-right:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:transparent;cursor:pointer;font-size:12px;white-space:nowrap}
+.ftmModes button{height:26px;padding:0 9px;border:0;border-right:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:transparent;cursor:pointer;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
 .ftmModes button:last-child{border-right:0}
 .ftmModes button.active{background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
-.ftmBtn{height:26px;padding:0 10px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.38));border-radius:6px;background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.14));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer;font-size:12px;white-space:nowrap}
-.ftmBtn:hover{filter:brightness(1.08)}
+.ftmBtn{height:26px;padding:0 10px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.38));border-radius:6px;background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.14));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer;font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.ftmBtn:hover,.ftmIconBtn:hover:not(:disabled){background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.22))}
 .ftmBtn.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
+.ftmBtn.primary:hover{background:var(--vscode-button-hoverBackground,var(--vscode-button-background));filter:brightness(1.06)}
 .ftmCommitBar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;padding:8px 14px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.22));background:color-mix(in srgb,var(--vscode-sideBar-background,var(--vscode-editor-background)) 60%,transparent)}
 .ftmNavBtns{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}
 .ftmIconBtn{width:26px;height:26px;border-radius:6px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:transparent;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
@@ -528,29 +827,37 @@ button{font:inherit;color:inherit}
 .ftmCollapsed{padding:4px 14px;margin:2px 0;background:color-mix(in srgb,var(--vscode-focusBorder,#0e7afe) 10%,transparent);color:var(--vscode-descriptionForeground);font-family:var(--vscode-font-family);font-size:11.5px;text-align:center;border-top:1px dashed rgba(128,128,128,.25);border-bottom:1px dashed rgba(128,128,128,.25)}
 .ftmEmpty{padding:28px 20px;color:var(--vscode-descriptionForeground)}
 
-/* Time Machine Right Scrubber Dock (modeled on camera/Time Machine vertical timeline) */
-.ftmRulerDock{flex:0 0 206px;display:flex;flex-direction:column;height:100%;background:#111318;color:#d6dce8;border-left:1px solid rgba(255,255,255,.08);user-select:none}
-.ftmZoomCapsule{margin:12px 14px 10px;height:34px;padding:0 10px;border-radius:17px;background:#1b1f27;border:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:8px;box-shadow:inset 0 1px 2px rgba(0,0,0,.4)}
-.ftmZoomBtn{width:22px;height:22px;border:0;background:transparent;color:#c9d1d9;font-size:18px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;padding:0}
-.ftmZoomBtn:hover{background:rgba(255,255,255,.1);color:#fff}
-.ftmZoomSlider{flex:1 1 auto;min-width:0;accent-color:#1a8cff;cursor:pointer;height:4px}
+/* Time Machine Right Scrubber Dock (modeled on camera/Time Machine vertical timeline, adaptive to Dark / Light / High Contrast) */
+.ftmRulerDock{flex:0 0 212px;display:flex;flex-direction:column;height:100%;background:var(--ftm-dock-bg);color:var(--ftm-dock-fg);border-left:1px solid var(--ftm-dock-border);user-select:none}
+.ftmZoomCapsule{margin:12px 14px 10px;height:34px;padding:0 10px;border-radius:17px;background:var(--ftm-capsule-bg);border:1px solid var(--ftm-capsule-border);display:flex;align-items:center;gap:8px}
+.ftmZoomBtn{width:22px;height:22px;border:0;background:transparent;color:var(--ftm-capsule-btn);font-size:18px;line-height:1;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;padding:0}
+.ftmZoomBtn:hover{background:var(--ftm-capsule-btn-hover-bg);color:var(--ftm-capsule-btn-hover-fg)}
+.ftmZoomSlider{flex:1 1 auto;min-width:0;accent-color:var(--ftm-accent);cursor:pointer;height:4px}
 .ftmRulerScroll{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;position:relative}
 .ftmRulerTrack{position:relative;width:100%;min-height:100%;cursor:ns-resize;touch-action:none}
-.ftmRailBg{position:absolute;left:112px;top:24px;bottom:24px;width:8px;border-radius:4px;background:#343942}
-.ftmRailFill{position:absolute;left:112px;bottom:24px;width:8px;border-radius:0 0 4px 4px;background:linear-gradient(180deg,#1da1ff 0%,#0b4f8a 100%);box-shadow:0 0 10px rgba(29,161,255,.35)}
+.ftmRailBg{position:absolute;left:116px;top:24px;bottom:24px;width:8px;border-radius:4px;background:var(--ftm-rail-bg)}
+.ftmRailFill{position:absolute;left:116px;bottom:24px;width:8px;border-radius:0 0 4px 4px;background:var(--ftm-rail-fill);box-shadow:0 0 8px color-mix(in srgb,var(--ftm-accent) 35%,transparent)}
 .ftmTicks{position:absolute;inset:0;pointer-events:none}
-.ftmMinorTick{position:absolute;left:98px;width:8px;height:1px;background:rgba(255,255,255,.2)}
+.ftmMinorTick{position:absolute;left:102px;width:8px;height:1px;background:var(--ftm-minor-tick)}
 .ftmCommitTick{position:absolute;left:0;right:0;height:20px;transform:translateY(-50%);display:flex;align-items:center;pointer-events:auto;cursor:pointer}
-.ftmCommitTick:hover .ftmTickLabel{color:#fff}
-.ftmTickLabel{width:84px;padding-right:6px;text-align:right;font-family:var(--vscode-editor-font-family);font-size:11px;color:#8e97a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ftmTickMark{position:absolute;left:90px;width:16px;height:1.5px;background:rgba(255,255,255,.45)}
-.ftmCommitPip{position:absolute;left:113px;width:6px;height:6px;border-radius:50%;background:#6cb6ff;transform:translateY(-0.5px)}
-.ftmCommitTick.active .ftmCommitPip{background:#fff;box-shadow:0 0 0 3px #1da1ff}
+.ftmCommitTick:hover .ftmTickLabel{color:var(--ftm-tick-label-hover)}
+.ftmTickLabel{width:88px;padding-right:6px;text-align:right;font-family:var(--vscode-editor-font-family);font-size:11px;color:var(--ftm-tick-label);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ftmTickMark{position:absolute;left:94px;width:16px;height:1.5px;background:var(--ftm-major-tick)}
+.ftmCommitPip{position:absolute;left:117px;width:6px;height:6px;border-radius:50%;background:var(--ftm-pip);transform:translateY(-0.5px)}
+.ftmCommitTick.active .ftmCommitPip{background:var(--ftm-pip-active);box-shadow:0 0 0 3px var(--ftm-accent)}
 .ftmCommitTick.active .ftmTickLabel{opacity:0}
-.ftmCommitDelta{position:absolute;left:128px;right:8px;font-family:var(--vscode-editor-font-family);font-size:10.5px;color:#7d8697;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ftmPlayhead{position:absolute;left:0;right:0;height:2px;background:#1da1ff;box-shadow:0 0 8px rgba(29,161,255,.75);transform:translateY(-1px);pointer-events:none;z-index:4}
-.ftmPlayheadBadge{position:absolute;left:10px;top:50%;transform:translateY(-50%);padding:3px 9px;border-radius:7px;background:#188bff;color:#fff;font-weight:700;font-size:11px;letter-spacing:.03em;box-shadow:0 2px 8px rgba(0,0,0,.45);white-space:nowrap}
-.ftmRulerHint{padding:8px 12px;font-size:11px;line-height:1.35;color:#7a8291;border-top:1px solid rgba(255,255,255,.07);text-align:center}
+.ftmCommitDelta{position:absolute;left:132px;right:8px;font-family:var(--vscode-editor-font-family);font-size:10.5px;color:var(--ftm-tick-delta);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ftmPlayhead{position:absolute;left:0;right:0;height:2px;background:var(--ftm-accent);box-shadow:0 0 8px color-mix(in srgb,var(--ftm-accent) 65%,transparent);transform:translateY(-1px);pointer-events:none;z-index:4}
+.ftmPlayheadBadge{position:absolute;left:8px;top:50%;transform:translateY(-50%);padding:3px 8px;border-radius:7px;background:var(--ftm-badge-bg);color:var(--ftm-badge-fg);font-weight:700;font-size:11px;letter-spacing:.02em;box-shadow:0 2px 6px rgba(0,0,0,.3);white-space:nowrap}
+.ftmBaseMarker{position:absolute;left:0;right:0;height:2px;background:#e39b27;transform:translateY(-1px);pointer-events:none;z-index:3}
+.ftmBaseBadge{position:absolute;right:8px;top:50%;transform:translateY(-50%);padding:2px 7px;border-radius:6px;background:#d28718;color:#fff;font-weight:700;font-size:10px;letter-spacing:.03em;white-space:nowrap}
+.ftmBtn.pinned{border-color:#d28718;color:#e39b27}
+.ftmRow.selLine{background:color-mix(in srgb,var(--vscode-focusBorder,#0e7afe) 20%,transparent)}
+.ftmRow .ftmLn[data-snap-ln]{cursor:pointer}
+.ftmRow .ftmLn[data-snap-ln]:hover{color:var(--vscode-foreground);text-decoration:underline}
+.ftmSelectionBar{display:flex;align-items:center;gap:8px;padding:7px 14px;border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.28));background:var(--vscode-sideBar-background,var(--vscode-editor-background));font-size:12px}
+#ftmSelectionInfo{flex:1 1 auto;font-weight:600}
+.ftmRulerHint{padding:8px 12px;font-size:11px;line-height:1.35;color:var(--ftm-hint);border-top:1px solid var(--ftm-dock-border);text-align:center}
 `;
 
 const SCRIPT = `
@@ -559,13 +866,16 @@ const SCRIPT = `
 	var currentIndex = Math.min(Math.max(INITIAL_INDEX, 0), ENTRIES.length - 1);
 	var mode = INITIAL_MODE;
 	var zoom = 1;
-	var cache = {};
+	var cache = {}, compareCache = {};
+	var baseIndex = -1;
+	var selAnchor = -1, selEnd = -1;
 	var inflight = false, pendingIndex = -1;
 	var PAD_TOP = 28, PAD_BOTTOM = 28;
 
 	var dtfShort = new Intl.DateTimeFormat(LOCALE, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-	var dtfFull = new Intl.DateTimeFormat(LOCALE, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+	var dtfFull = new Intl.DateTimeFormat(LOCALE, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 	var dtfTime = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false });
+	var dtfTimeSec = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
 
 	function esc(s) {
 		return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -576,7 +886,24 @@ const SCRIPT = `
 		return da.getFullYear() === db.getFullYear() && da.getMonth() === db.getMonth() && da.getDate() === db.getDate();
 	}
 
+	function sameMinuteWithNeighbor(sec, idx) {
+		if (idx > 0 && Math.floor(sec / 60) === Math.floor(ENTRIES[idx - 1].d / 60)) return true;
+		if (idx + 1 < ENTRIES.length && Math.floor(sec / 60) === Math.floor(ENTRIES[idx + 1].d / 60)) return true;
+		return false;
+	}
+
+	function sameSecondWithNeighbor(sec, idx) {
+		if (idx > 0 && sec === ENTRIES[idx - 1].d) return true;
+		if (idx + 1 < ENTRIES.length && sec === ENTRIES[idx + 1].d) return true;
+		return false;
+	}
+
 	function formatRulerTime(sec, idx) {
+		var e = ENTRIES[idx];
+		if (sameMinuteWithNeighbor(sec, idx)) {
+			var withSec = dtfTimeSec.format(new Date(sec * 1000));
+			return (sameSecondWithNeighbor(sec, idx) && e && e.h !== '*') ? (withSec + '·' + e.h.substring(0, 4)) : withSec;
+		}
 		if (idx > 0 && sameDay(sec, ENTRIES[idx - 1].d)) {
 			return dtfTime.format(new Date(sec * 1000));
 		}
@@ -640,10 +967,23 @@ const SCRIPT = `
 		playhead.style.top = cy.toFixed(1) + 'px';
 		fill.style.top = cy.toFixed(1) + 'px';
 		var entry = ENTRIES[currentIndex];
-		badge.textContent = entry.live ? STRINGS.live : dtfTime.format(new Date(entry.d * 1000));
+		badge.textContent = entry.live
+			? STRINGS.live
+			: (sameMinuteWithNeighbor(entry.d, currentIndex) ? dtfTimeSec.format(new Date(entry.d * 1000)) : dtfTime.format(new Date(entry.d * 1000)));
 		document.querySelectorAll('.ftmCommitTick').forEach(function (el) {
 			el.classList.toggle('active', parseInt(el.dataset.index) === currentIndex);
 		});
+		var baseMarker = document.getElementById('ftmBaseMarker');
+		var baseBadge = document.getElementById('ftmBaseBadge');
+		if (baseIndex > -1 && baseIndex < ENTRIES.length) {
+			var by = yForIndex(baseIndex, h);
+			baseMarker.style.top = by.toFixed(1) + 'px';
+			var be = ENTRIES[baseIndex];
+			baseBadge.textContent = 'BASE · ' + (be.h === '*' ? 'LIVE' : be.h.substring(0, 6));
+			baseMarker.classList.remove('hidden');
+		} else {
+			baseMarker.classList.add('hidden');
+		}
 		if (ensureVisible) {
 			var scrollEl = document.getElementById('ftmRulerScroll');
 			if (cy < scrollEl.scrollTop + 36) scrollEl.scrollTop = Math.max(0, cy - 48);
@@ -663,29 +1003,56 @@ const SCRIPT = `
 		vscode.postMessage({ command: 'loadRevision', index: idx });
 	}
 
+	function requestComparisonIfNeeded() {
+		if (baseIndex < 0 || baseIndex === currentIndex || mode === 'snapshot') return;
+		var key = baseIndex + ':' + currentIndex;
+		if (compareCache[key]) return;
+		vscode.postMessage({ command: 'compareRevisions', baseIndex: baseIndex, targetIndex: currentIndex });
+	}
+
 	function selectIndex(idx, ensureVisible) {
 		var clamped = Math.min(Math.max(idx, 0), ENTRIES.length - 1);
 		if (clamped !== currentIndex) {
 			currentIndex = clamped;
+			selAnchor = -1; selEnd = -1;
 			updatePlayheadPosition(null, ensureVisible);
 			renderHeader();
 			renderCode();
 			requestRevision(currentIndex);
+			requestComparisonIfNeeded();
 		}
+	}
+
+	function shortNameOf(idx) {
+		var item = ENTRIES[idx];
+		return item.h === '*' ? 'LIVE' : item.h.substring(0, 7);
 	}
 
 	function renderHeader() {
 		var e = ENTRIES[currentIndex];
 		document.querySelectorAll('.ftmModes button').forEach(function (btn) {
-			btn.classList.toggle('active', btn.dataset.mode === mode);
+			var active = btn.dataset.mode === mode;
+			btn.classList.toggle('active', active);
+			btn.setAttribute('aria-pressed', String(active));
 		});
+		var pinBtn = document.getElementById('ftmPinBase');
+		var pinLabel = document.getElementById('ftmPinBaseLabel');
+		pinBtn.classList.toggle('pinned', baseIndex > -1);
+		pinLabel.textContent = baseIndex > -1 ? STRINGS.clearBase.replace('{0}', shortNameOf(baseIndex)) : STRINGS.pinBase;
 		document.getElementById('ftmNewer').disabled = currentIndex === 0;
 		document.getElementById('ftmOlder').disabled = currentIndex >= ENTRIES.length - 1;
 		document.getElementById('ftmPos').textContent = (currentIndex + 1) + ' / ' + ENTRIES.length;
-		document.getElementById('ftmPath').textContent = e.f;
+		var pathEl = document.getElementById('ftmPath');
+		pathEl.textContent = e.f;
+		pathEl.title = e.f;
 		var renameEl = document.getElementById('ftmRename');
-		if (e.o && e.o !== e.f) {
+		if (baseIndex > -1 && baseIndex !== currentIndex && mode !== 'snapshot') {
+			renameEl.textContent = STRINGS.comparingWithBase.replace('{0}', shortNameOf(baseIndex));
+			renameEl.title = renameEl.textContent;
+			renameEl.classList.remove('hidden');
+		} else if (e.o && e.o !== e.f) {
 			renameEl.textContent = '← ' + STRINGS.renamedFrom.replace('{0}', e.o);
+			renameEl.title = renameEl.textContent;
 			renameEl.classList.remove('hidden');
 		} else {
 			renameEl.classList.add('hidden');
@@ -700,59 +1067,158 @@ const SCRIPT = `
 		document.getElementById('ftmViewCommit').classList.toggle('hidden', e.h === '*');
 	}
 
-	function renderDiffHtml(diffText, collapseContext) {
+	function renderDiffHtml(diffText, collapseContext, isBinary) {
+		if (isBinary) {
+			return '<div class="ftmEmpty">' + esc(STRINGS.binaryFile) + '</div>';
+		}
 		if (!diffText || diffText.trim() === '') {
 			return '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
 		}
-		var lines = diffText.replace(/\\r\\n/g, '\\n').split('\\n');
-		var oldLn = 0, newLn = 0, inHunk = false, skipped = 0, out = [];
-		function flushSkipped() {
-			if (skipped > 0) {
-				out.push('<div class="ftmCollapsed">' + esc(STRINGS.hiddenLines.replace('{0}', String(skipped))) + '</div>');
-				skipped = 0;
-			}
-		}
-		for (var i = 0; i < lines.length; i++) {
-			var line = lines[i];
+		var rawLines = diffText.replace(/\\r\\n/g, '\\n').split('\\n');
+		var parsed = [];
+		var oldLn = 0, newLn = 0, inHunk = false, prevNewEnd = 0;
+		for (var i = 0; i < rawLines.length; i++) {
+			var line = rawLines[i];
 			if (line.startsWith('@@ ')) {
-				flushSkipped();
 				var m = line.match(/^@@ -(\\d+)(?:,\\d+)? \\+(\\d+)(?:,\\d+)? @@/);
-				if (m) { oldLn = parseInt(m[1], 10); newLn = parseInt(m[2], 10); inHunk = true; }
-				if (!collapseContext) out.push('<div class="ftmRow hunk">' + esc(line) + '</div>');
+				if (m) {
+					var nextOld = parseInt(m[1], 10), nextNew = parseInt(m[2], 10);
+					if (collapseContext && prevNewEnd > 0 && nextNew > prevNewEnd) {
+						parsed.push({ kind: 'gap', count: nextNew - prevNewEnd });
+					}
+					oldLn = nextOld;
+					newLn = nextNew;
+					inHunk = true;
+				}
+				if (!collapseContext) parsed.push({ kind: 'hunk', text: line });
 				continue;
 			}
 			if (!inHunk) continue;
 			var prefix = line.charAt(0), content = line.substring(1);
 			if (prefix === '+') {
-				flushSkipped();
-				out.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + (newLn++) + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + esc(content) + '</span></div>');
+				parsed.push({ kind: 'add', newLn: newLn++, text: content });
+				prevNewEnd = newLn;
 			} else if (prefix === '-') {
-				flushSkipped();
-				out.push('<div class="ftmRow del"><span class="ftmLn">' + (oldLn++) + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + esc(content) + '</span></div>');
+				parsed.push({ kind: 'del', oldLn: oldLn++, text: content });
 			} else if (prefix === ' ') {
-				if (collapseContext) {
-					oldLn++; newLn++; skipped++;
-				} else {
-					out.push('<div class="ftmRow"><span class="ftmLn">' + (oldLn++) + '</span><span class="ftmLn">' + (newLn++) + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + esc(content) + '</span></div>');
-				}
+				parsed.push({ kind: 'ctx', oldLn: oldLn++, newLn: newLn++, text: content });
+				prevNewEnd = newLn;
 			}
 		}
-		flushSkipped();
-		return out.length > 0 ? out.join('') : '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
+
+		if (collapseContext) {
+			var KEEP_CTX = 1;
+			var keep = new Array(parsed.length).fill(false);
+			for (var k = 0; k < parsed.length; k++) {
+				if (parsed[k].kind === 'add' || parsed[k].kind === 'del') {
+					keep[k] = true;
+					for (var b = 1; b <= KEEP_CTX && k - b >= 0; b++) {
+						if (parsed[k - b].kind === 'ctx') keep[k - b] = true;
+						else if (parsed[k - b].kind === 'gap') break;
+					}
+					for (var f = 1; f <= KEEP_CTX && k + f < parsed.length; f++) {
+						if (parsed[k + f].kind === 'ctx') keep[k + f] = true;
+						else if (parsed[k + f].kind === 'gap') break;
+					}
+				}
+			}
+			var outCollapsed = [], skipped = 0;
+			var flushSkipped = function () {
+				if (skipped > 0) {
+					outCollapsed.push('<div class="ftmCollapsed">' + esc(STRINGS.hiddenLines.replace('{0}', String(skipped))) + '</div>');
+					skipped = 0;
+				}
+			};
+			for (var p = 0; p < parsed.length; p++) {
+				var item = parsed[p];
+				if (item.kind === 'gap') {
+					skipped += item.count;
+				} else if (item.kind === 'ctx' && !keep[p]) {
+					skipped++;
+				} else {
+					flushSkipped();
+					if (item.kind === 'add') {
+						outCollapsed.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+					} else if (item.kind === 'del') {
+						outCollapsed.push('<div class="ftmRow del"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+					} else if (item.kind === 'ctx') {
+						outCollapsed.push('<div class="ftmRow"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+					}
+				}
+			}
+			flushSkipped();
+			return outCollapsed.length > 0 ? outCollapsed.join('') : '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
+		}
+
+		var outFull = [];
+		for (var q = 0; q < parsed.length; q++) {
+			var r = parsed[q];
+			if (r.kind === 'hunk') {
+				outFull.push('<div class="ftmRow hunk">' + esc(r.text) + '</div>');
+			} else if (r.kind === 'add') {
+				outFull.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+			} else if (r.kind === 'del') {
+				outFull.push('<div class="ftmRow del"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+			} else if (r.kind === 'ctx') {
+				outFull.push('<div class="ftmRow"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+			}
+		}
+		return outFull.length > 0 ? outFull.join('') : '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
 	}
 
-	function renderSnapshotHtml(text) {
+	function renderSnapshotHtml(text, isBinary, isDeleted) {
+		if (isBinary) return '<div class="ftmEmpty">' + esc(STRINGS.binaryFile) + '</div>';
+		if (isDeleted) return '<div class="ftmEmpty">' + esc(STRINGS.deletedFile) + '</div>';
 		if (!text) return '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
 		var lines = text.replace(/\\r\\n/g, '\\n').split('\\n');
+		var sMin = selAnchor > 0 && selEnd > 0 ? Math.min(selAnchor, selEnd) : -1;
+		var sMax = selAnchor > 0 && selEnd > 0 ? Math.max(selAnchor, selEnd) : -1;
 		var out = [];
 		for (var i = 0; i < lines.length; i++) {
-			out.push('<div class="ftmRow"><span class="ftmLn">' + (i + 1) + '</span><span class="ftmTxt">' + esc(lines[i]) + '</span></div>');
+			var ln = i + 1;
+			var sel = sMin > 0 && ln >= sMin && ln <= sMax;
+			out.push('<div class="ftmRow' + (sel ? ' selLine' : '') + '"><span class="ftmLn" data-snap-ln="' + ln + '">' + ln + '</span><span class="ftmTxt">' + esc(lines[i]) + '</span></div>');
 		}
 		return out.join('');
 	}
 
+	function updateSelectionBar() {
+		var bar = document.getElementById('ftmSelectionBar');
+		if (mode !== 'snapshot' || selAnchor < 1 || selEnd < 1) {
+			bar.classList.add('hidden');
+			return;
+		}
+		var sMin = Math.min(selAnchor, selEnd), sMax = Math.max(selAnchor, selEnd);
+		document.getElementById('ftmSelectionInfo').textContent = STRINGS.linesSelected.replace('{0}', String(sMin)).replace('{1}', String(sMax));
+		bar.classList.remove('hidden');
+	}
+
+	function getSelectedSnapshotLines() {
+		var data = cache[currentIndex];
+		if (!data || !data.snapshot || selAnchor < 1 || selEnd < 1) return null;
+		var sMin = Math.min(selAnchor, selEnd), sMax = Math.max(selAnchor, selEnd);
+		var lines = data.snapshot.replace(/\\r\\n/g, '\\n').split('\\n');
+		return { startLine: sMin, endLine: sMax, text: lines.slice(sMin - 1, sMax).join('\\n') };
+	}
+
 	function renderCode() {
+		updateSelectionBar();
 		var codeEl = document.getElementById('ftmCode');
+		if (mode !== 'snapshot' && baseIndex > -1 && baseIndex !== currentIndex) {
+			var cmpKey = baseIndex + ':' + currentIndex;
+			var cmp = compareCache[cmpKey];
+			if (!cmp) {
+				codeEl.innerHTML = '<div class="ftmEmpty">' + esc(STRINGS.loading) + '</div>';
+				requestComparisonIfNeeded();
+				return;
+			}
+			if (cmp.error) {
+				codeEl.innerHTML = '<div class="ftmEmpty">' + esc(cmp.error) + '</div>';
+				return;
+			}
+			codeEl.innerHTML = renderDiffHtml(cmp.diff, mode === 'changes', false);
+			return;
+		}
 		var data = cache[currentIndex];
 		if (!data) {
 			codeEl.innerHTML = '<div class="ftmEmpty">' + esc(STRINGS.loading) + '</div>';
@@ -763,16 +1229,22 @@ const SCRIPT = `
 			return;
 		}
 		if (mode === 'snapshot') {
-			codeEl.innerHTML = renderSnapshotHtml(data.snapshot);
+			codeEl.innerHTML = renderSnapshotHtml(data.snapshot, !!data.binary, !!data.deleted);
 		} else {
-			codeEl.innerHTML = renderDiffHtml(data.diff, mode === 'changes');
+			codeEl.innerHTML = renderDiffHtml(data.diff, mode === 'changes', !!data.binary);
 		}
 	}
 
 	window.addEventListener('message', function (ev) {
 		var msg = ev.data;
-		if (!msg || msg.command !== 'revisionData') return;
-		cache[msg.index] = { diff: msg.diff, snapshot: msg.snapshot, error: msg.error };
+		if (!msg) return;
+		if (msg.command === 'comparisonData') {
+			compareCache[msg.baseIndex + ':' + msg.targetIndex] = { diff: msg.diff, error: msg.error };
+			renderCode();
+			return;
+		}
+		if (msg.command !== 'revisionData') return;
+		cache[msg.index] = { diff: msg.diff, snapshot: msg.snapshot, binary: !!msg.binary, deleted: !!msg.deleted, error: msg.error };
 		inflight = false;
 		if (msg.index === currentIndex) renderCode();
 		if (pendingIndex > -1 && pendingIndex !== msg.index) {
@@ -784,7 +1256,7 @@ const SCRIPT = `
 		}
 	});
 
-	// Pointer scrubbing on the vertical Time Machine ruler
+	// Pointer scrubbing on the vertical Time Machine ruler (Shift+Click pins BASE)
 	var track = document.getElementById('ftmRulerTrack');
 	var dragging = false;
 	function scrubFromClientY(clientY) {
@@ -793,6 +1265,15 @@ const SCRIPT = `
 	}
 	track.addEventListener('pointerdown', function (e) {
 		if (e.button !== 0) return;
+		if (e.shiftKey) {
+			var rect = track.getBoundingClientRect();
+			var pinned = indexForY(e.clientY - rect.top, rect.height);
+			baseIndex = (baseIndex === pinned) ? -1 : pinned;
+			updatePlayheadPosition(null, false);
+			renderHeader();
+			renderCode();
+			return;
+		}
 		dragging = true;
 		track.setPointerCapture(e.pointerId);
 		scrubFromClientY(e.clientY);
@@ -833,6 +1314,29 @@ const SCRIPT = `
 			renderCode();
 			return;
 		}
+		if (t.closest('#ftmPinBase')) {
+			baseIndex = (baseIndex > -1) ? -1 : currentIndex;
+			updatePlayheadPosition(null, false);
+			renderHeader();
+			renderCode();
+			return;
+		}
+		var snapLn = t.closest('[data-snap-ln]');
+		if (snapLn) {
+			var ln = parseInt(snapLn.dataset.snapLn, 10);
+			if (e.shiftKey && selAnchor > 0) selEnd = ln;
+			else { selAnchor = ln; selEnd = ln; }
+			renderCode();
+			return;
+		}
+		if (t.closest('#ftmClearSel')) { selAnchor = -1; selEnd = -1; renderCode(); return; }
+		if (t.closest('#ftmCopyLines') || t.closest('#ftmApplyLines')) {
+			var sel = getSelectedSnapshotLines();
+			if (sel) {
+				vscode.postMessage({ command: 'applySelectedLines', startLine: sel.startLine, endLine: sel.endLine, text: sel.text, mode: t.closest('#ftmCopyLines') ? 'copy' : 'apply' });
+			}
+			return;
+		}
 		if (t.closest('#ftmNewer')) { selectIndex(currentIndex - 1, true); return; }
 		if (t.closest('#ftmOlder')) { selectIndex(currentIndex + 1, true); return; }
 		var actionBtn = t.closest('[data-action]');
@@ -841,10 +1345,21 @@ const SCRIPT = `
 		}
 	});
 
-	// Keyboard Up / Down arrow scrubbing
+	// Keyboard revision navigation: Alt+Up/Down works anywhere; bare Up/Down works unless scrolling #ftmCode or adjusting range input
 	window.addEventListener('keydown', function (e) {
-		if (e.key === 'ArrowUp') { e.preventDefault(); selectIndex(currentIndex - 1, true); }
-		else if (e.key === 'ArrowDown') { e.preventDefault(); selectIndex(currentIndex + 1, true); }
+		var active = document.activeElement;
+		var inInput = active && active.tagName === 'INPUT';
+		var inCode = active && active.id === 'ftmCode';
+		if (e.altKey && e.key === 'ArrowUp') {
+			e.preventDefault();
+			selectIndex(currentIndex - 1, true);
+		} else if (e.altKey && e.key === 'ArrowDown') {
+			e.preventDefault();
+			selectIndex(currentIndex + 1, true);
+		} else if (!e.altKey && !e.ctrlKey && !e.metaKey && !inInput && !inCode) {
+			if (e.key === 'ArrowUp') { e.preventDefault(); selectIndex(currentIndex - 1, true); }
+			else if (e.key === 'ArrowDown') { e.preventDefault(); selectIndex(currentIndex + 1, true); }
+		}
 	});
 	window.addEventListener('resize', function () { renderRuler(); });
 

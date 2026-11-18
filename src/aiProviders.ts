@@ -303,6 +303,95 @@ export async function clearApiKey() {
 
 /* The OpenAI-compatible Chat Completions API */
 
+const MODELS_DISCOVERY_TIMEOUT_MS = 2500;
+
+function unrefTimer(timer: NodeJS.Timeout) {
+	if (typeof timer === 'object' && timer !== null && typeof timer.unref === 'function') {
+		timer.unref();
+	}
+}
+
+/**
+ * Whether a provider runs as a local gateway / custom endpoint whose `/models` list can be discovered automatically when `git-map.ai.model` is left blank.
+ */
+export function isAutoModelDiscoveryProvider(provider: AiProvider) {
+	return provider === AiProvider.Magpie || provider === AiProvider.CCSwitch || provider === AiProvider.Ollama || provider === AiProvider.OpenAICompatible;
+}
+
+/**
+ * Get the Bearer token sent to a provider. Local gateways (Magpie, CC Switch, Ollama) don't need a real secret,
+ * but sending a non-empty placeholder Bearer token satisfies OpenAI-compatible middleware that rejects requests without an Authorization header.
+ */
+export async function getEffectiveApiKey(provider: AiProvider): Promise<string | null> {
+	const stored = await getApiKey(provider);
+	if (stored !== null) return stored;
+	if (provider === AiProvider.Magpie) return 'magpie';
+	if (provider === AiProvider.CCSwitch) return 'cc-switch';
+	if (provider === AiProvider.Ollama) return 'ollama';
+	return null;
+}
+
+/**
+ * Query `GET <baseUrl>/models` to discover the models served by an OpenAI-compatible endpoint or local gateway.
+ */
+export async function fetchProviderModels(configOverride?: DirectAiConfig | null): Promise<{ models: string[], reachable: boolean, error: string | null }> {
+	const config = typeof configOverride !== 'undefined' ? configOverride : getDirectAiConfig();
+	if (config === null) return { models: [], reachable: false, error: null };
+	if (config.baseUrl === '') return { models: [], reachable: false, error: t('Set the base URL of the API of {0} in the "git-map.ai.baseUrl" setting.', config.name) };
+	if (!/^https?:\/\//i.test(config.baseUrl)) return { models: [], reachable: false, error: t('The base URL of the API must start with https:// or http:// (in the "git-map.ai.baseUrl" setting).') };
+	if (config.requiresApiKey && await getApiKey(config.provider) === null) {
+		return { models: [], reachable: false, error: t('Set the API key of {0} with the "Git Map: Set AI API Key..." command.', config.name) };
+	}
+	if (typeof fetch !== 'function') {
+		return { models: [], reachable: false, error: t('This version of Visual Studio Code can\'t call the API (it requires Visual Studio Code 1.82 or later).') };
+	}
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), MODELS_DISCOVERY_TIMEOUT_MS);
+	unrefTimer(timer);
+	try {
+		const headers: { [name: string]: string } = { 'Accept': 'application/json' };
+		const apiKey = await getEffectiveApiKey(config.provider);
+		if (apiKey !== null) headers['Authorization'] = 'Bearer ' + apiKey;
+		const response = await fetch(config.baseUrl.replace(/\/+$/, '') + '/models', {
+			method: 'GET',
+			headers: headers,
+			signal: controller.signal
+		});
+		if (!response.ok) {
+			if (response.status === 404 || response.status === 405) {
+				return { models: [], reachable: true, error: null };
+			}
+			return { models: [], reachable: true, error: t('The API returned an error ({0}): {1}', String(response.status), await getErrorMessage(response)) };
+		}
+		const json = parseJson(await response.text());
+		const rawList: any[] = json !== null && Array.isArray(json.data)
+			? json.data
+			: (json !== null && Array.isArray(json.models) ? json.models : []);
+		const seen = new Set<string>();
+		const models: string[] = [];
+		for (const item of rawList) {
+			const id = typeof item === 'string'
+				? item.trim()
+				: (item !== null && typeof item === 'object'
+					? (typeof item.id === 'string' ? item.id.trim() : (typeof item.name === 'string' ? item.name.trim() : ''))
+					: '');
+			if (id !== '' && !seen.has(id)) {
+				seen.add(id);
+				models.push(id);
+			}
+		}
+		return { models: models, reachable: true, error: null };
+	} catch (error) {
+		return {
+			models: [],
+			reachable: false,
+			error: t('Unable to call the API at {0}: {1}', getHost(config.baseUrl), error instanceof Error ? ((<any>error).cause instanceof Error ? error.message + ' (' + (<any>error).cause.message + ')' : error.message) : String(error))
+		};
+	} finally {
+		clearTimeout(timer);
+	}
+}
+
 /**
  * Get what's missing before a direct provider can be used.
  * @returns The error, and whether it's the API key that's missing (NULL if nothing is missing).
@@ -335,6 +424,7 @@ export async function streamChatCompletion(baseUrl: string, model: string, apiKe
 			timedOut = true;
 			controller.abort();
 		}, STREAM_TIMEOUT_MS);
+		unrefTimer(timer);
 	};
 	resetTimeout();
 	try {

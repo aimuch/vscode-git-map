@@ -45,6 +45,7 @@
 	let commitCountFixture = null; // The number of commits loaded (instead of 10 or 25)
 	let bisectFixture = null; // The state of the bisect in progress in the repository
 	let uncommittedFixture = false; // Are the uncommitted changes & a stash (based on the 3rd commit) loaded
+	let prBadgesFixture = {}; // PR & CI badges keyed by local branch name
 	const STASH_COMMIT = { hash: 'd'.repeat(40), parents: [hash(3)], author: 'E2E Author', email: 'author@example.com', date: NOW - 300, message: 'WIP on main: Experiment', heads: [], tags: [], remotes: [], stash: { selector: 'refs/stash@{0}', baseHash: hash(3), untrackedFilesHash: null } };
 	const withUncommitted = (commits) => uncommittedFixture ? [{ hash: '*', parents: [hash(HEAD_INDEX + 1)], author: '*', email: '', date: NOW, message: 'Uncommitted Changes (3)', heads: [], tags: [], remotes: [], stash: null }, STASH_COMMIT].concat(commits) : commits;
 	const respond = (msg) => {
@@ -220,7 +221,29 @@
 			case 'openExternalUrl':
 			case 'setGlobalViewState':
 			case 'setWorkspaceViewState':
+			case 'stageFiles':
+			case 'unstageFiles':
+			case 'discardWorkingChanges':
+			case 'commitStagedChanges':
+			case 'moveBranch':
 				return { command: msg.command, error: null };
+			case 'loadPullRequestBadges':
+				return { command: 'loadPullRequestBadges', repo: msg.repo, badges: prBadgesFixture };
+			case 'loadWorkingTreeStatus':
+				return {
+					command: 'loadWorkingTreeStatus', repo: msg.repo, headMessage: 'Fix #12 and rename files', error: null,
+					files: [
+						{ path: 'src/new-name.ts', oldPath: 'src/old-name.ts', indexStatus: 'R', workTreeStatus: ' ', staged: true, unstaged: false, untracked: false, conflicted: false },
+						{ path: 'README.md', oldPath: null, indexStatus: ' ', workTreeStatus: 'M', staged: false, unstaged: true, untracked: false, conflicted: false }
+					]
+				};
+			case 'loadFileHunkDiff':
+				return {
+					command: 'loadFileHunkDiff', filePath: msg.filePath, staged: msg.staged, error: null,
+					diff: 'diff --git a/README.md b/README.md\n--- a/README.md\n+++ b/README.md\n@@ -1,4 +1,4 @@\n alpha\n-beta\n-gamma\n+BETA_NEW\n+GAMMA_NEW\n delta\n'
+				};
+			case 'applyHunkPatch':
+				return { command: 'applyHunkPatch', filePath: msg.filePath, staged: msg.staged, error: null };
 			default:
 				return null;
 		}
@@ -382,7 +405,7 @@
 			mouse(document.getElementById('settingsBtn'), 'click');
 			const widget = await waitFor('the Repository Settings Widget to load', () => document.getElementById('editIssueLinking') ? document.getElementById('settingsWidget') : null);
 			const sections = Array.from(widget.querySelectorAll('h3, h4')).map((elem) => elem.textContent.trim());
-			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', 'AI · 所有仓库', '大模型配置', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
+			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', 'AI · 所有仓库', '大模型配置', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建', 'PR 与 CI 状态徽章'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
 			['差异视图', '完整文件', '仅差异部分', '快捷操作栏', '自定义快捷操作按钮…'].forEach((text) => assert(widget.textContent.includes(text), 'Missing zh-CN Settings label "' + text + '"'));
 			assert(widget.querySelector('#settingsHeader h2').textContent === '设置', 'Unexpected title: ' + widget.querySelector('#settingsHeader h2').textContent);
 			mouse(document.getElementById('editIssueLinking'), 'click');
@@ -1206,7 +1229,7 @@
 			mouse(commitRow(3), 'contextmenu', { button: 2 });
 			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
 			const items = Array.from(menu.querySelectorAll('.contextMenuItem')).map((item) => item.textContent);
-			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
+			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'AI Review Selected Range…', 'AI PR / Release Notes for Selection…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent.startsWith('Copy 3 Commit Hashes')), 'click');
 			const copied = await waitFor('the hashes to be copied', () => requestsOf('copyToClipboard').slice(-1)[0]);
 			assert(copied.data === [hash(6), hash(4), hash(3)].join('\n'), 'The hashes weren\'t copied oldest first: ' + JSON.stringify(copied.data));
@@ -1469,7 +1492,7 @@
 				mouse(document.getElementById('refreshBtn'), 'click');
 				const bar = await waitFor('the operation bar', () => document.querySelector('#operationBar.active'));
 				const buttons = Array.from(bar.querySelectorAll('.operationBarBtn')).map((button) => button.textContent);
-				assert(bar.textContent.includes('A rebase is in progress') && JSON.stringify(buttons) === JSON.stringify(['Open Source Control', 'Continue', 'Skip Commit', 'Abort']), 'Unexpected operation bar: ' + bar.textContent);
+				assert(bar.textContent.includes('A rebase is in progress') && JSON.stringify(buttons) === JSON.stringify(['Conflict Assistant', 'Open Source Control', 'Continue', 'Skip Commit', 'Abort']), 'Unexpected operation bar: ' + bar.textContent);
 				mouse(bar.querySelector('[data-action="continue"]'), 'click');
 				const continued = await waitFor('the rebase to be continued', () => requestsOf('controlOperation').slice(-1)[0]);
 				assert(continued.operation === 'rebase' && continued.action === 'continue', 'Unexpected request: ' + JSON.stringify(continued));
@@ -2056,6 +2079,96 @@
 			} finally {
 				if (document.getElementById('cdvActionsModal') !== null) document.getElementById('cdvActionsModal').remove();
 				await closeDetails();
+			}
+		});
+
+		await check('ui-companion-staging-dnd-pr', '[UI] Tools menu, PR & CI status badges, Graph Drag & Drop, Inline Staging/Commit/Amend, and Hunk + Line-level Staging work end-to-end', async () => {
+			// 1. Tools menu opens & dispatches openCompanionFeature
+			const toolsBtn = document.getElementById('toolsMenuBtn');
+			assert(toolsBtn !== null && toolsBtn.querySelector('svg') !== null, 'Missing #toolsMenuBtn icon');
+			const compBefore = requestsOf('openCompanionFeature').length;
+			mouse(toolsBtn, 'click');
+			const toolsMenu = await waitFor('the Tools context menu', () => document.querySelector('.contextMenu'));
+			const insightsItem = Array.from(toolsMenu.querySelectorAll('.contextMenuItem')).find((el) => el.textContent.includes('Repository Insights'));
+			assert(insightsItem !== undefined, 'Missing Repository Insights in Tools menu');
+			mouse(insightsItem, 'click');
+			const compReq = await waitFor('openCompanionFeature(repoInsights)', () => requestsOf('openCompanionFeature').length > compBefore ? requestsOf('openCompanionFeature').slice(-1)[0] : null);
+			assert(compReq.feature === 'repoInsights' && compReq.repo === REPO, 'Unexpected openCompanionFeature: ' + JSON.stringify(compReq));
+
+			// 2. PR & CI status badge renders beside .gitRef.head and opens external URL on click
+			prBadgesFixture = { feature: { number: 42, title: 'Add Time Machine', url: 'https://github.com/e2e/repo/pull/42', state: 'open', ciStatus: 'success', baseBranch: 'main' } };
+			mouse(document.getElementById('refreshBtn'), 'click');
+			const prBadge = await waitFor('the PR badge #42 on feature', () => document.querySelector('.gitRef.head[data-name="feature"] .gitRefPrBadge.ci-success'));
+			assert(prBadge.textContent.includes('#42'), 'Unexpected PR badge text: ' + prBadge.textContent);
+			const extBefore = requestsOf('openExternalUrl').length;
+			mouse(prBadge, 'click');
+			const extReq = await waitFor('openExternalUrl on PR badge click', () => requestsOf('openExternalUrl').length > extBefore ? requestsOf('openExternalUrl').slice(-1)[0] : null);
+			assert(extReq.url === 'https://github.com/e2e/repo/pull/42', 'Unexpected PR URL: ' + extReq.url);
+
+			// 3. Graph Drag & Drop: drag non-active branch "feature" onto commit row 2 -> Move Branch Here
+			const featureRef = commitRow(0).querySelector('.gitRef.head[data-name="feature"]');
+			const targetRow = commitRow(2);
+			featureRef.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true }));
+			targetRow.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true }));
+			assert(targetRow.classList.contains('dragDropTarget'), 'Target commit row didn\'t get .dragDropTarget class');
+			targetRow.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true }));
+			const dropMenu = await waitFor('the Drag & Drop context menu', () => document.querySelector('.contextMenu'));
+			const moveItem = Array.from(dropMenu.querySelectorAll('.contextMenuItem')).find((el) => el.textContent.includes('Move Branch "feature" Here'));
+			assert(moveItem !== undefined, 'Missing Move Branch item in drop menu');
+			mouse(moveItem, 'click');
+			await waitFor('Move Branch confirmation dialog', () => document.getElementById('dialogAction'));
+			const moveBefore = requestsOf('moveBranch').length;
+			mouse(document.getElementById('dialogAction'), 'click');
+			const moveReq = await waitFor('moveBranch request', () => requestsOf('moveBranch').length > moveBefore ? requestsOf('moveBranch').slice(-1)[0] : null);
+			assert(moveReq.branchName === 'feature' && moveReq.targetHash === hash(3), 'Unexpected moveBranch request: ' + JSON.stringify(moveReq));
+			await closeDialog();
+
+			// 4. Inline Staging, Hunk + Line-level Staging, and Inline Commit / Amend on Uncommitted Changes
+			uncommittedFixture = true;
+			prBadgesFixture = {};
+			mouse(document.getElementById('refreshBtn'), 'click');
+			const uncommittedRow = await waitFor('the Uncommitted Changes row', () => document.getElementById('uncommittedChanges'));
+			await openDetails(uncommittedRow);
+			try {
+				const commitInput = await waitFor('#cdvCommitInput in inline commit box', () => document.getElementById('cdvCommitInput'));
+				await waitFor('quick stage rows to render', () => document.querySelectorAll('#cdvInlineCommitBox .cdvQuickStageRow').length === 2);
+
+				// Open Hunk Staging modal on README.md, select ONLY '-beta' and '+BETA_NEW', and stage selected lines
+				const hunksBtn = document.querySelector('#cdvInlineCommitBox [data-inline-file="README.md"][data-inline-op="hunks"]');
+				assert(hunksBtn !== null, 'Missing Hunks button for README.md');
+				mouse(hunksBtn, 'click');
+				const hunkBody = await waitFor('hunk diff lines in #cdvHunkModal', () => document.querySelector('#cdvHunkBody .cdvHunkLine.del') ? document.getElementById('cdvHunkBody') : null);
+				const selectableLines = Array.from(hunkBody.querySelectorAll('.cdvHunkLine.selectable'));
+				assert(selectableLines.length === 4, 'Expected 4 selectable +/- lines, got ' + selectableLines.length);
+				mouse(selectableLines[0], 'click'); // -beta
+				mouse(hunkBody.querySelectorAll('.cdvHunkLine.selectable')[2], 'click'); // +BETA_NEW (re-queried after re-render)
+				const partialBtn = await waitFor('Stage Selected (2) button', () => document.querySelector('#cdvHunkBody [data-hunk-partial="1"][data-hunk-act="stage"]'));
+				const applyHunkBefore = requestsOf('applyHunkPatch').length;
+				mouse(partialBtn, 'click');
+				const hunkReq = await waitFor('applyHunkPatch partial stage', () => requestsOf('applyHunkPatch').length > applyHunkBefore ? requestsOf('applyHunkPatch').slice(-1)[0] : null);
+				assert(hunkReq.action === 'stage' && hunkReq.patch.includes('-beta\n+BETA_NEW\n gamma'), 'Unexpected partial hunk patch:\n' + hunkReq.patch);
+				key(document.body, 'Escape');
+				await waitFor('#cdvHunkModal to close', () => document.getElementById('cdvHunkModal') === null);
+
+				// Clear any draft left from earlier checks, toggle Amend -> pre-fills HEAD message, then submit Commit
+				commitInput.value = '';
+				commitInput.dispatchEvent(new Event('input', { bubbles: true }));
+				const amendCb = document.getElementById('cdvCommitAmend');
+				amendCb.checked = true;
+				amendCb.dispatchEvent(new Event('change', { bubbles: true }));
+				const refreshedInput = document.getElementById('cdvCommitInput');
+				assert(refreshedInput.value === 'Fix #12 and rename files', 'Amend didn\'t prefill HEAD message: ' + refreshedInput.value);
+				const commitBefore = requestsOf('commitStagedChanges').length;
+				mouse(document.querySelector('#cdvInlineCommitBox [data-inline-stage="commit"]'), 'click');
+				const commitReq = await waitFor('commitStagedChanges request', () => requestsOf('commitStagedChanges').length > commitBefore ? requestsOf('commitStagedChanges').slice(-1)[0] : null);
+				assert(commitReq.amend === true && commitReq.message === 'Fix #12 and rename files', 'Unexpected commitStagedChanges: ' + JSON.stringify(commitReq));
+				return 'Tools menu, PR badge #42, Drag & Drop moveBranch, partial line hunk patch (-beta/+BETA_NEW), and Amend commit verified';
+			} finally {
+				if (document.getElementById('cdvHunkModal') !== null) document.getElementById('cdvHunkModal').remove();
+				await closeDetails();
+				uncommittedFixture = false;
+				mouse(document.getElementById('refreshBtn'), 'click');
+				await waitFor('uncommitted changes hidden again', () => document.getElementById('uncommittedChanges') === null);
 			}
 		});
 	};

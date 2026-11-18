@@ -458,5 +458,15 @@
 	"config.diff.hideUnchangedRegions.description": "在打开 Visual Studio Code 差异编辑器以及 Git Map 内联差异预览时，仅显示差异部分（折叠未更改的上下文行）。",
 	"command.diff.showChangesOnly.title": "差异视图：仅显示差异部分",
 	"command.diff.showFullFile.title": "差异视图：显示完整文件",
-	"command.fileTimeMachine.title": "文件时间机器"
+	"command.fileTimeMachine.title": "文件时间机器",
+	"command.ai.reviewChanges.title": "AI 审查未提交的更改...",
+	"command.ai.generateReleaseNotes.title": "AI 生成 PR 描述 / 发布日志...",
+	"command.conflictAssistant.title": "冲突解决助手",
+	"command.reflogExplorer.title": "可视化引用日志救生舱 (Reflog)",
+	"command.repoInsights.title": "仓库全景洞察与热点分析",
+	"command.multiRepoOverview.title": "多仓库总览看板",
+	"command.checkoutPullRequest.title": "签出拉取请求 (PR / MR)...",
+	"command.setHostingToken.title": "设置代码托管平台令牌（用于 PR 与 CI 徽章）...",
+	"command.clearHostingToken.title": "清除代码托管平台令牌",
+	"config.integrations.pullRequestStatus.enabled.description": "在分支图的本地分支标签旁显示关联的 GitHub、GitLab、Gitea / Forgejo / Codeberg、Bitbucket 与 Azure DevOps 拉取请求（PR / MR）编号与 CI 状态徽章。"
 }

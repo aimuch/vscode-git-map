@@ -418,6 +418,7 @@ class CommitExplainer {
 				break;
 			case 'use':
 				if (textarea !== null && textarea.value.trim() !== '') {
+					this.view.setInlineCommitDraft(textarea.value.trim());
 					sendMessage({ command: 'useGeneratedCommitMessage', repo: this.view.currentRepo, message: textarea.value.trim() });
 				}
 				break;

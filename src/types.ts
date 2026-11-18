@@ -558,6 +558,7 @@ export interface GitGraphViewConfig {
 	readonly mute: MuteCommitsConfig;
 	readonly onlyFollowFirstParent: boolean;
 	readonly onRepoLoad: OnRepoLoadConfig;
+	readonly pullRequestStatusEnabled: boolean;
 	readonly referenceLabels: ReferenceLabelsConfig;
 	readonly repoDropdownOrder: RepoDropdownOrder;
 	readonly showRemoteBranches: boolean;
@@ -1530,7 +1531,7 @@ export interface ResponseMerge extends ResponseWithErrorInfo {
 
 export interface RequestUpdateExtensionSetting extends BaseMessage {
 	readonly command: 'updateExtensionSetting';
-	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'commitDetailsView.actions' | 'diff.hideUnchangedRegions' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'language' | 'statusBarItemDisplay';
+	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'commitDetailsView.actions' | 'diff.hideUnchangedRegions' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'integrations.pullRequestStatus.enabled' | 'language' | 'statusBarItemDisplay';
 	readonly value: string | boolean | ReadonlyArray<string>;
 }
 export interface ResponseUpdateExtensionSetting extends ResponseWithErrorInfo {
@@ -2069,6 +2070,134 @@ export interface ResponseUseGeneratedCommitMessage extends ResponseWithErrorInfo
 	readonly copiedToClipboard: boolean;
 }
 
+export interface RequestFetchAiModels extends BaseMessage {
+	readonly command: 'fetchAiModels';
+}
+export interface ResponseFetchAiModels extends ResponseWithErrorInfo {
+	readonly command: 'fetchAiModels';
+	readonly models: ReadonlyArray<string>;
+}
+
+export interface PullRequestBadgeInfo {
+	readonly number: number;
+	readonly title: string;
+	readonly url: string;
+	readonly state: 'open' | 'draft';
+	readonly ciStatus: 'success' | 'failure' | 'pending' | 'unknown';
+	readonly baseBranch: string;
+}
+
+export interface WorkingTreeStatusItem {
+	readonly path: string;
+	readonly oldPath: string | null;
+	readonly indexStatus: string;
+	readonly workTreeStatus: string;
+	readonly staged: boolean;
+	readonly unstaged: boolean;
+	readonly untracked: boolean;
+	readonly conflicted: boolean;
+}
+
+export interface RequestLoadWorkingTreeStatus extends RepoRequest {
+	readonly command: 'loadWorkingTreeStatus';
+}
+export interface ResponseLoadWorkingTreeStatus extends ResponseWithErrorInfo {
+	readonly command: 'loadWorkingTreeStatus';
+	readonly repo: string;
+	readonly files: ReadonlyArray<WorkingTreeStatusItem>;
+	readonly headMessage: string | null;
+}
+
+export interface RequestStageFiles extends RepoRequest {
+	readonly command: 'stageFiles';
+	readonly paths: ReadonlyArray<string> | null;
+}
+export interface ResponseStageFiles extends ResponseWithErrorInfo {
+	readonly command: 'stageFiles';
+}
+
+export interface RequestUnstageFiles extends RepoRequest {
+	readonly command: 'unstageFiles';
+	readonly paths: ReadonlyArray<string> | null;
+}
+export interface ResponseUnstageFiles extends ResponseWithErrorInfo {
+	readonly command: 'unstageFiles';
+}
+
+export interface RequestDiscardWorkingChanges extends RepoRequest {
+	readonly command: 'discardWorkingChanges';
+	readonly trackedPaths: ReadonlyArray<string>;
+	readonly untrackedPaths: ReadonlyArray<string>;
+}
+export interface ResponseDiscardWorkingChanges extends ResponseWithErrorInfo {
+	readonly command: 'discardWorkingChanges';
+}
+
+export interface RequestLoadFileHunkDiff extends RepoRequest {
+	readonly command: 'loadFileHunkDiff';
+	readonly filePath: string;
+	readonly staged: boolean;
+}
+export interface ResponseLoadFileHunkDiff extends ResponseWithErrorInfo {
+	readonly command: 'loadFileHunkDiff';
+	readonly filePath: string;
+	readonly staged: boolean;
+	readonly diff: string;
+}
+
+export interface RequestApplyHunkPatch extends RepoRequest {
+	readonly command: 'applyHunkPatch';
+	readonly filePath: string;
+	readonly staged: boolean;
+	readonly patch: string;
+	readonly action: 'stage' | 'unstage' | 'discard';
+}
+export interface ResponseApplyHunkPatch extends ResponseWithErrorInfo {
+	readonly command: 'applyHunkPatch';
+	readonly filePath: string;
+	readonly staged: boolean;
+}
+
+export interface RequestCommitStagedChanges extends RepoRequest {
+	readonly command: 'commitStagedChanges';
+	readonly message: string;
+	readonly amend: boolean;
+	readonly stageAllIfEmpty: boolean;
+}
+export interface ResponseCommitStagedChanges extends ResponseWithErrorInfo {
+	readonly command: 'commitStagedChanges';
+}
+
+export interface RequestMoveBranch extends RepoRequest {
+	readonly command: 'moveBranch';
+	readonly branchName: string;
+	readonly targetHash: string;
+}
+export interface ResponseMoveBranch extends ResponseWithErrorInfo {
+	readonly command: 'moveBranch';
+}
+
+export interface RequestLoadPullRequestBadges extends RepoRequest {
+	readonly command: 'loadPullRequestBadges';
+	readonly force?: boolean;
+}
+export interface ResponseLoadPullRequestBadges extends BaseMessage {
+	readonly command: 'loadPullRequestBadges';
+	readonly repo: string;
+	readonly badges: { readonly [branch: string]: PullRequestBadgeInfo };
+}
+
+export interface RequestOpenCompanionFeature extends BaseMessage {
+	readonly command: 'openCompanionFeature';
+	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken';
+	readonly repo?: string;
+	readonly mode?: 'uncommitted' | 'commit' | 'range';
+	readonly commitHash?: string;
+	readonly fromRef?: string;
+	readonly toRef?: string;
+	readonly label?: string;
+}
+
 export type RequestMessage =
 	RequestAddRemote
 	| RequestAddTag
@@ -2177,7 +2306,18 @@ export type RequestMessage =
 	| RequestExplainCommit
 	| RequestCancelGenerateCommitMessage
 	| RequestGenerateCommitMessage
-	| RequestUseGeneratedCommitMessage;
+	| RequestUseGeneratedCommitMessage
+	| RequestFetchAiModels
+	| RequestLoadWorkingTreeStatus
+	| RequestStageFiles
+	| RequestUnstageFiles
+	| RequestDiscardWorkingChanges
+	| RequestLoadFileHunkDiff
+	| RequestApplyHunkPatch
+	| RequestCommitStagedChanges
+	| RequestMoveBranch
+	| RequestLoadPullRequestBadges
+	| RequestOpenCompanionFeature;
 
 export type ResponseMessage =
 	ResponseAddRemote
@@ -2277,12 +2417,23 @@ export type ResponseMessage =
 	| ResponseUpdateCdvConfig
 	| ResponseExplainCommit
 	| ResponseGenerateCommitMessage
-	| ResponseUseGeneratedCommitMessage;
+	| ResponseUseGeneratedCommitMessage
+	| ResponseFetchAiModels
+	| ResponseLoadWorkingTreeStatus
+	| ResponseStageFiles
+	| ResponseUnstageFiles
+	| ResponseDiscardWorkingChanges
+	| ResponseLoadFileHunkDiff
+	| ResponseApplyHunkPatch
+	| ResponseCommitStagedChanges
+	| ResponseMoveBranch
+	| ResponseLoadPullRequestBadges;
 
 export interface ResponseUpdateCdvConfig extends BaseMessage {
 	readonly command: 'updateCdvConfig';
 	readonly actions: ReadonlyArray<string>;
 	readonly hideUnchangedRegions: boolean;
+	readonly pullRequestStatusEnabled?: boolean;
 }
 
 

@@ -458,5 +458,15 @@
 	"config.diff.hideUnchangedRegions.description": "Only show changed regions (collapse unchanged context lines) when viewing diffs in the Visual Studio Code Diff Editor and in Git Map's inline diff preview.",
 	"command.diff.showChangesOnly.title": "Diff View: Show Changes Only",
 	"command.diff.showFullFile.title": "Diff View: Show Full File",
-	"command.fileTimeMachine.title": "File Time Machine"
+	"command.fileTimeMachine.title": "File Time Machine",
+	"command.ai.reviewChanges.title": "AI Review Uncommitted Changes...",
+	"command.ai.generateReleaseNotes.title": "AI Generate PR Summary / Release Notes...",
+	"command.conflictAssistant.title": "Conflict Assistant",
+	"command.reflogExplorer.title": "Visual Reflog Explorer",
+	"command.repoInsights.title": "Repository Insights & Hotspots",
+	"command.multiRepoOverview.title": "Multi-Repository Overview",
+	"command.checkoutPullRequest.title": "Checkout Pull Request...",
+	"command.setHostingToken.title": "Set Git Hosting Token for PR & CI Badges...",
+	"command.clearHostingToken.title": "Clear Git Hosting Token",
+	"config.integrations.pullRequestStatus.enabled.description": "Show open Pull Request / Merge Request numbers and CI check status badges beside local branch labels on the graph for GitHub, GitLab, Gitea / Forgejo / Codeberg, Bitbucket, and Azure DevOps remotes."
 }

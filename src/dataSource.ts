@@ -2167,7 +2167,11 @@ export class DataSource extends Disposable {
 	 */
 	public getFileDiff(repo: string, commitHash: string, parentHash: string | null, oldFilePath: string, newFilePath: string): Promise<{ diff: string, error: ErrorInfo }> {
 		const paths = oldFilePath !== newFilePath ? [oldFilePath, newFilePath] : [newFilePath];
-		return this._spawnGit(['-c', 'core.quotepath=false', 'diff', '--no-color', '--no-ext-diff', '-M', parentHash !== null ? parentHash : EMPTY_TREE_HASH, commitHash, '--', ...paths], repo, (stdout) => {
+		const baseArgs = ['-c', 'core.quotepath=false', 'diff', '--no-color', '--no-ext-diff', '-M', parentHash !== null ? parentHash : EMPTY_TREE_HASH];
+		const args = commitHash === UNCOMMITTED
+			? [...baseArgs, '--', ...paths]
+			: [...baseArgs, commitHash, '--', ...paths];
+		return this._spawnGit(args, repo, (stdout) => {
 			const text = stdout.toString();
 			return text.length > 200000 ? text.substring(0, 200000) : text;
 		}, false, null, null, { maxBytes: 200000 }).then(

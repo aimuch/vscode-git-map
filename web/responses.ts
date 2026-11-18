@@ -103,8 +103,39 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'updateAiConfig':
 				gitGraph.setAiConfig(msg.ai);
 				break;
+			case 'fetchAiModels':
+				gitGraph.processFetchAiModelsResponse(msg);
+				break;
+			case 'loadWorkingTreeStatus':
+				gitGraph.processLoadWorkingTreeStatusResponse(msg);
+				break;
+			case 'stageFiles':
+				refreshOrDisplayError(msg.error, t('Unable to Stage Files'));
+				break;
+			case 'unstageFiles':
+				refreshOrDisplayError(msg.error, t('Unable to Unstage Files'));
+				break;
+			case 'discardWorkingChanges':
+				refreshOrDisplayError(msg.error, t('Unable to Discard Changes'));
+				break;
+			case 'loadFileHunkDiff':
+				gitGraph.processLoadFileHunkDiffResponse(msg);
+				break;
+			case 'applyHunkPatch':
+				gitGraph.processApplyHunkPatchResponse(msg);
+				break;
+			case 'commitStagedChanges':
+				if (msg.error === null) gitGraph.clearInlineCommitDraft();
+				refreshOrDisplayError(msg.error, t('Unable to Commit Changes'));
+				break;
+			case 'moveBranch':
+				refreshOrDisplayError(msg.error, t('Unable to Move Branch'));
+				break;
+			case 'loadPullRequestBadges':
+				gitGraph.processLoadPullRequestBadgesResponse(msg);
+				break;
 			case 'updateCdvConfig':
-				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions);
+				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions, msg.pullRequestStatusEnabled);
 				break;
 			case 'explainCommit':
 				gitGraph.commitExplainer.processExplainCommitResponse(msg);

@@ -16,6 +16,10 @@ class SettingsWidget {
 	private scrollTop: number = 0;
 	private appearance: GG.AppearanceConfig = initialState.config.appearance;
 	private ai: GG.AiSettingsConfig = initialState.config.ai;
+	private prStatusEnabled: boolean = initialState.config.pullRequestStatusEnabled;
+	private discoveredAiModels: ReadonlyArray<string> = [];
+	private aiModelsStatus: string | null = null;
+	private aiModelsLoading: boolean = false;
 
 	private readonly widgetElem: HTMLElement;
 	private readonly repoNameElem: HTMLElement;
@@ -78,6 +82,11 @@ class SettingsWidget {
 	 * Update the AI settings displayed in the Settings Widget, preserving focus if the user is typing in an AI input.
 	 */
 	public setAiConfig(ai: GG.AiSettingsConfig) {
+		if (ai.provider !== this.ai.provider) {
+			this.discoveredAiModels = [];
+			this.aiModelsStatus = null;
+			this.aiModelsLoading = false;
+		}
 		this.ai = ai;
 		if (!this.isVisible()) return;
 		const active = document.activeElement;
@@ -95,6 +104,15 @@ class SettingsWidget {
 		this.render();
 	}
 
+	public processFetchAiModelsResponse(msg: GG.ResponseFetchAiModels) {
+		this.aiModelsLoading = false;
+		this.discoveredAiModels = msg.models;
+		this.aiModelsStatus = msg.error !== null
+			? msg.error
+			: (msg.models.length === 0 ? t('No models were listed by the endpoint — enter a model ID manually.') : null);
+		if (this.isVisible()) this.render();
+	}
+
 	/**
 	 * Sync the Diff View segmented control when `diff.hideUnchangedRegions` changes outside the Settings Widget.
 	 */
@@ -108,6 +126,13 @@ class SettingsWidget {
 			alterClass(segment, CLASS_SELECTED, selected);
 			segment.setAttribute('aria-checked', selected ? 'true' : 'false');
 		});
+	}
+
+	public setPrStatusEnabled(enabled: boolean) {
+		this.prStatusEnabled = enabled;
+		if (!this.isVisible()) return;
+		const cb = <HTMLInputElement | null>document.getElementById('settingsPrStatusBadgesCheckbox');
+		if (cb !== null) cb.checked = enabled;
 	}
 
 	/**
@@ -244,8 +269,10 @@ class SettingsWidget {
 				: ai.provider === 'Kimi' ? 'moonshot-v1-8k'
 					: ai.provider === 'Doubao' ? 'doubao-seed-1-6-250615 / ep-...'
 						: ai.provider === 'OpenAI' ? 'gpt-4o-mini'
-							: ai.provider === 'Ollama' ? 'qwen2.5-coder:7b'
-								: t('Model or endpoint ID');
+							: ai.provider === 'Ollama' ? t('Auto-detect from Ollama, or e.g. qwen2.5-coder:7b')
+								: ai.provider === 'Magpie' ? t('Auto-detect from Magpie, or e.g. claude-sonnet-4-5')
+									: ai.provider === 'CC Switch' ? t('Auto-detect / routed by CC Switch, or e.g. gpt-5-codex')
+										: t('Model or endpoint ID');
 			const baseUrlPlaceholder = activePreset && activePreset.defaultBaseUrl !== ''
 				? activePreset.defaultBaseUrl
 				: 'https://api.example.com/v1';
@@ -254,20 +281,24 @@ class SettingsWidget {
 				: (activePreset && activePreset.requiresApiKey
 					? '<span class="settingsAiKeyStatus missing">' + escapeHtml(t('Not set — click "Set API Key…" above')) + '</span>'
 					: '<span class="settingsAiKeyStatus optional">' + escapeHtml(t('Not set (optional)')) + '</span>');
+			const discoveredChips = isDirectAi && this.discoveredAiModels.length > 0
+				? '<div class="settingsAiModelChips">' + this.discoveredAiModels.slice(0, 16).map((m) => '<button type="button" class="settingsAiModelChip' + (m === ai.model ? ' active' : '') + '" data-ai-model="' + escapeHtml(m) + '" tabindex="-1">' + escapeHtml(m) + '</button>').join('') + '</div>'
+				: (isDirectAi && this.aiModelsStatus !== null ? '<div class="settingsAiModelHint">' + escapeHtml(this.aiModelsStatus) + '</div>' : '');
 			const aiCardBody = '<div class="settingsGrid two settingsAiGrid">' +
 				'<label class="settingsKey" for="settingsAiProvider">' + t('Provider:') + '</label>' +
 				'<select id="settingsAiProvider" class="settingsSelect">' + ai.presets.map((preset) => '<option value="' + escapeHtml(preset.id) + '"' + (preset.id === ai.provider ? ' selected' : '') + '>' + escapeHtml(providerLabel(preset)) + '</option>').join('') + '</select>' +
 				(isDirectAi
 					? '<label class="settingsKey" for="settingsAiModel">' + t('Model:') + '</label>' +
-					'<input id="settingsAiModel" type="text" class="settingsInput mono" value="' + escapeHtml(ai.model) + '" placeholder="' + escapeHtml(modelPlaceholder) + '" spellcheck="false">' +
+					'<div class="settingsAiModelField"><div class="settingsAiModelInputRow"><input id="settingsAiModel" type="text" class="settingsInput mono" value="' + escapeHtml(ai.model) + '" placeholder="' + escapeHtml(modelPlaceholder) + '" spellcheck="false">' +
+					'<button type="button" id="settingsDetectAiModels" class="settingsBtn settingsDetectBtn" title="' + escapeHtml(t('Query /models from the configured endpoint')) + '"' + (this.aiModelsLoading ? ' disabled' : '') + ' tabindex="-1">' + MENU_ICONS.fetch + (this.aiModelsLoading ? t('Loading…') : t('Detect Models')) + '</button></div>' + discoveredChips + '</div>' +
 					'<label class="settingsKey" for="settingsAiBaseUrl">' + t('Base URL:') + '</label>' +
 					'<input id="settingsAiBaseUrl" type="text" class="settingsInput mono" value="' + escapeHtml(ai.baseUrl) + '" placeholder="' + escapeHtml(baseUrlPlaceholder) + '" spellcheck="false">' +
 					'<span class="settingsKey">' + t('API Key:') + '</span><span class="settingsValue">' + apiKeyStatus + '</span>'
 					: '') +
 				'</div>' +
 				(!isDirectAi ? '<p class="settingsDescription">' + t('Uses the language models provided in Visual Studio Code (e.g. GitHub Copilot Chat). No API URL or API key is needed.') + '</p>'
-					: ai.provider === 'Magpie' ? '<p class="settingsDescription">' + t('Requests go through the local gateway of Magpie, which calls the providers signed in to it. Keep Magpie running, and set a model it serves. No API key is needed.') + '</p>'
-						: ai.provider === 'CC Switch' ? '<p class="settingsDescription">' + t('Requests go through the local routing of CC Switch to the provider currently selected for Codex. Turn on local routing in CC Switch, and set a model that provider serves. No API key is needed.') + '</p>'
+					: ai.provider === 'Magpie' ? '<p class="settingsDescription">' + t('Requests go through the local gateway of Magpie, which calls the providers signed in to it. Keep Magpie running; leave Model blank to auto-detect or pick one above.') + '</p>'
+						: ai.provider === 'CC Switch' ? '<p class="settingsDescription">' + t('Requests go through the local routing of CC Switch to the provider currently selected for Codex. Turn on local routing in CC Switch; leave Model blank to use its active route or pick one above.') + '</p>'
 							: '');
 			html += '<div class="settingsSection" id="settingsAiSection"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
@@ -364,6 +395,11 @@ class SettingsWidget {
 				} else {
 					html += card(MENU_ICONS.pullRequest + t('Pull Request Creation'), button('editPullRequestIntegration', 'addBtn', MENU_ICONS.settings + t('Configure') + ELLIPSIS), '<p class="settingsDescription">' + t('Pull Request Creation automates the opening and pre-filling of a Pull Request form, directly from a branch\'s context menu.') + '</p>');
 				}
+				html += card(
+					MENU_ICONS.pullRequest + t('PR & CI Status Badges'),
+					button('settingsSetHostingToken', 'editBtn', MENU_ICONS.key + t('Set Token') + ELLIPSIS) + button('settingsClearHostingToken', 'removeBtn', MENU_ICONS.trash + t('Clear Token')),
+					'<div class="settingsOptions"><span>' + checkbox('settingsPrStatusBadges', t('Show open PR / MR numbers & CI status badges on local branch labels'), t('Supports GitHub, GitLab, Gitea / Forgejo / Codeberg, Bitbucket & Azure DevOps.')) + '</span></div>'
+				);
 			}
 			html += generalHtml + '</div>';
 
@@ -649,6 +685,27 @@ class SettingsWidget {
 						}, null);
 					});
 				}
+
+				const prBadgesCb = <HTMLInputElement | null>document.getElementById('settingsPrStatusBadgesCheckbox');
+				if (prBadgesCb !== null) {
+					prBadgesCb.checked = this.prStatusEnabled;
+					prBadgesCb.addEventListener('change', () => {
+						this.prStatusEnabled = prBadgesCb.checked;
+						this.view.setPrStatusEnabled(this.prStatusEnabled, true);
+					});
+				}
+				const setHostTokBtn = document.getElementById('settingsSetHostingToken');
+				if (setHostTokBtn !== null) {
+					setHostTokBtn.addEventListener('click', () => {
+						sendMessage({ command: 'openCompanionFeature', feature: 'setHostingToken', repo: this.currentRepo || undefined });
+					});
+				}
+				const clrHostTokBtn = document.getElementById('settingsClearHostingToken');
+				if (clrHostTokBtn !== null) {
+					clrHostTokBtn.addEventListener('click', () => {
+						sendMessage({ command: 'openCompanionFeature', feature: 'clearHostingToken', repo: this.currentRepo || undefined });
+					});
+				}
 			}
 
 			document.getElementById('openExtensionSettings')!.addEventListener('click', () => {
@@ -744,6 +801,9 @@ class SettingsWidget {
 			aiProviderSelect.addEventListener('change', () => {
 				const provider = aiProviderSelect.value;
 				if (provider === this.ai.provider) return;
+				this.discoveredAiModels = [];
+				this.aiModelsStatus = null;
+				this.aiModelsLoading = false;
 				this.ai = Object.assign({}, this.ai, { provider: provider, hasApiKey: false });
 				this.view.setAiConfig(this.ai);
 				update('ai.provider', provider);
@@ -804,6 +864,26 @@ class SettingsWidget {
 				sendMessage({ command: 'clearAiApiKey' });
 			});
 		}
+		const detectAiModelsBtn = document.getElementById('settingsDetectAiModels');
+		if (detectAiModelsBtn !== null) {
+			detectAiModelsBtn.addEventListener('click', () => {
+				if (this.aiModelsLoading) return;
+				flushAiTextInputs();
+				this.aiModelsLoading = true;
+				this.aiModelsStatus = null;
+				this.render();
+				sendMessage({ command: 'fetchAiModels' });
+			});
+		}
+		this.contentsElem.querySelectorAll<HTMLElement>('.settingsAiModelChip').forEach((chip) => {
+			chip.addEventListener('click', () => {
+				const pickedModel = chip.dataset.aiModel || '';
+				if (pickedModel === '' || pickedModel === this.ai.model) return;
+				this.ai = Object.assign({}, this.ai, { model: pickedModel });
+				this.view.setAiConfig(this.ai);
+				update('ai.model', pickedModel);
+			});
+		});
 		const customizeCdvActionsBtn = document.getElementById('settingsCustomizeCdvActions');
 		if (customizeCdvActionsBtn !== null) {
 			customizeCdvActionsBtn.addEventListener('click', () => {

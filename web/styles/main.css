@@ -746,8 +746,14 @@ body.freezeFooter #footer{
 	top:0;
 	left:auto;
 	box-sizing:border-box;
+	container-type:inline-size;
 	border-left:1px solid var(--vscode-panel-border, rgba(128,128,128,0.35));
 	background-color:var(--vscode-sideBar-background, var(--vscode-editor-background));
+}
+@container (max-width: 340px){
+	#cdvHeader .cdvDiffModeLabel{
+		display:none;
+	}
 }
 #cdv.docked.right #cdvContent{
 	top:36px;
@@ -1085,6 +1091,31 @@ body.freezeFooter #footer{
 }
 .cdvFileDiffLine.del > span:nth-child(3){
 	color:var(--vscode-gitDecoration-deletedResourceForeground);
+}
+.cdvFileDiffCollapsed{
+	padding:2px 10px;
+	background-color:color-mix(in srgb, var(--vscode-focusBorder, #0e7afe) 8%, transparent);
+	color:var(--vscode-descriptionForeground);
+	font-family:var(--vscode-font-family);
+	font-size:11px;
+	text-align:center;
+	border-top:1px dashed rgba(128,128,128,0.22);
+	border-bottom:1px dashed rgba(128,128,128,0.22);
+}
+.cdvControlSep{
+	width:14px;
+	height:1px;
+	margin:3px auto;
+	background-color:var(--vscode-panel-border, rgba(128,128,128,0.3));
+}
+#cdvControls #cdvHideUnchanged{
+	border:1px solid transparent;
+	border-radius:4px;
+	box-sizing:border-box;
+}
+#cdvControls #cdvHideUnchanged.active{
+	border-color:var(--vscode-focusBorder);
+	background-color:color-mix(in srgb, var(--vscode-focusBorder) 18%, transparent);
 }
 .cdvFileDiffMore, .cdvFileDiffMessage{
 	padding:6px 10px;
@@ -3896,4 +3927,320 @@ button.operationBarBtn svg{
 }
 .cdvActionsOrderBadge.empty{
 	visibility:hidden;
+}
+.cdvActionsCondBadge{
+	flex:0 0 auto;
+	padding:1px 5px;
+	border-radius:4px;
+	border:1px solid rgba(128,128,128,0.28);
+	color:var(--vscode-descriptionForeground);
+	font-size:10.5px;
+	line-height:1.3;
+	cursor:help;
+}
+#cdvActionsModal button.rebaseEditorMoveBtn,
+#cdvActionsModal button.rebaseEditorLink{
+	padding:0;
+	border:none;
+	background:transparent;
+	color:inherit;
+	font:inherit;
+}
+#cdvActionsModal button.rebaseEditorMoveBtn:focus-visible,
+#cdvActionsModal button.rebaseEditorLink:focus-visible,
+#cdvActionsModal .cdvActionsModalLabel input[type="checkbox"]:focus-visible + .customCheckbox{
+	outline:2px solid var(--vscode-focusBorder);
+	outline-offset:1px;
+}
+#cdvActionsModal .cdvActionsEmptyNote{
+	color:var(--vscode-descriptionForeground);
+	font-size:11.5px;
+}
+
+/* PR & CI Status Badges, Drag & Drop, Inline Staging/Commit & Hunk Modal */
+#toolsMenuBtn.active{
+	background-color:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.22));
+	color:var(--vscode-foreground);
+}
+.gitRef.head[draggable="true"]{
+	cursor:grab;
+}
+.gitRef.head[draggable="true"]:active{
+	cursor:grabbing;
+}
+.gitRefPrBadge{
+	display:inline-flex;
+	align-items:center;
+	gap:2px;
+	margin-left:4px;
+	padding:0 5px;
+	border-radius:8px;
+	font-size:10.5px;
+	font-weight:600;
+	line-height:15px;
+	background-color:rgba(128,128,128,0.22);
+	color:var(--vscode-foreground);
+	cursor:pointer;
+	vertical-align:baseline;
+}
+.gitRefPrBadge:hover{
+	filter:brightness(1.12);
+	text-decoration:underline;
+}
+.gitRefPrBadge.ci-success{
+	background-color:rgba(46,160,67,0.24);
+	color:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.gitRefPrBadge.ci-failure{
+	background-color:rgba(248,81,73,0.24);
+	color:var(--vscode-errorForeground, #f85149);
+}
+.gitRefPrBadge.ci-pending{
+	background-color:rgba(210,153,34,0.24);
+	color:var(--vscode-gitDecoration-modifiedResourceForeground, #d29922);
+}
+tr.commit.dragDropTarget > td{
+	background-color:var(--vscode-list-dropBackground, rgba(0,122,204,0.22)) !important;
+	box-shadow:inset 0 1px 0 var(--vscode-focusBorder), inset 0 -1px 0 var(--vscode-focusBorder);
+}
+
+#cdvInlineCommitBox{
+	margin-top:10px;
+	padding-top:10px;
+	border-top:1px solid rgba(128,128,128,0.22);
+}
+.cdvStagingBar{
+	display:flex;
+	align-items:center;
+	justify-content:space-between;
+	gap:6px;
+	margin-bottom:6px;
+	font-size:11.5px;
+	color:var(--vscode-descriptionForeground);
+}
+.cdvStagingBtns{
+	display:inline-flex;
+	gap:4px;
+}
+.cdvMiniBtn{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	gap:3px;
+	padding:2px 6px;
+	border-radius:4px;
+	border:1px solid var(--vscode-button-border, rgba(128,128,128,0.32));
+	background-color:var(--vscode-button-secondaryBackground, rgba(128,128,128,0.14));
+	color:var(--vscode-button-secondaryForeground, var(--vscode-foreground));
+	font-size:11px;
+	line-height:1.3;
+	cursor:pointer;
+}
+.cdvMiniBtn:hover{
+	background-color:var(--vscode-button-secondaryHoverBackground, rgba(128,128,128,0.26));
+}
+.cdvMiniBtn.primary, .cdvMiniBtn.active{
+	background-color:var(--vscode-button-background);
+	color:var(--vscode-button-foreground);
+	border-color:transparent;
+}
+.cdvMiniBtn.danger, .cdvLinkBtn.danger{
+	color:var(--vscode-errorForeground, #f85149);
+}
+.cdvLinkBtn{
+	padding:0;
+	border:none;
+	background:transparent;
+	font:inherit;
+	text-decoration:underline;
+	cursor:pointer;
+}
+.cdvQuickStageList{
+	max-height:132px;
+	overflow-y:auto;
+	margin-bottom:8px;
+	padding:3px 4px;
+	border-radius:5px;
+	border:1px solid rgba(128,128,128,0.2);
+	background-color:rgba(128,128,128,0.06);
+}
+.cdvQuickStageRow{
+	display:flex;
+	align-items:center;
+	gap:4px;
+	padding:2px 2px;
+	font-size:11.5px;
+}
+.cdvQuickStageBadge{
+	flex:0 0 auto;
+	min-width:18px;
+	text-align:center;
+	font-family:var(--vscode-editor-font-family);
+	font-size:10px;
+	font-weight:700;
+	border-radius:3px;
+	padding:0 3px;
+	background-color:rgba(128,128,128,0.2);
+}
+.cdvQuickStageBadge.status-s{
+	color:var(--vscode-gitDecoration-addedResourceForeground, #3fb950);
+}
+.cdvQuickStageBadge.status-m, .cdvQuickStageBadge.status-sm{
+	color:var(--vscode-gitDecoration-modifiedResourceForeground, #d29922);
+}
+.cdvQuickStageBadge.status-\!{
+	color:var(--vscode-errorForeground, #f85149);
+}
+.cdvQuickStagePath{
+	flex:1;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-family:var(--vscode-editor-font-family);
+	font-size:11px;
+}
+.cdvCommitForm{
+	display:flex;
+	flex-direction:column;
+	gap:6px;
+}
+.cdvCommitInput{
+	width:100%;
+	box-sizing:border-box;
+	resize:vertical;
+	min-height:54px;
+	padding:6px 8px;
+	border-radius:5px;
+	border:1px solid var(--vscode-input-border, rgba(128,128,128,0.35));
+	background-color:var(--vscode-input-background);
+	color:var(--vscode-input-foreground);
+	font-family:var(--vscode-font-family);
+	font-size:12px;
+}
+.cdvCommitInput:focus{
+	outline:1px solid var(--vscode-focusBorder);
+}
+.cdvCommitControls{
+	display:flex;
+	align-items:center;
+	gap:6px;
+	flex-wrap:wrap;
+}
+.cdvAmendLabel{
+	display:inline-flex;
+	align-items:center;
+	gap:5px;
+	font-size:11.5px;
+	cursor:pointer;
+	user-select:none;
+}
+.cdvCommitSpacer{
+	flex:1;
+}
+
+#cdvHunkModal{
+	position:fixed;
+	inset:0;
+	z-index:120;
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	padding:24px;
+	background-color:rgba(0,0,0,0.48);
+}
+.cdvHunkCard{
+	display:flex;
+	flex-direction:column;
+	width:min(820px, 94vw);
+	max-height:84vh;
+	border-radius:8px;
+	border:1px solid var(--vscode-widget-border, rgba(128,128,128,0.35));
+	background-color:var(--vscode-editorWidget-background, var(--vscode-editor-background));
+	box-shadow:0 12px 36px rgba(0,0,0,0.45);
+	overflow:hidden;
+}
+.cdvHunkHeader{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	padding:10px 14px;
+	border-bottom:1px solid rgba(128,128,128,0.24);
+}
+.cdvHunkTitle{
+	flex:1;
+	min-width:0;
+	overflow:hidden;
+	text-overflow:ellipsis;
+	white-space:nowrap;
+	font-family:var(--vscode-editor-font-family);
+	font-size:12.5px;
+	font-weight:600;
+}
+.cdvHunkTabs{
+	display:inline-flex;
+	gap:4px;
+}
+.cdvHunkBody{
+	flex:1;
+	overflow:auto;
+	padding:12px 14px;
+}
+.cdvHunkEmpty{
+	margin:12px 0;
+	color:var(--vscode-descriptionForeground);
+	text-align:center;
+}
+.cdvHunkBlock{
+	margin-bottom:12px;
+	border-radius:6px;
+	border:1px solid rgba(128,128,128,0.26);
+	overflow:hidden;
+}
+.cdvHunkBlockHdr{
+	display:flex;
+	align-items:center;
+	justify-content:space-between;
+	gap:8px;
+	padding:5px 10px;
+	background-color:rgba(128,128,128,0.12);
+	font-size:11.5px;
+}
+.cdvHunkBlockBtns{
+	display:inline-flex;
+	gap:5px;
+}
+.cdvHunkPre{
+	margin:0;
+	padding:6px 0;
+	overflow-x:auto;
+	font-family:var(--vscode-editor-font-family);
+	font-size:11.5px;
+	line-height:1.45;
+}
+.cdvHunkLine{
+	padding:0 10px;
+	white-space:pre;
+}
+.cdvHunkLine.add{
+	background-color:var(--vscode-diffEditor-insertedLineBackground, rgba(46,160,67,0.18));
+}
+.cdvHunkLine.del{
+	background-color:var(--vscode-diffEditor-removedLineBackground, rgba(248,81,73,0.18));
+}
+.cdvHunkHint{
+	margin-bottom:8px;
+	font-size:11.5px;
+	color:var(--vscode-descriptionForeground);
+}
+.cdvHunkLine.selectable{
+	cursor:pointer;
+	user-select:none;
+}
+.cdvHunkLine.selectable:hover{
+	filter:brightness(1.12);
+}
+.cdvHunkLine.selected{
+	box-shadow:inset 3px 0 0 var(--vscode-focusBorder);
+	background-color:var(--vscode-editor-selectionBackground, rgba(38,79,120,0.45));
 }

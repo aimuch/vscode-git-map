@@ -311,6 +311,8 @@ class BranchCompare {
 		}).join('') : '<div class="comparePanelEmpty">' + t('No files are changed.') + '</div>') + '</div>' +
 			'<div class="comparePanelActions">' +
 			(this.fileChanges.length > 0 ? '<button type="button" class="cdvActionBtn primary" data-panel="openAll">' + MENU_ICONS.diff + t('Open All Changes') + '</button>' : '') +
+			(this.fileChanges.length > 0 ? '<button type="button" class="cdvActionBtn" data-panel="aiReview">' + MENU_ICONS.sparkle + t('AI Code Review') + '</button>' : '') +
+			'<button type="button" class="cdvActionBtn" data-panel="releaseNotes">' + MENU_ICONS.sparkle + t('AI PR / Release Notes') + '</button>' +
 			(canCreatePullRequest ? '<button type="button" class="cdvActionBtn" data-panel="pullRequest">' + MENU_ICONS.pullRequest + t('Create Pull Request') + ELLIPSIS + '</button>' : '') +
 			'<button type="button" class="cdvActionBtn" data-panel="copy">' + MENU_ICONS.copy + t('Copy Summary') + '</button></div>';
 	}
@@ -331,6 +333,12 @@ class BranchCompare {
 					break;
 				case 'openAll':
 					sendMessage({ command: 'openAllChanges', repo: this.view.currentRepo, title: this.left + ' ↔ ' + this.right, fromHash: fromHash, toHash: comparison.leftHash, fileChanges: this.fileChanges });
+					break;
+				case 'aiReview':
+					sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'range', fromRef: fromHash, toRef: comparison.leftHash, label: this.left + ' ↔ ' + this.right });
+					break;
+				case 'releaseNotes':
+					sendMessage({ command: 'openCompanionFeature', feature: 'aiReleaseNotes', repo: this.view.currentRepo, fromRef: fromHash, toRef: comparison.leftHash, label: this.right + ' → ' + this.left });
 					break;
 				case 'pullRequest': {
 					const config = this.view.gitRepos[this.view.currentRepo].pullRequestConfig;

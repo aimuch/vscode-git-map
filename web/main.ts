@@ -122,6 +122,13 @@ class GitGraphView {
 	private saveStatePending: boolean = false; // Is the state saved when the code that's running finishes
 	private saveAvatarsTimeout: number | null = null;
 	private readonly scrollShadowElem: HTMLElement;
+	private pullRequestBadges: { [branch: string]: GG.PullRequestBadgeInfo } = {};
+	private workingTreeStatus: GG.ResponseLoadWorkingTreeStatus | null = null;
+	private inlineCommitDraft: string = '';
+	private inlineCommitAmend: boolean = false;
+	private hunkModalElem: HTMLElement | null = null;
+	private hunkModalState: { filePath: string, staged: boolean } | null = null;
+	private dragPayload: { kind: 'branch', branch: string, sourceHash: string } | { kind: 'commit', hash: string } | null = null;
 
 	constructor(viewElem: HTMLElement, prevState: WebViewState | null) {
 		this.gitRepos = initialState.repos;
@@ -308,6 +315,14 @@ class GitGraphView {
 		scrollToHeadBtn.addEventListener('click', () => this.scrollToHead());
 		settingsBtn.innerHTML = SVG_ICONS.gear;
 		settingsBtn.addEventListener('click', () => this.settingsWidget.show(this.currentRepo));
+		const toolsBtn = document.getElementById('toolsMenuBtn');
+		if (toolsBtn !== null) {
+			toolsBtn.innerHTML = SVG_ICONS.compass;
+			toolsBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				this.showToolsMenu(toolsBtn, e);
+			});
+		}
 		terminalBtn.innerHTML = SVG_ICONS.terminal;
 		terminalBtn.addEventListener('click', () => {
 			runAction({
@@ -400,6 +415,9 @@ class GitGraphView {
 		this.gitRemotes = [];
 		this.gitStashes = [];
 		this.gitUpstreams = {};
+		this.pullRequestBadges = {};
+		this.workingTreeStatus = null;
+		this.closeHunkModal();
 		this.stashStats = {};
 		this.commitStats = {};
 		this.commitStatsRequested.clear();
@@ -426,7 +444,12 @@ class GitGraphView {
 		this.gitUpstreams = upstreams;
 		this.stashList.renderStashButton();
 		if (stashes.length === 0) this.stashList.closeStashList(); else this.stashList.renderStashList();
-		if (isRepo) this.renderSyncButtons(branchHead);
+		if (isRepo) {
+			this.renderSyncButtons(branchHead);
+			if (remotes.length > 0 && this.currentRepo !== '' && this.config.pullRequestStatusEnabled) {
+				sendMessage({ command: 'loadPullRequestBadges', repo: this.currentRepo });
+			}
+		}
 
 		if (!isRepo || (!this.currentRepoRefreshState.hard && arraysStrictlyEqual(this.gitBranches, branchOptions) && this.gitBranchHead === branchHead && arraysStrictlyEqual(this.gitRemotes, remotes))) {
 			this.saveState();
@@ -1066,7 +1089,7 @@ class GitGraphView {
 		}
 	}
 
-	public setCdvConfig(actions: ReadonlyArray<string>, hideUnchangedRegions: boolean) {
+	public setCdvConfig(actions: ReadonlyArray<string>, hideUnchangedRegions: boolean, pullRequestStatusEnabled?: boolean) {
 		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = actions;
 		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).hideUnchangedRegions = hideUnchangedRegions;
 		this.renderCdvActions();
@@ -1077,6 +1100,28 @@ class GitGraphView {
 			if (index !== null) diffElem.innerHTML = this.generateCdvFileDiffHtml(this.expandedCommit.commitHash, this.expandedCommit.fileChanges[index]);
 		}
 		this.settingsWidget.setHideUnchangedRegions(hideUnchangedRegions);
+		if (typeof pullRequestStatusEnabled === 'boolean') {
+			this.setPrStatusEnabled(pullRequestStatusEnabled, false);
+		}
+	}
+
+	public setPrStatusEnabled(enabled: boolean, persist: boolean) {
+		(<GG.Writeable<GG.GitGraphViewConfig>>this.config).pullRequestStatusEnabled = enabled;
+		this.settingsWidget.setPrStatusEnabled(enabled);
+		if (persist) {
+			sendMessage({ command: 'updateExtensionSetting', key: 'integrations.pullRequestStatus.enabled', value: enabled });
+		}
+		if (!enabled) {
+			if (Object.keys(this.pullRequestBadges).length > 0) {
+				this.pullRequestBadges = {};
+				if (this.commits.length > 0) {
+					if (this.expandedCommit === null || this.isCdvDocked()) this.renderRows();
+					else this.render();
+				}
+			}
+		} else if (this.gitRemotes.length > 0 && this.currentRepo !== '') {
+			sendMessage({ command: 'loadPullRequestBadges', repo: this.currentRepo, force: true });
+		}
 	}
 
 	public setAiConfig(ai: GG.AiSettingsConfig) {
@@ -1089,6 +1134,10 @@ class GitGraphView {
 		if (this.expandedCommit !== null && !this.expandedCommit.loading) {
 			this.renderCommitDetailsView(true);
 		}
+	}
+
+	public processFetchAiModelsResponse(msg: GG.ResponseFetchAiModels) {
+		this.settingsWidget.processFetchAiModelsResponse(msg);
 	}
 
 	public requestCommitDetails(hash: string, refresh: boolean) {
@@ -1680,7 +1729,7 @@ class GitGraphView {
 		for (j = 0; j < branchLabels.heads.length; j++) {
 			refName = escapeHtml(branchLabels.heads[j].name);
 			refActive = branchLabels.heads[j].name === this.gitBranchHead;
-			refHtml = '<span class="gitRef head' + (refActive ? ' active' : '') + '" data-name="' + refName + '">' + (refActive && refsInColumn ? SVG_ICONS.check : SVG_ICONS.branch) + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span>';
+			refHtml = '<span class="gitRef head' + (refActive ? ' active' : '') + '" draggable="true" data-name="' + refName + '">' + (refActive && refsInColumn ? SVG_ICONS.check : SVG_ICONS.branch) + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span>';
 			for (k = 0; k < branchLabels.heads[j].remotes.length; k++) {
 				remoteName = escapeHtml(branchLabels.heads[j].remotes[k]);
 				const remoteFullRef = escapeHtml(branchLabels.heads[j].remotes[k] + '/' + branchLabels.heads[j].name);
@@ -1688,7 +1737,11 @@ class GitGraphView {
 					? '<span class="gitRefHeadRemote icon" data-remote="' + remoteName + '" data-fullref="' + remoteFullRef + '" title="' + t('{0} is at this commit', remoteFullRef) + '">' + SVG_ICONS.cloud + '</span>'
 					: '<span class="gitRefHeadRemote" data-remote="' + remoteName + '" data-fullref="' + remoteFullRef + '">' + remoteName + '</span>';
 			}
-			refHtml += generateTrackingHtml(this.gitUpstreams[branchLabels.heads[j].name]) + '</span>';
+			const prBadge = this.pullRequestBadges[branchLabels.heads[j].name];
+			const prBadgeHtml = typeof prBadge !== 'undefined'
+				? '<span class="gitRefPrBadge ci-' + prBadge.ciStatus + '" data-pr-url="' + escapeHtml(prBadge.url) + '" title="' + escapeHtml('#' + prBadge.number + ' ' + prBadge.title + ' (CI: ' + prBadge.ciStatus + ')') + '">#' + prBadge.number + (prBadge.ciStatus === 'success' ? ' &#10003;' : prBadge.ciStatus === 'failure' ? ' &#10005;' : prBadge.ciStatus === 'pending' ? ' &#9679;' : '') + '</span>'
+				: '';
+			refHtml += generateTrackingHtml(this.gitUpstreams[branchLabels.heads[j].name]) + prBadgeHtml + '</span>';
 			refBranches = refActive ? refHtml + refBranches : refBranches + refHtml;
 			if (refActive) branchCheckedOutAtCommit = this.gitBranchHead;
 		}
@@ -1715,7 +1768,7 @@ class GitGraphView {
 			: '';
 
 		message = this.branchCompare.getRowLabelHtml(commit.hash) + this.operationBar.getBisectLabelHtml(commit.hash) + message;
-		return '<tr class="commit' + this.branchCompare.getRowClass(commit.hash) + this.operationBar.getBisectRowClass(commit.hash) + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + (this.selectedCommits.has(commit.hash) ? ' multiSelected' : '') + (this.expandedCommit !== null && (this.expandedCommit.commitHash === commit.hash || this.expandedCommit.compareWithHash === commit.hash) ? ' ' + CLASS_COMMIT_DETAILS_OPEN : '') + (commit.hash === this.flashingHash ? ' flash' : '') + '"' + (commit.hash !== UNCOMMITTED ? '' : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
+		return '<tr class="commit' + this.branchCompare.getRowClass(commit.hash) + this.operationBar.getBisectRowClass(commit.hash) + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + (this.selectedCommits.has(commit.hash) ? ' multiSelected' : '') + (this.expandedCommit !== null && (this.expandedCommit.commitHash === commit.hash || this.expandedCommit.compareWithHash === commit.hash) ? ' ' + CLASS_COMMIT_DETAILS_OPEN : '') + (commit.hash === this.flashingHash ? ' flash' : '') + '"' + (commit.hash !== UNCOMMITTED ? (commit.stash === null ? ' draggable="true"' : '') : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
 			(refsInColumn
 				? '<td class="refsCol">' + (refBranches !== '' || refTags !== '' ? '<span class="refsColLabels" style="--git-graph-refs:' + (branchLabels.heads.length + branchLabels.remotes.length + commit.tags.length + (commit.stash !== null ? 1 : 0)) + '">' + refBranches + refTags + '</span>' : '') + '</td><td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + message
 				: this.config.referenceLabels.branchLabelsAlignedToGraph
@@ -2339,7 +2392,10 @@ class GitGraphView {
 					possibleChordStart = Date.now();
 				}
 			} else if (e.key === 'Escape') {
-				if (this.isCdvActionsCustomizerOpen()) {
+				if (this.isHunkModalOpen()) {
+					this.closeHunkModal();
+					handledEvent(e);
+				} else if (this.isCdvActionsCustomizerOpen()) {
 					this.closeCdvActionsCustomizer();
 					handledEvent(e);
 				} else if (this.commitExplainer.isCommitMessageModalOpen()) {
@@ -2511,6 +2567,14 @@ class GitGraphView {
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
 
+			if ((eventElem = eventTarget.closest('.gitRefPrBadge')) !== null) {
+				handledEvent(e);
+				if (typeof eventElem.dataset.prUrl === 'string' && eventElem.dataset.prUrl !== '') {
+					sendMessage({ command: 'openExternalUrl', url: unescapeHtml(eventElem.dataset.prUrl) });
+				}
+				return;
+			}
+
 			if ((eventElem = eventTarget.closest('.gitRef')) !== null) {
 				// .gitRef was clicked
 				e.stopPropagation();
@@ -2577,6 +2641,14 @@ class GitGraphView {
 			const eventTarget = <Element>e.target;
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
+
+			if ((eventElem = eventTarget.closest('.gitRefPrBadge')) !== null) {
+				handledEvent(e);
+				if (typeof eventElem.dataset.prUrl === 'string' && eventElem.dataset.prUrl !== '') {
+					sendMessage({ command: 'openExternalUrl', url: unescapeHtml(eventElem.dataset.prUrl) });
+				}
+				return;
+			}
 
 			if ((eventElem = eventTarget.closest('.gitRef')) !== null) {
 				// .gitRef was double clicked
@@ -2696,6 +2768,8 @@ class GitGraphView {
 				clientY: Math.round(bounds.top + bounds.height / 2)
 			}));
 		}, true);
+
+		this.observeTableDragAndDrop();
 	}
 
 
@@ -2947,7 +3021,7 @@ class GitGraphView {
 						+ (body !== '' ? '<div class="cdvSummaryBody">' + textFormatter.format(body) + '</div>' : '')
 						+ detailsHtml + '<div id="cdvActions"></div>';
 				} else {
-					html += (isRight ? '<h2 class="cdvSubject">' + t('Uncommitted Changes') + '</h2>' : '') + '<p class="cdvSummaryText">' + t('Displaying all uncommitted changes.') + '</p>' + (isRight ? generateCdvStatsHtml(expandedCommit.fileChanges!) : '') + '<div id="cdvActions"></div>';
+					html += (isRight ? '<h2 class="cdvSubject">' + t('Uncommitted Changes') + '</h2>' : '') + '<p class="cdvSummaryText">' + t('Displaying all uncommitted changes.') + '</p>' + (isRight ? generateCdvStatsHtml(expandedCommit.fileChanges!) : '') + '<div id="cdvActions"></div><div id="cdvInlineCommitBox"></div>';
 				}
 			} else {
 				// Commit comparison should be shown
@@ -2974,7 +3048,7 @@ class GitGraphView {
 		} else {
 			html += '</div><div id="cdvControls"><div id="cdvClose" class="cdvControlBtn" title="' + t('Close') + '">' + SVG_ICONS.close + '</div>' +
 				(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
-				(!expandedCommit.loading ? '<div id="cdvHideUnchanged" class="cdvControlBtn">' + MENU_ICONS.foldDiff + '</div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') +
+				(!expandedCommit.loading ? '<div class="cdvControlSep"></div><div id="cdvHideUnchanged" class="cdvControlBtn">' + MENU_ICONS.foldDiff + '</div><div class="cdvControlSep"></div><div id="cdvFileViewTypeTree" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File Tree View') + '">' + SVG_ICONS.fileTree + '</div><div id="cdvFileViewTypeList" class="cdvControlBtn cdvFileViewTypeBtn" title="' + t('File List View') + '">' + SVG_ICONS.fileList + '</div>' : '') +
 				(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
 				'</div><div class="cdvHeightResize"></div>';
 		}
@@ -3025,6 +3099,10 @@ class GitGraphView {
 		if (!expandedCommit.loading) {
 			this.cdvFileView.makeCdvFileViewInteractive();
 			this.renderCdvActions();
+			if (expandedCommit.commitHash === UNCOMMITTED && expandedCommit.compareWithHash === null) {
+				this.renderInlineCommitBox();
+				sendMessage({ command: 'loadWorkingTreeStatus', repo: this.currentRepo });
+			}
 			this.cdvFileView.renderCdvFileViewTypeBtns();
 			this.cdvFileView.renderCdvHideUnchangedBtn();
 			this.cdvFileView.renderCdvExternalDiffBtn();
@@ -3440,7 +3518,9 @@ class GitGraphView {
 			actions = this.actions.getCommitContextMenuActions(target);
 			const actionMap = new Map<string, ContextMenuAction>();
 			actions.forEach((group) => group.forEach((action) => {
-				if (typeof action.id === 'string') actionMap.set(action.id, action);
+				if (typeof action.id === 'string' && (action.visible || !actionMap.has(action.id))) {
+					actionMap.set(action.id, action);
+				}
 			}));
 			primary = this.getConfiguredCdvActions()
 				.map((id) => actionMap.get(id))
@@ -3480,19 +3560,19 @@ class GitGraphView {
 		closeDialogAndContextMenu();
 		const catalog = getCommitActionCatalog();
 		const configured = this.getConfiguredCdvActions();
-		const items: { id: string, title: string, icon: string, checked: boolean }[] = [];
+		const items: { id: string, title: string, icon: string, conditional: boolean, checked: boolean }[] = [];
 		const added = new Set<string>();
 		configured.forEach((id) => {
 			const entry = catalog.find((item) => item.id === id);
 			if (typeof entry !== 'undefined' && !added.has(id)) {
 				added.add(id);
-				items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: true });
+				items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: true });
 			}
 		});
 		catalog.forEach((entry) => {
 			if (!added.has(entry.id)) {
 				added.add(entry.id);
-				items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: false });
+				items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: false });
 			}
 		});
 
@@ -3501,37 +3581,53 @@ class GitGraphView {
 		document.body.appendChild(modal);
 
 		let dragIndex = -1;
-		const render = () => {
+		const condTitle = escapeHtml(t('Shown only when applicable to the selected commit (e.g. HEAD, linear commits, or active bisect)'));
+		const render = (focusActionId?: string, focusControl?: 'checkbox' | 'up' | 'down') => {
+			const prevList = modal.querySelector<HTMLElement>('.cdvActionsModalList');
+			const savedScrollTop = prevList !== null ? prevList.scrollTop : 0;
 			let orderCounter = 0;
+			const checkedCount = items.filter((item) => item.checked).length;
 			modal.innerHTML = '<div class="cdvActionsModalPanel" role="dialog" aria-modal="true" aria-label="' + escapeHtml(t('Customize Commit Action Buttons')) + '">' +
 				'<div class="aiCommitHeader"><span class="aiCommitTitle">' + MENU_ICONS.settings + '<span>' + t('Customize Commit Action Buttons') + '</span></span>' +
-				'<button type="button" class="aiCommitClose" data-cdv-custom="close" title="' + t('Close') + '">' + SVG_ICONS.close + '</button></div>' +
+				'<button type="button" class="aiCommitClose" data-cdv-custom="close" title="' + t('Close') + '" aria-label="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button></div>' +
 				'<div class="cdvActionsModalHint">' + t('Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.') + '</div>' +
 				'<div class="cdvActionsModalList">' + items.map((item, index) => {
 				const badge = item.checked ? '<span class="cdvActionsOrderBadge' + (orderCounter === 0 ? ' primary' : '') + '">#' + (++orderCounter) + '</span>' : '<span class="cdvActionsOrderBadge empty"></span>';
+				const condBadge = item.conditional ? '<span class="cdvActionsCondBadge" title="' + condTitle + '">' + t('Contextual') + '</span>' : '';
 				return '<div class="cdvActionsModalItem' + (item.checked ? ' checked' : '') + '" draggable="true" data-index="' + index + '" data-action-id="' + escapeHtml(item.id) + '">' +
 						'<span class="rebaseEditorGrip" title="' + t('Drag to reorder') + '">' + REBASE_GRIP_ICON + '</span>' +
-						'<label class="cdvActionsModalLabel"><input type="checkbox" data-index="' + index + '"' + (item.checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' +
-						'<span class="cdvActionsModalIcon">' + item.icon + '</span><span class="cdvActionsModalTitle">' + item.title + '</span></label>' +
+						'<label class="cdvActionsModalLabel"><input type="checkbox" data-index="' + index + '"' + (item.checked ? ' checked' : '') + '><span class="customCheckbox"></span>' +
+						'<span class="cdvActionsModalIcon">' + item.icon + '</span><span class="cdvActionsModalTitle">' + item.title + '</span>' + condBadge + '</label>' +
 						badge +
-						'<span class="rebaseEditorMove"><span class="rebaseEditorMoveBtn' + (index === 0 ? ' ' + CLASS_DISABLED : '') + '" data-move="-1" data-index="' + index + '" title="' + t('Move Up') + '">' + SVG_ICONS.arrowUp + '</span>' +
-						'<span class="rebaseEditorMoveBtn' + (index === items.length - 1 ? ' ' + CLASS_DISABLED : '') + '" data-move="1" data-index="' + index + '" title="' + t('Move Down') + '">' + SVG_ICONS.arrowDown + '</span></span></div>';
+						'<span class="rebaseEditorMove"><button type="button" class="rebaseEditorMoveBtn' + (index === 0 ? ' ' + CLASS_DISABLED : '') + '"' + (index === 0 ? ' disabled' : '') + ' data-move="-1" data-index="' + index + '" title="' + t('Move Up') + '" aria-label="' + escapeHtml(t('Move Up')) + '">' + SVG_ICONS.arrowUp + '</button>' +
+						'<button type="button" class="rebaseEditorMoveBtn' + (index === items.length - 1 ? ' ' + CLASS_DISABLED : '') + '"' + (index === items.length - 1 ? ' disabled' : '') + ' data-move="1" data-index="' + index + '" title="' + t('Move Down') + '" aria-label="' + escapeHtml(t('Move Down')) + '">' + SVG_ICONS.arrowDown + '</button></span></div>';
 			}).join('') + '</div>' +
 				'<div class="rebaseEditorFooter">' +
-				'<span class="rebaseEditorLink" data-cdv-custom="reset">' + MENU_ICONS.revert + t('Reset to Default') + '</span>' +
-				'<span class="rebaseEditorProblem"></span>' +
+				'<button type="button" class="rebaseEditorLink" data-cdv-custom="reset">' + MENU_ICONS.revert + t('Reset to Default') + '</button>' +
+				'<span class="rebaseEditorProblem cdvActionsEmptyNote">' + (checkedCount === 0 ? escapeHtml(t('Only the "More Actions (···)" button will be shown.')) : '') + '</span>' +
 				'<button type="button" class="rebaseEditorBtn" data-cdv-custom="close">' + t('Cancel') + '</button>' +
 				'<button type="button" class="rebaseEditorBtn primary" data-cdv-custom="save">' + t('Save') + '</button></div></div>';
+			const nextList = modal.querySelector<HTMLElement>('.cdvActionsModalList');
+			if (nextList !== null && savedScrollTop > 0) nextList.scrollTop = savedScrollTop;
+			if (typeof focusActionId === 'string') {
+				const row = modal.querySelector<HTMLElement>('.cdvActionsModalItem[data-action-id="' + focusActionId + '"]');
+				if (row !== null) {
+					const selector = focusControl === 'up' ? '.rebaseEditorMoveBtn[data-move="-1"]' : focusControl === 'down' ? '.rebaseEditorMoveBtn[data-move="1"]' : 'input[type="checkbox"]';
+					const targetEl = row.querySelector<HTMLElement>(selector);
+					if (targetEl !== null && !(targetEl instanceof HTMLButtonElement && targetEl.disabled)) targetEl.focus();
+				}
+			}
 		};
 
-		const moveItem = (from: number, to: number) => {
+		const moveItem = (from: number, to: number, focusControl?: 'up' | 'down') => {
+			const actionId = items[from] ? items[from].id : undefined;
 			if (from === to || to < 0 || to >= items.length) {
-				render();
+				render(actionId, focusControl);
 				return;
 			}
 			const moved = items.splice(from, 1)[0];
 			items.splice(to, 0, moved);
-			render();
+			render(actionId, focusControl);
 		};
 
 		modal.addEventListener('mousedown', (e) => {
@@ -3541,6 +3637,7 @@ class GitGraphView {
 			if (!(e.target instanceof HTMLInputElement)) return;
 			const index = parseInt(e.target.dataset.index || '-1');
 			if (index < 0 || index >= items.length) return;
+			const actionId = items[index].id;
 			const checked = e.target.checked;
 			items[index].checked = checked;
 			if (checked) {
@@ -3555,14 +3652,15 @@ class GitGraphView {
 					items.splice(targetIndex, 0, moved);
 				}
 			}
-			render();
+			render(actionId, 'checkbox');
 		});
 		modal.addEventListener('click', (e) => {
 			if (!(e.target instanceof Element)) return;
 			const moveElem = <HTMLElement | null>e.target.closest('.rebaseEditorMoveBtn');
 			if (moveElem !== null && !moveElem.classList.contains(CLASS_DISABLED)) {
 				const index = parseInt(moveElem.dataset.index!);
-				moveItem(index, index + parseInt(moveElem.dataset.move!));
+				const delta = parseInt(moveElem.dataset.move!);
+				moveItem(index, index + delta, delta < 0 ? 'up' : 'down');
 				return;
 			}
 			const actionElem = <HTMLElement | null>e.target.closest('[data-cdv-custom]');
@@ -3575,11 +3673,11 @@ class GitGraphView {
 					items.length = 0;
 					DEFAULT_CDV_COMMIT_ACTIONS.forEach((id) => {
 						const entry = catalog.find((item) => item.id === id);
-						if (typeof entry !== 'undefined') items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: true });
+						if (typeof entry !== 'undefined') items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: true });
 					});
 					catalog.forEach((entry) => {
 						if (!DEFAULT_CDV_COMMIT_ACTIONS.includes(entry.id)) {
-							items.push({ id: entry.id, title: entry.title, icon: entry.icon, checked: false });
+							items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: false });
 						}
 					});
 					render();
@@ -3628,7 +3726,7 @@ class GitGraphView {
 			modal.querySelectorAll('.cdvActionsModalItem.dragging, .cdvActionsModalItem.dropBefore, .cdvActionsModalItem.dropAfter').forEach((other) => other.classList.remove('dragging', 'dropBefore', 'dropAfter'));
 		});
 
-		render();
+		render(items.length > 0 ? items[0].id : undefined, 'checkbox');
 	}
 
 	private setCdvHeight(elem: HTMLElement, isDocked: boolean) {
@@ -3831,6 +3929,685 @@ class GitGraphView {
 		alterClass(btnElem, CLASS_ACTIVE, active);
 		btnElem.title = active ? t('End Code Review') : t('Start Code Review');
 	}
+
+
+	/* Tools Menu, PR Badges, Drag & Drop & Inline Staging / Commit */
+
+	private showToolsMenu(btnElem: HTMLElement, e: MouseEvent) {
+		const repoCount = Object.keys(this.gitRepos).length;
+		const target: RepoTarget = { type: TargetType.Repo };
+		contextMenu.show([
+			[
+				{
+					title: t('AI Review Uncommitted Changes') + ELLIPSIS,
+					icon: MENU_ICONS.sparkle,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.currentRepo, mode: 'uncommitted', label: t('Uncommitted Changes') })
+				},
+				{
+					title: t('AI PR / Release Notes') + ELLIPSIS,
+					icon: MENU_ICONS.subject,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReleaseNotes', repo: this.currentRepo })
+				}
+			],
+			[
+				{
+					title: t('Visual Reflog Explorer'),
+					icon: MENU_ICONS.reset,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'reflogExplorer', repo: this.currentRepo })
+				},
+				{
+					title: t('Conflict Assistant'),
+					icon: MENU_ICONS.merge,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'conflictAssistant', repo: this.currentRepo })
+				}
+			],
+			[
+				{
+					title: t('Repository Insights & Hotspots'),
+					icon: MENU_ICONS.files,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'repoInsights', repo: this.currentRepo })
+				},
+				{
+					title: repoCount > 1 ? t('Multi-Repository Overview ({0})', repoCount) : t('Multi-Repository Overview'),
+					icon: MENU_ICONS.repo,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'multiRepoOverview', repo: this.currentRepo })
+				},
+				{
+					title: t('Checkout Pull Request') + ELLIPSIS,
+					icon: MENU_ICONS.branch,
+					visible: this.gitRemotes.length > 0,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'checkoutPullRequest', repo: this.currentRepo })
+				},
+				{
+					title: t('Clean Up Branches') + ELLIPSIS,
+					icon: MENU_ICONS.trash,
+					visible: true,
+					onClick: () => this.branchCleanup.show()
+				}
+			]
+		], false, target, e, this.viewElem, () => btnElem.classList.remove(CLASS_ACTIVE), null);
+		btnElem.classList.add(CLASS_ACTIVE);
+	}
+
+	public processLoadPullRequestBadgesResponse(msg: GG.ResponseLoadPullRequestBadges) {
+		if (msg.repo !== this.currentRepo) return;
+		const nextJson = JSON.stringify(msg.badges || {});
+		if (nextJson === JSON.stringify(this.pullRequestBadges)) return;
+		this.pullRequestBadges = msg.badges || {};
+		if (this.commits.length > 0) {
+			if (this.expandedCommit === null || this.isCdvDocked()) {
+				this.renderRows();
+			} else {
+				this.render();
+			}
+		}
+	}
+
+	private observeTableDragAndDrop() {
+		const clearTargets = () => {
+			const targets = this.tableElem.getElementsByClassName('dragDropTarget');
+			while (targets.length > 0) {
+				targets[0].classList.remove('dragDropTarget');
+			}
+		};
+
+		this.tableElem.addEventListener('dragstart', (e: DragEvent) => {
+			if (!(e.target instanceof Element)) return;
+			const refElem = <HTMLElement | null>e.target.closest('.gitRef.head');
+			if (refElem !== null) {
+				const commitElem = <HTMLElement | null>refElem.closest('.commit');
+				const commit = commitElem !== null ? this.getCommitOfElem(commitElem) : null;
+				if (commit === null || typeof refElem.dataset.name !== 'string') {
+					e.preventDefault();
+					return;
+				}
+				const branch = unescapeHtml(refElem.dataset.name);
+				this.dragPayload = { kind: 'branch', branch: branch, sourceHash: commit.hash };
+				if (e.dataTransfer !== null) {
+					e.dataTransfer.effectAllowed = 'move';
+					e.dataTransfer.setData('text/plain', branch);
+				}
+				return;
+			}
+			const commitElem = <HTMLElement | null>e.target.closest('.commit');
+			const commit = commitElem !== null ? this.getCommitOfElem(commitElem) : null;
+			if (commit === null || commit.hash === UNCOMMITTED || commit.stash !== null) {
+				e.preventDefault();
+				return;
+			}
+			this.dragPayload = { kind: 'commit', hash: commit.hash };
+			if (e.dataTransfer !== null) {
+				e.dataTransfer.effectAllowed = 'copyMove';
+				e.dataTransfer.setData('text/plain', commit.hash);
+			}
+		});
+
+		this.tableElem.addEventListener('dragover', (e: DragEvent) => {
+			if (this.dragPayload === null || !(e.target instanceof Element)) return;
+			const commitElem = <HTMLElement | null>e.target.closest('.commit');
+			const commit = commitElem !== null ? this.getCommitOfElem(commitElem) : null;
+			clearTargets();
+			if (commitElem === null || commit === null || commit.hash === UNCOMMITTED || commit.stash !== null) return;
+			const sameSource = (this.dragPayload.kind === 'branch' && this.dragPayload.sourceHash === commit.hash)
+				|| (this.dragPayload.kind === 'commit' && this.dragPayload.hash === commit.hash);
+			if (sameSource) return;
+			e.preventDefault();
+			if (e.dataTransfer !== null) e.dataTransfer.dropEffect = 'move';
+			commitElem.classList.add('dragDropTarget');
+		});
+
+		this.tableElem.addEventListener('dragleave', (e: DragEvent) => {
+			if (e.relatedTarget instanceof Node && this.tableElem.contains(e.relatedTarget)) return;
+			clearTargets();
+		});
+
+		this.tableElem.addEventListener('dragend', () => {
+			clearTargets();
+			this.dragPayload = null;
+		});
+
+		this.tableElem.addEventListener('drop', (e: DragEvent) => {
+			clearTargets();
+			const payload = this.dragPayload;
+			this.dragPayload = null;
+			if (payload === null || !(e.target instanceof Element)) return;
+			const commitElem = <HTMLElement | null>e.target.closest('.commit');
+			const targetCommit = commitElem !== null ? this.getCommitOfElem(commitElem) : null;
+			if (commitElem === null || targetCommit === null || targetCommit.hash === UNCOMMITTED || targetCommit.stash !== null) return;
+			e.preventDefault();
+
+			const target: ContextMenuTarget & DialogTarget & CommitTarget = {
+				type: TargetType.Commit,
+				hash: targetCommit.hash,
+				index: parseInt(commitElem.dataset.id!),
+				elem: commitElem
+			};
+
+			if (payload.kind === 'branch') {
+				if (payload.sourceHash === targetCommit.hash) return;
+				const isCurrentBranch = payload.branch === this.gitBranchHead;
+				contextMenu.show([
+					[
+						{
+							title: t('Move Branch "{0}" Here', payload.branch) + ELLIPSIS,
+							icon: MENU_ICONS.branch,
+							visible: !isCurrentBranch,
+							onClick: () => {
+								dialog.asDangerous().showConfirmation(t('Move branch <b><i>{0}</i></b> to commit <b><i>{1}</i></b>?', escapeHtml(payload.branch), abbrevCommit(targetCommit.hash)), t('Move Branch'), () => {
+									runAction({ command: 'moveBranch', repo: this.currentRepo, branchName: payload.branch, targetHash: targetCommit.hash }, t('Moving Branch'));
+								}, target);
+							}
+						},
+						{
+							title: t('Merge "{0}" into Current Branch', payload.branch) + ELLIPSIS,
+							icon: MENU_ICONS.merge,
+							visible: !isCurrentBranch && this.gitBranchHead !== null && targetCommit.hash === this.commitHead,
+							onClick: () => this.actions.mergeAction(payload.branch, payload.branch, GG.MergeActionOn.Branch, target)
+						},
+						{
+							title: t('Reset Current Branch Here') + ELLIPSIS,
+							icon: MENU_ICONS.reset,
+							visible: isCurrentBranch,
+							onClick: () => {
+								dialog.asDangerous().showSelect(t('Are you sure you want to reset {0} to commit <b><i>{1}</i></b>?', (this.gitBranchHead !== null ? t('<b><i>{0}</i></b> (the current branch)', escapeHtml(this.gitBranchHead)) : t('the current branch')), abbrevCommit(targetCommit.hash)), this.config.dialogDefaults.resetCommit.mode, [
+									{ name: t('Soft - Keep all changes, but reset head'), value: GG.GitResetMode.Soft },
+									{ name: t('Mixed - Keep working tree, but reset index'), value: GG.GitResetMode.Mixed },
+									{ name: t('Hard - Discard all changes'), value: GG.GitResetMode.Hard }
+								], t('Yes, reset'), (mode) => {
+									runAction({ command: 'resetToCommit', repo: this.currentRepo, commit: targetCommit.hash, resetMode: <GG.GitResetMode>mode }, t('Resetting to Commit'));
+								}, target);
+							}
+						},
+						{
+							title: t('Rebase Current Branch onto {0}', abbrevCommit(targetCommit.hash)) + ELLIPSIS,
+							icon: MENU_ICONS.rebase,
+							visible: isCurrentBranch,
+							onClick: () => this.actions.rebaseAction(targetCommit.hash, abbrevCommit(targetCommit.hash), GG.RebaseActionOn.Commit, target)
+						},
+						{
+							title: t('Merge {0} into Current Branch', abbrevCommit(targetCommit.hash)) + ELLIPSIS,
+							icon: MENU_ICONS.merge,
+							visible: isCurrentBranch,
+							onClick: () => this.actions.mergeAction(targetCommit.hash, abbrevCommit(targetCommit.hash), GG.MergeActionOn.Commit, target)
+						},
+						{
+							title: t('Compare "{0}" with Target', payload.branch),
+							icon: MENU_ICONS.compare,
+							visible: targetCommit.heads.length > 0 && targetCommit.heads[0] !== payload.branch,
+							onClick: () => this.branchCompare.start(payload.branch, targetCommit.heads[0])
+						}
+					]
+				], false, target, e, this.viewElem);
+			} else {
+				if (payload.hash === targetCommit.hash) return;
+				const srcIndex = this.commitLookup[payload.hash];
+				const srcCommit = typeof srcIndex === 'number' ? this.commits[srcIndex] : null;
+				const srcElem = typeof srcIndex === 'number' ? this.getCommitElem(srcIndex) : null;
+				contextMenu.show([
+					[
+						{
+							title: t('Cherry Pick {0} onto Current Branch', abbrevCommit(payload.hash)) + ELLIPSIS,
+							icon: MENU_ICONS.cherrypick,
+							visible: srcCommit !== null,
+							onClick: () => {
+								if (srcCommit !== null) this.actions.cherrypickCommitsAction([srcCommit], target);
+							}
+						},
+						{
+							title: t('Compare {0} with {1}', abbrevCommit(payload.hash), abbrevCommit(targetCommit.hash)),
+							icon: MENU_ICONS.compare,
+							visible: srcElem !== null,
+							onClick: () => {
+								if (srcElem !== null) this.loadCommitComparison(srcElem, commitElem);
+							}
+						},
+						{
+							title: t('Rebase Current Branch onto {0}', abbrevCommit(targetCommit.hash)) + ELLIPSIS,
+							icon: MENU_ICONS.rebase,
+							visible: this.gitBranchHead !== null && targetCommit.hash !== this.commitHead,
+							onClick: () => this.actions.rebaseAction(targetCommit.hash, abbrevCommit(targetCommit.hash), GG.RebaseActionOn.Commit, target)
+						}
+					]
+				], false, target, e, this.viewElem);
+			}
+		});
+	}
+
+	public processLoadWorkingTreeStatusResponse(msg: GG.ResponseLoadWorkingTreeStatus) {
+		this.workingTreeStatus = msg;
+		this.renderInlineCommitBox();
+	}
+
+	public setInlineCommitDraft(text: string) {
+		this.inlineCommitDraft = text;
+		const input = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
+		if (input !== null) input.value = text;
+	}
+
+	public clearInlineCommitDraft() {
+		this.inlineCommitDraft = '';
+		this.inlineCommitAmend = false;
+		this.renderInlineCommitBox();
+	}
+
+	private renderInlineCommitBox() {
+		const container = document.getElementById('cdvInlineCommitBox');
+		if (container === null) return;
+		const status = this.workingTreeStatus;
+		const files = status !== null ? status.files : [];
+		const stagedFiles = files.filter((f) => f.staged);
+		const unstagedFiles = files.filter((f) => f.unstaged);
+		const conflictedCount = files.filter((f) => f.conflicted).length;
+
+		let filesSummaryHtml = '<div class="cdvStagingBar">' +
+			'<span class="cdvStagingCounts">' + t('Staged: {0}', stagedFiles.length) + ' &middot; ' + t('Unstaged: {0}', unstagedFiles.length) +
+			(conflictedCount > 0 ? ' &middot; <button type="button" class="cdvLinkBtn danger" data-inline-stage="conflicts">' + t('{0} Conflicted', conflictedCount) + '</button>' : '') +
+			'</span>' +
+			'<span class="cdvStagingBtns">' +
+			(unstagedFiles.length > 0 ? '<button type="button" class="cdvMiniBtn" data-inline-stage="stageAll" title="' + escapeHtml(t('Stage All Changes')) + '">+ ' + t('Stage All') + '</button>' : '') +
+			(stagedFiles.length > 0 ? '<button type="button" class="cdvMiniBtn" data-inline-stage="unstageAll" title="' + escapeHtml(t('Unstage All Changes')) + '">&minus; ' + t('Unstage All') + '</button>' : '') +
+			'</span></div>';
+
+		if (files.length > 0 && files.length <= 40) {
+			filesSummaryHtml += '<div class="cdvQuickStageList">' + files.map((f) => {
+				const badge = f.conflicted ? '!' : f.untracked ? 'U' : (f.staged && f.unstaged) ? 'SM' : f.staged ? 'S' : 'M';
+				return '<div class="cdvQuickStageRow">' +
+					'<span class="cdvQuickStageBadge status-' + badge.toLowerCase() + '">' + badge + '</span>' +
+					'<span class="cdvQuickStagePath" title="' + escapeHtml(f.path) + '">' + escapeHtml(f.path) + '</span>' +
+					(!f.staged || f.unstaged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="stage" title="' + escapeHtml(t('Stage File')) + '">+</button>' : '') +
+					(f.staged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="unstage" title="' + escapeHtml(t('Unstage File')) + '">&minus;</button>' : '') +
+					(!f.untracked && !f.conflicted ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-staged="' + (f.staged && !f.unstaged ? '1' : '0') + '" data-inline-op="hunks" title="' + escapeHtml(t('Stage / Unstage Hunks…')) + '">&plusmn;</button>' : '') +
+					(f.unstaged && !f.conflicted ? '<button type="button" class="cdvMiniBtn danger" data-inline-file="' + escapeHtml(f.path) + '" data-inline-untracked="' + (f.untracked ? '1' : '0') + '" data-inline-op="discard" title="' + escapeHtml(t('Discard Changes')) + '">&times;</button>' : '') +
+					'</div>';
+			}).join('') + '</div>';
+		}
+
+		container.innerHTML = filesSummaryHtml +
+			'<div class="cdvCommitForm">' +
+			'<textarea id="cdvCommitInput" class="cdvCommitInput" rows="3" placeholder="' + escapeHtml(t('Commit message (Ctrl/Cmd+Enter to commit)…')) + '">' + escapeHtml(this.inlineCommitDraft) + '</textarea>' +
+			'<div class="cdvCommitControls">' +
+			'<label class="cdvAmendLabel"><input type="checkbox" id="cdvCommitAmend"' + (this.inlineCommitAmend ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Amend') + '</label>' +
+			'<span class="cdvCommitSpacer"></span>' +
+			'<button type="button" class="cdvActionBtn" data-inline-stage="aiMsg" title="' + escapeHtml(t('Generate Commit Message with AI')) + '">' + MENU_ICONS.sparkle + 'AI</button>' +
+			'<button type="button" class="cdvActionBtn primary" data-inline-stage="commit">' + MENU_ICONS.checkout + (this.inlineCommitAmend ? t('Amend Commit') : stagedFiles.length > 0 ? t('Commit Staged ({0})', stagedFiles.length) : t('Stage All & Commit')) + '</button>' +
+			'</div></div>';
+
+		const inputElem = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
+		if (inputElem !== null) {
+			inputElem.addEventListener('input', () => {
+				this.inlineCommitDraft = inputElem.value;
+			});
+			inputElem.addEventListener('keydown', (e: KeyboardEvent) => {
+				if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+					e.preventDefault();
+					const commitBtn = <HTMLElement | null>container.querySelector('[data-inline-stage="commit"]');
+					if (commitBtn !== null) commitBtn.click();
+				}
+			});
+		}
+
+		const amendElem = <HTMLInputElement | null>document.getElementById('cdvCommitAmend');
+		if (amendElem !== null) {
+			amendElem.addEventListener('change', () => {
+				this.inlineCommitAmend = amendElem.checked;
+				if (this.inlineCommitAmend && this.inlineCommitDraft.trim() === '' && status !== null && status.headMessage !== null) {
+					this.inlineCommitDraft = status.headMessage;
+				}
+				this.renderInlineCommitBox();
+			});
+		}
+
+		container.onclick = (e: MouseEvent) => {
+			if (!(e.target instanceof Element)) return;
+			const fileBtn = <HTMLElement | null>e.target.closest('[data-inline-op]');
+			if (fileBtn !== null && typeof fileBtn.dataset.inlineFile === 'string') {
+				const filePath = unescapeHtml(fileBtn.dataset.inlineFile);
+				const op = fileBtn.dataset.inlineOp;
+				if (op === 'stage') {
+					runAction({ command: 'stageFiles', repo: this.currentRepo, paths: [filePath] }, t('Staging File'));
+				} else if (op === 'unstage') {
+					runAction({ command: 'unstageFiles', repo: this.currentRepo, paths: [filePath] }, t('Unstaging File'));
+				} else if (op === 'hunks') {
+					this.openHunkStagingModal(filePath, fileBtn.dataset.inlineStaged === '1');
+				} else if (op === 'discard') {
+					const isUntracked = fileBtn.dataset.inlineUntracked === '1';
+					dialog.asDangerous().showConfirmation(t('Are you sure you want to discard uncommitted changes to <b><i>{0}</i></b>?', escapeHtml(filePath)), t('Discard Changes'), () => {
+						runAction({ command: 'discardWorkingChanges', repo: this.currentRepo, trackedPaths: isUntracked ? [] : [filePath], untrackedPaths: isUntracked ? [filePath] : [] }, t('Discarding Changes'));
+					}, null);
+				}
+				return;
+			}
+			const stageBtn = <HTMLElement | null>e.target.closest('[data-inline-stage]');
+			if (stageBtn === null) return;
+			switch (stageBtn.dataset.inlineStage) {
+				case 'stageAll':
+					runAction({ command: 'stageFiles', repo: this.currentRepo, paths: null }, t('Staging All Changes'));
+					break;
+				case 'unstageAll':
+					runAction({ command: 'unstageFiles', repo: this.currentRepo, paths: null }, t('Unstaging All Changes'));
+					break;
+				case 'conflicts':
+					sendMessage({ command: 'openCompanionFeature', feature: 'conflictAssistant', repo: this.currentRepo });
+					break;
+				case 'aiMsg':
+					this.commitExplainer.openCommitMessageModal();
+					break;
+				case 'commit': {
+					const msg = this.inlineCommitDraft.trim();
+					if (msg === '') {
+						dialog.showError(t('Unable to Commit Changes'), t('Please enter a commit message first.'), null, null);
+						return;
+					}
+					runAction({
+						command: 'commitStagedChanges',
+						repo: this.currentRepo,
+						message: msg,
+						amend: this.inlineCommitAmend,
+						stageAllIfEmpty: true
+					}, this.inlineCommitAmend ? t('Amending Commit') : t('Committing Changes'));
+					break;
+				}
+			}
+		};
+	}
+
+	public isHunkModalOpen() {
+		return this.hunkModalElem !== null;
+	}
+
+	public closeHunkModal() {
+		if (this.hunkModalElem !== null) {
+			this.hunkModalElem.remove();
+			this.hunkModalElem = null;
+		}
+		this.hunkModalState = null;
+	}
+
+	public openHunkStagingModal(filePath: string, staged: boolean) {
+		this.closeHunkModal();
+		closeDialogAndContextMenu();
+		this.hunkModalState = { filePath: filePath, staged: staged };
+		const modal = document.createElement('div');
+		modal.id = 'cdvHunkModal';
+		modal.innerHTML = '<div class="cdvHunkCard"><div class="cdvHunkHeader">' +
+			'<span class="cdvHunkTitle">' + escapeHtml(filePath) + '</span>' +
+			'<div class="cdvHunkTabs">' +
+			'<button type="button" class="cdvMiniBtn' + (!staged ? ' active' : '') + '" data-hunk-tab="unstaged">' + t('Unstaged Hunks') + '</button>' +
+			'<button type="button" class="cdvMiniBtn' + (staged ? ' active' : '') + '" data-hunk-tab="staged">' + t('Staged Hunks') + '</button>' +
+			'</div>' +
+			'<button type="button" class="aiCommitClose" data-hunk-close="1" title="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button>' +
+			'</div><div id="cdvHunkBody" class="cdvHunkBody"><div class="explainLoading">' + SVG_ICONS.loading + t('Loading hunks…') + '</div></div></div>';
+		modal.addEventListener('mousedown', (e) => {
+			if (e.target === modal) this.closeHunkModal();
+		});
+		modal.addEventListener('click', (e) => {
+			if (!(e.target instanceof Element)) return;
+			if (e.target.closest('[data-hunk-close]') !== null) {
+				this.closeHunkModal();
+				return;
+			}
+			const tabBtn = <HTMLElement | null>e.target.closest('[data-hunk-tab]');
+			if (tabBtn !== null && this.hunkModalState !== null) {
+				this.openHunkStagingModal(this.hunkModalState.filePath, tabBtn.dataset.hunkTab === 'staged');
+			}
+		});
+		document.body.appendChild(modal);
+		this.hunkModalElem = modal;
+		sendMessage({ command: 'loadFileHunkDiff', repo: this.currentRepo, filePath: filePath, staged: staged });
+	}
+
+	public processLoadFileHunkDiffResponse(msg: GG.ResponseLoadFileHunkDiff) {
+		if (this.hunkModalState === null || this.hunkModalState.filePath !== msg.filePath || this.hunkModalState.staged !== msg.staged) return;
+		const body = document.getElementById('cdvHunkBody');
+		if (body === null) return;
+		if (msg.error !== null) {
+			body.innerHTML = '<div class="explainError">' + SVG_ICONS.alert + escapeHtml(msg.error) + '</div>';
+			return;
+		}
+		const parsed = parseUnifiedDiffHunks(msg.diff);
+		if (parsed.hunks.length === 0) {
+			body.innerHTML = '<p class="cdvHunkEmpty">' + (msg.staged ? t('No staged hunks in this file.') : t('No unstaged hunks in this file.')) + '</p>';
+			return;
+		}
+		const selectedByHunk: Set<number>[] = parsed.hunks.map(() => new Set<number>());
+		let lastClicked: { hunkIdx: number, lineIdx: number } | null = null;
+
+		const renderHunkBlocks = () => {
+			body.innerHTML = '<div class="cdvHunkHint">' + escapeHtml(t('Click or Shift+click changed (+ / −) lines to stage, unstage, or discard individual lines.')) + '</div>' +
+				parsed.hunks.map((hunk, idx) => {
+					const selCount = selectedByHunk[idx].size;
+					return '<div class="cdvHunkBlock">' +
+						'<div class="cdvHunkBlockHdr"><code>' + escapeHtml(hunk.headerLine) + '</code>' +
+						'<span class="cdvHunkBlockBtns">' +
+						(selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="stage" data-hunk-partial="1">+ ' + t('Stage Selected ({0})', selCount) + '</button>' : '') +
+						(selCount > 0 && msg.staged ? '<button type="button" class="cdvMiniBtn primary" data-hunk-idx="' + idx + '" data-hunk-act="unstage" data-hunk-partial="1">&minus; ' + t('Unstage Selected ({0})', selCount) + '</button>' : '') +
+						(selCount > 0 && !msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard" data-hunk-partial="1">&times; ' + t('Discard Selected ({0})', selCount) + '</button>' : '') +
+						(!msg.staged ? '<button type="button" class="cdvMiniBtn' + (selCount === 0 ? ' primary' : '') + '" data-hunk-idx="' + idx + '" data-hunk-act="stage">+ ' + t('Stage Hunk') + '</button>' : '') +
+						(msg.staged ? '<button type="button" class="cdvMiniBtn" data-hunk-idx="' + idx + '" data-hunk-act="unstage">&minus; ' + t('Unstage Hunk') + '</button>' : '') +
+						(!msg.staged ? '<button type="button" class="cdvMiniBtn danger" data-hunk-idx="' + idx + '" data-hunk-act="discard">&times; ' + t('Discard Hunk') + '</button>' : '') +
+						'</span></div>' +
+						'<pre class="cdvHunkPre">' + hunk.lines.map((ln, lIdx) => {
+						const selectable = ln.startsWith('+') || ln.startsWith('-');
+						const cls = (ln.startsWith('+') ? 'add' : ln.startsWith('-') ? 'del' : 'ctx') + (selectable ? ' selectable' : '') + (selectedByHunk[idx].has(lIdx) ? ' selected' : '');
+						return '<div class="cdvHunkLine ' + cls + '"' + (selectable ? ' data-sel-hunk="' + idx + '" data-sel-line="' + lIdx + '"' : '') + '>' + escapeHtml(ln) + '</div>';
+					}).join('') + '</pre></div>';
+				}).join('');
+		};
+		renderHunkBlocks();
+
+		body.onclick = (e: MouseEvent) => {
+			if (!(e.target instanceof Element) || this.hunkModalState === null) return;
+			const lineEl = <HTMLElement | null>e.target.closest('[data-sel-hunk]');
+			if (lineEl !== null) {
+				const hIdx = parseInt(lineEl.dataset.selHunk || '-1', 10);
+				const lIdx = parseInt(lineEl.dataset.selLine || '-1', 10);
+				if (hIdx < 0 || hIdx >= parsed.hunks.length || lIdx < 0) return;
+				const set = selectedByHunk[hIdx];
+				if (e.shiftKey && lastClicked !== null && lastClicked.hunkIdx === hIdx) {
+					const lo = Math.min(lastClicked.lineIdx, lIdx), hi = Math.max(lastClicked.lineIdx, lIdx);
+					for (let k = lo; k <= hi; k++) {
+						const rawLn = parsed.hunks[hIdx].lines[k];
+						if (rawLn && (rawLn.startsWith('+') || rawLn.startsWith('-'))) set.add(k);
+					}
+				} else if (set.has(lIdx)) {
+					set.delete(lIdx);
+				} else {
+					set.add(lIdx);
+				}
+				lastClicked = { hunkIdx: hIdx, lineIdx: lIdx };
+				renderHunkBlocks();
+				return;
+			}
+			const btn = <HTMLElement | null>e.target.closest('[data-hunk-act]');
+			if (btn === null) return;
+			const idx = parseInt(btn.dataset.hunkIdx || '-1', 10);
+			const act = <'stage' | 'unstage' | 'discard'>btn.dataset.hunkAct;
+			if (idx < 0 || idx >= parsed.hunks.length) return;
+			const state = this.hunkModalState;
+			const isPartial = btn.dataset.hunkPartial === '1';
+			const patch = isPartial
+				? buildPartialHunkPatchWeb(parsed.header, parsed.hunks[idx].headerLine, parsed.hunks[idx].lines, selectedByHunk[idx], act, state.filePath)
+				: (parsed.header + '\n' + parsed.hunks[idx].patchBody + '\n');
+			if (patch === null) return;
+			const send = () => sendMessage({ command: 'applyHunkPatch', repo: this.currentRepo, filePath: state.filePath, staged: state.staged, patch: patch, action: act });
+			if (act === 'discard') {
+				dialog.asDangerous().showConfirmation(
+					isPartial ? t('Discard the selected lines in <b><i>{0}</i></b>? This cannot be undone.', escapeHtml(state.filePath)) : t('Discard this hunk in <b><i>{0}</i></b>? This cannot be undone.', escapeHtml(state.filePath)),
+					isPartial ? t('Discard Selected Lines') : t('Discard Hunk'),
+					send,
+					null
+				);
+			} else {
+				send();
+			}
+		};
+	}
+
+	public processApplyHunkPatchResponse(msg: GG.ResponseApplyHunkPatch) {
+		if (msg.error !== null) {
+			dialog.showError(t('Unable to Apply Hunk'), msg.error, null, null);
+			return;
+		}
+		if (this.hunkModalState !== null && this.hunkModalState.filePath === msg.filePath) {
+			sendMessage({ command: 'loadFileHunkDiff', repo: this.currentRepo, filePath: this.hunkModalState.filePath, staged: this.hunkModalState.staged });
+		}
+		this.refresh(false);
+	}
+}
+
+function parseUnifiedDiffHunks(diffText: string): { header: string, hunks: { headerLine: string, lines: string[], patchBody: string }[] } {
+	const rawLines = diffText.replace(/\r\n/g, '\n').split('\n');
+	if (rawLines.length > 0 && rawLines[rawLines.length - 1] === '') rawLines.pop();
+	const headerLines: string[] = [];
+	const hunks: { headerLine: string, lines: string[], patchBody: string }[] = [];
+	let current: { headerLine: string, lines: string[] } | null = null;
+	for (const line of rawLines) {
+		if (line.startsWith('@@ ')) {
+			if (current !== null) {
+				hunks.push({ headerLine: current.headerLine, lines: current.lines, patchBody: current.headerLine + '\n' + current.lines.join('\n') });
+			}
+			current = { headerLine: line, lines: [] };
+		} else if (current === null) {
+			headerLines.push(line);
+		} else {
+			current.lines.push(line);
+		}
+	}
+	if (current !== null) {
+		hunks.push({ headerLine: current.headerLine, lines: current.lines, patchBody: current.headerLine + '\n' + current.lines.join('\n') });
+	}
+	return { header: headerLines.join('\n'), hunks: hunks };
+}
+
+function buildPartialHunkPatchWeb(
+	diffHeader: string,
+	hunkHeaderLine: string,
+	hunkLines: ReadonlyArray<string>,
+	selectedIndices: ReadonlySet<number>,
+	action: 'stage' | 'unstage' | 'discard',
+	filePath: string
+): string | null {
+	const m = hunkHeaderLine.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+	if (m === null) return null;
+	let oldStart = parseInt(m[1], 10);
+	let newStart = parseInt(m[3], 10);
+	const tail = m[5] || '';
+	const forward = action === 'stage';
+	const out: string[] = [];
+	let oldCount = 0, newCount = 0, changedCount = 0;
+	let k = 0;
+	while (k < hunkLines.length) {
+		const ln = hunkLines[k];
+		if (ln.startsWith(' ')) {
+			out.push(ln);
+			oldCount++;
+			newCount++;
+			k++;
+			continue;
+		}
+		if (ln.startsWith('\\')) {
+			out.push(ln);
+			k++;
+			continue;
+		}
+		const dels: { idx: number, text: string, noEol: string | null }[] = [];
+		const adds: { idx: number, text: string, noEol: string | null }[] = [];
+		while (k < hunkLines.length && (hunkLines[k].startsWith('-') || hunkLines[k].startsWith('\\'))) {
+			if (hunkLines[k].startsWith('-')) {
+				const item = { idx: k, text: hunkLines[k].substring(1), noEol: <string | null>null };
+				if (k + 1 < hunkLines.length && hunkLines[k + 1].startsWith('\\')) item.noEol = hunkLines[++k];
+				dels.push(item);
+			}
+			k++;
+		}
+		while (k < hunkLines.length && (hunkLines[k].startsWith('+') || hunkLines[k].startsWith('\\'))) {
+			if (hunkLines[k].startsWith('+')) {
+				const item = { idx: k, text: hunkLines[k].substring(1), noEol: <string | null>null };
+				if (k + 1 < hunkLines.length && hunkLines[k + 1].startsWith('\\')) item.noEol = hunkLines[++k];
+				adds.push(item);
+			}
+			k++;
+		}
+		let pendingDel: { text: string, noEol: string | null }[] = [];
+		let pendingAdd: { text: string, noEol: string | null }[] = [];
+		const flushPending = () => {
+			for (const d of pendingDel) {
+				out.push('-' + d.text);
+				if (d.noEol !== null) out.push(d.noEol);
+				oldCount++;
+				changedCount++;
+			}
+			for (const a of pendingAdd) {
+				out.push('+' + a.text);
+				if (a.noEol !== null) out.push(a.noEol);
+				newCount++;
+				changedCount++;
+			}
+			pendingDel = [];
+			pendingAdd = [];
+		};
+		const maxLen = Math.max(dels.length, adds.length);
+		for (let i = 0; i < maxLen; i++) {
+			const d = i < dels.length ? dels[i] : null;
+			const a = i < adds.length ? adds[i] : null;
+			if (forward) {
+				if (d !== null) {
+					if (selectedIndices.has(d.idx)) {
+						pendingDel.push(d);
+					} else {
+						flushPending();
+						out.push(' ' + d.text);
+						if (d.noEol !== null) out.push(d.noEol);
+						oldCount++;
+						newCount++;
+					}
+				}
+				if (a !== null && selectedIndices.has(a.idx)) pendingAdd.push(a);
+			} else {
+				if (d !== null && selectedIndices.has(d.idx)) pendingDel.push(d);
+				if (a !== null) {
+					if (selectedIndices.has(a.idx)) {
+						pendingAdd.push(a);
+					} else {
+						flushPending();
+						out.push(' ' + a.text);
+						if (a.noEol !== null) out.push(a.noEol);
+						oldCount++;
+						newCount++;
+					}
+				}
+			}
+		}
+		flushPending();
+	}
+
+	if (changedCount === 0) return null;
+	if (oldStart === 0 && oldCount > 0) oldStart = 1;
+	if (newStart === 0 && newCount > 0) newStart = 1;
+
+	let header = diffHeader;
+	if (oldCount > 0 && header.includes('--- /dev/null') && filePath !== '') {
+		header = header
+			.split('\n')
+			.filter((l) => !l.startsWith('new file mode ') && !l.startsWith('index '))
+			.map((l) => l === '--- /dev/null' ? ('--- a/' + filePath) : l)
+			.join('\n');
+	}
+	if (newCount > 0 && header.includes('+++ /dev/null') && filePath !== '') {
+		header = header
+			.split('\n')
+			.filter((l) => !l.startsWith('deleted file mode ') && !l.startsWith('index '))
+			.map((l) => l === '+++ /dev/null' ? ('+++ b/' + filePath) : l)
+			.join('\n');
+	}
+
+	return header + '\n@@ -' + oldStart + ',' + oldCount + ' +' + newStart + ',' + newCount + ' @@' + tail + '\n' + out.join('\n') + '\n';
 }
 
 

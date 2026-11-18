@@ -54,6 +54,7 @@ const SVG_ICONS = {
 	chevron: '<svg class="toolbarIcon chevron" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>',
 	cloud: '<svg class="toolbarIcon refIcon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 12.5h7.25a2.75 2.75 0 0 0 .4-5.47A4 4 0 0 0 4.4 6.3 3.1 3.1 0 0 0 4.5 12.5z"/></svg>',
 	columns: '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3h11v10h-11z"/><path d="M6.25 3v10M9.75 3v10"/></svg>',
+	compass: '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><polygon points="10.8 5.2 9.1 9.1 5.2 10.8 6.9 6.9 10.8 5.2"/></svg>',
 	undo: '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3L2.5 6l3 3"/><path d="M2.5 6h7a4 4 0 0 1 0 8H7"/></svg>',
 	review: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill-rule="evenodd" d="m4,4.7 -4,7.3 4,7.3 2.5,0 -4,-7.3 4,-7.3zM11.5,6C9,5.5 6.6,7.1 6.1,9.6c-0.5,2.6 1.1,5 3.6,5.5 1,0.2 1.8,0.1 2.7,-0.3l2.5,3.3c0.1,0.1 0.3,0.2 0.5,0.3 0.2,0 0.4,0 0.6,-0.1 0.3,-0.2 0.4,-0.4 0.4,-0.6 0,-0.2 0,-0.4 -0.1,-0.6 0,-0.2 -2.4,-3.3 -2.4,-3.3 0.7,-0.6 1,-1.5 1.3,-2.4C15.7,8.9 14,6.5 11.5,6zm8.5,-1.3 -2.5,0 4,7.3 -4.2,7.3 2.5,0L24,12zm-8.8,3c1.6,0.3 2.6,1.8 2.3,3.4 -0.3,1.6 -1.8,2.6 -3.4,2.3C8.5,13 7.4,11.6 7.8,10 8,8.4 9.6,7.3 11.2,7.7z"/></svg>'
 };
@@ -123,7 +124,7 @@ const MENU_ICONS = {
 
 const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
 
-function getCommitActionCatalog(): ReadonlyArray<{ readonly id: string, readonly title: string, readonly icon: string }> {
+function getCommitActionCatalog(): ReadonlyArray<{ readonly id: string, readonly title: string, readonly icon: string, readonly conditional?: boolean }> {
 	return [
 		{ id: 'checkout', title: t('Checkout') + ELLIPSIS, icon: MENU_ICONS.checkout },
 		{ id: 'createBranch', title: t('Create Branch') + ELLIPSIS, icon: MENU_ICONS.createBranch },
@@ -131,15 +132,17 @@ function getCommitActionCatalog(): ReadonlyArray<{ readonly id: string, readonly
 		{ id: 'addTag', title: t('Add Tag') + ELLIPSIS, icon: MENU_ICONS.tag },
 		{ id: 'createWorktree', title: t('Create Worktree') + ELLIPSIS, icon: MENU_ICONS.worktree },
 		{ id: 'revert', title: t('Revert') + ELLIPSIS, icon: MENU_ICONS.revert },
-		{ id: 'drop', title: t('Drop') + ELLIPSIS, icon: MENU_ICONS.trash },
-		{ id: 'editMessage', title: t('Edit Commit Message') + ELLIPSIS, icon: MENU_ICONS.edit },
-		{ id: 'undoCommit', title: t('Undo Commit') + ELLIPSIS, icon: MENU_ICONS.revert },
-		{ id: 'fixup', title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS, icon: MENU_ICONS.fixup },
+		{ id: 'drop', title: t('Drop') + ELLIPSIS, icon: MENU_ICONS.trash, conditional: true },
+		{ id: 'editMessage', title: t('Edit Commit Message') + ELLIPSIS, icon: MENU_ICONS.edit, conditional: true },
+		{ id: 'undoCommit', title: t('Undo Commit') + ELLIPSIS, icon: MENU_ICONS.revert, conditional: true },
+		{ id: 'fixup', title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS, icon: MENU_ICONS.fixup, conditional: true },
 		{ id: 'merge', title: t('Merge into current branch') + ELLIPSIS, icon: MENU_ICONS.merge },
 		{ id: 'rebase', title: t('Rebase current branch on this Commit') + ELLIPSIS, icon: MENU_ICONS.rebase },
 		{ id: 'reset', title: t('Reset current branch to this Commit') + ELLIPSIS, icon: MENU_ICONS.reset },
-		{ id: 'bisectBad', title: t('Start Bisecting: This Commit is Bad') + ELLIPSIS, icon: MENU_ICONS.bisectBad },
-		{ id: 'bisectGood', title: t('Start Bisecting: This Commit is Good') + ELLIPSIS, icon: MENU_ICONS.bisectGood },
+		{ id: 'bisectBad', title: t('Start Bisecting: This Commit is Bad') + ELLIPSIS, icon: MENU_ICONS.bisectBad, conditional: true },
+		{ id: 'bisectGood', title: t('Start Bisecting: This Commit is Good') + ELLIPSIS, icon: MENU_ICONS.bisectGood, conditional: true },
+		{ id: 'bisectSkip', title: t('Skip (Can\'t Be Tested)'), icon: MENU_ICONS.bisectSkip, conditional: true },
+		{ id: 'aiReview', title: t('AI Review Commit') + ELLIPSIS, icon: MENU_ICONS.sparkle },
 		{ id: 'copyHash', title: t('Copy Commit Hash to Clipboard'), icon: MENU_ICONS.copy },
 		{ id: 'copySubject', title: t('Copy Commit Subject to Clipboard'), icon: MENU_ICONS.subject },
 		{ id: 'savePatch', title: t('Save as Patch') + ELLIPSIS, icon: MENU_ICONS.patchSave },

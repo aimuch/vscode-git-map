@@ -263,7 +263,7 @@ class OperationBar {
 			if (typeof buttonElem.dataset.bisect === 'string') {
 				this.runBisectAction(buttonElem.dataset.bisect);
 			} else if (this.operation !== null) {
-				this.runAction(this.operation, <'continue' | 'skip' | 'abort' | 'scm'>buttonElem.dataset.action);
+				this.runAction(this.operation, <'continue' | 'skip' | 'abort' | 'scm' | 'conflicts'>buttonElem.dataset.action);
 			}
 		});
 	}
@@ -370,6 +370,7 @@ class OperationBar {
 		};
 		const button = (action: string, label: string, className: string = '') => '<span class="operationBarBtn' + (className !== '' ? ' ' + className : '') + '" data-action="' + action + '">' + label + '</span>';
 		this.elem.innerHTML = SVG_ICONS.alert + '<span class="operationBarText">' + descriptions[operation] + '</span><span class="operationBarSpacer"></span>' +
+			button('conflicts', MENU_ICONS.sparkle + t('Conflict Assistant'), 'primary') +
 			button('scm', t('Open Source Control')) +
 			button('continue', operation === 'merge' ? t('Commit Merge') : t('Continue'), 'primary') +
 			(operation !== 'merge' ? button('skip', t('Skip Commit')) : '') +
@@ -402,8 +403,10 @@ class OperationBar {
 	 * @param operation The operation in progress.
 	 * @param action The action.
 	 */
-	private runAction(operation: GG.GitOperation, action: 'continue' | 'skip' | 'abort' | 'scm') {
-		if (action === 'scm') {
+	private runAction(operation: GG.GitOperation, action: 'continue' | 'skip' | 'abort' | 'scm' | 'conflicts') {
+		if (action === 'conflicts') {
+			sendMessage({ command: 'openCompanionFeature', feature: 'conflictAssistant', repo: this.view.currentRepo });
+		} else if (action === 'scm') {
 			sendMessage({ command: 'viewScm' });
 		} else if (action === 'abort') {
 			const names: { [operation: string]: string } = { 'rebase': t('the rebase'), 'merge': t('the merge'), 'cherry-pick': t('the cherry pick'), 'revert': t('the revert'), 'am': t('applying the patch') };

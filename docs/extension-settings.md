@@ -99,7 +99,7 @@ The context menus, and the key of each of their actions:
 
 ## Commit Details Action Bar & Diff View
 
-* `git-map.commitDetailsView.actions` (default: `["checkout", "createBranch", "cherrypick"]`) chooses which commit actions are shown as buttons in the Commit Details View action bar and in what order. You can also customise and reorder them interactively via **"Customize Action Buttons…"** at the bottom of the Commit Details View's `···` menu or in **Appearance · All Repositories** in Git Map's Settings panel. Supported action IDs: `checkout`, `createBranch`, `cherrypick`, `addTag`, `createWorktree`, `revert`, `drop`, `editMessage`, `undoCommit`, `fixup`, `merge`, `rebase`, `reset`, `bisectBad`, `bisectGood`, `copyHash`, `copySubject`, `savePatch`, `copyPatch`.
+* `git-map.commitDetailsView.actions` (default: `["checkout", "createBranch", "cherrypick"]`) chooses which commit actions are shown as buttons in the Commit Details View action bar and in what order. You can also customise and reorder them interactively via **"Customize Action Buttons…"** at the bottom of the Commit Details View's `···` menu or in **Appearance · All Repositories** in Git Map's Settings panel. Supported action IDs: `checkout`, `createBranch`, `cherrypick`, `addTag`, `createWorktree`, `revert`, `drop`, `editMessage`, `undoCommit`, `fixup`, `merge`, `rebase`, `reset`, `bisectBad`, `bisectGood`, `bisectSkip`, `aiReview`, `copyHash`, `copySubject`, `savePatch`, `copyPatch`.
 * `git-map.diff.hideUnchangedRegions` (default: `false`) collapses unchanged context lines so only changed regions are shown when opening the Visual Studio Code Diff Editor (`diffEditor.hideUnchangedRegions.enabled`) and in Git Map's inline diff preview. It can also be toggled directly from the Diff Editor's top-right toolbar (`Diff View: Show Changes Only` / `Diff View: Show Full File`), the Commit Details View tab bar, per-file via **"View Diff (Changes Only)"** / **"View Diff (Full File)"** in the file context menu, or in Git Map's Settings panel.
 
 ## Blame
@@ -125,12 +125,12 @@ All `git-map.ai.*` settings can also be configured directly in the **AI · All R
 | `Doubao` | `https://ark.cn-beijing.volces.com/api/v3` | *(set `git-map.ai.model`)* | Yes |
 | `Qwen` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | `qwen-plus` | Yes |
 | `OpenAI` | `https://api.openai.com/v1` | *(set `git-map.ai.model`)* | Yes |
-| `Ollama` | `http://localhost:11434/v1` | *(set `git-map.ai.model`)* | No |
-| `Magpie` | The address of Magpie's local gateway in `~/.config/magpie/gateway.json` (otherwise `http://127.0.0.1:3425/v1`) | *(set `git-map.ai.model`)* | No |
-| `CC Switch` | `http://127.0.0.1:15721/v1` (CC Switch's local routing; requests go to the provider selected for Codex) | *(set `git-map.ai.model`)* | No |
+| `Ollama` | `http://localhost:11434/v1` | *(auto-discovered via `/models`, or set `git-map.ai.model`)* | No |
+| `Magpie` | The address of Magpie's local gateway in `~/.config/magpie/gateway.json` (otherwise `http://127.0.0.1:3425/v1`) | *(auto-discovered via `/models`, or set `git-map.ai.model`)* | No |
+| `CC Switch` | `http://127.0.0.1:15721/v1` (CC Switch's local routing; requests go to the provider selected for Codex) | *(auto-discovered via `/models` or active route, or set `git-map.ai.model`)* | No |
 | `OpenAI Compatible` | *(set `git-map.ai.baseUrl`)* | *(set `git-map.ai.model`)* | Optional |
 
-* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). All `git-map.ai.*` settings (`commitMessage.enabled`, `explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable AI requests or redirect endpoints.
+* `git-map.ai.baseUrl` overrides the provider's default API base URL (`/chat/completions` is appended), and `git-map.ai.model` sets or overrides the model (or endpoint ID). In Git Map's Settings panel, clicking **Detect Models** queries `<baseUrl>/models` and lists available models as one-click chips. The same language model configuration is shared by **Explain Commit**, **Generate Commit Message**, **AI Code Review** (`Git Map: AI Review Uncommitted Changes...`), **AI PR Summary / Release Notes** (`Git Map: AI Generate PR Summary / Release Notes...`), and **Conflict Assistant** merge suggestions. All `git-map.ai.*` settings (`commitMessage.enabled`, `explainCommit.enabled`, `provider`, `baseUrl` & `model`) are machine-scoped, so workspace `.vscode/settings.json` files can't enable AI requests or redirect endpoints.
 * API keys are set per provider in Git Map's Settings panel (`"Set API Key…"`), with `"Git Map: Set AI API Key..."`, or from the prompt when a key hasn't been set, and deleted with `"Clear API Key"` / `"Git Map: Clear AI API Key"`. Keys are stored in Visual Studio Code's Secret Storage, never in settings.
 * Nothing is sent until you ask to explain a commit or generate a commit message. The first time (and whenever the provider or destination host changes), it says what's sent (up to 3,000 lines of changes) and names the model, provider & destination host. While streaming, a "Stop" button cancels the request; afterwards, "Model…" reopens model selection and resets saved consent.
 * The explanation is written in the language Git Map is displayed in (`git-map.language`), and may be inaccurate.
@@ -183,3 +183,9 @@ For reference, the built-in providers use these template URLs:
 | Bitbucket | `$1/$2/$3/pull-requests/new?source=$2/$3::$4&dest=$5/$6::$8` |
 | GitHub | `$1/$5/$6/compare/$8...$2:$4` |
 | GitLab | `$1/$2/$3/-/merge_requests/new?merge_request[source_branch]=$4&merge_request[target_branch]=$8&merge_request[target_project_id]=$7` (the project ID parameter is only included when a Destination Project ID is configured) |
+
+## Pull Request & CI Status Badges
+
+* `git-map.integrations.pullRequestStatus.enabled` (default: `true`) displays open Pull Request / Merge Request numbers (`#123`) and CI check statuses (`✓` success, `✕` failure, `●` pending) beside local branch pills on the graph, and powers `Git Map: Checkout Pull Request...`.
+* Supported hosting providers (detected automatically from your repository's `origin` or first remote URL): **GitHub** (including GitHub Enterprise), **GitLab** (including self-hosted instances), **Gitea / Forgejo / Codeberg**, **Bitbucket Cloud** (`bitbucket.org`), and **Azure DevOps** (`dev.azure.com` / `*.visualstudio.com`).
+* For private repositories or higher API rate limits, store a Personal Access Token per domain via **"Set Token…"** in Git Map's Settings panel or `"Git Map: Set Git Hosting Token for PR & CI Badges..."` (stored in Visual Studio Code's Secret Storage, never in settings; Bitbucket App Passwords can be entered as `username:app_password`). Clear a stored token at any time with **"Clear Token"** or `"Git Map: Clear Git Hosting Token"`.
