@@ -134,6 +134,24 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'loadPullRequestBadges':
 				gitGraph.processLoadPullRequestBadgesResponse(msg);
 				break;
+			case 'loadPullRequestDetails':
+				gitGraph.processLoadPullRequestDetailsResponse(msg);
+				break;
+			case 'loadCommitExtras':
+				gitGraph.processLoadCommitExtrasResponse(msg);
+				break;
+			case 'setCommitNote':
+				dialog.closeActionRunning();
+				gitGraph.processSetCommitNoteResponse(msg);
+				break;
+			case 'runWorkflowMacro':
+				if (msg.error !== null) {
+					dialog.showError(t('Workflow Macro Failed'), msg.error, null, null);
+				} else {
+					dialog.closeActionRunning();
+					gitGraph.refresh(false);
+				}
+				break;
 			case 'updateCdvConfig':
 				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions, msg.pullRequestStatusEnabled);
 				break;

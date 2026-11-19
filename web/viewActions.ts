@@ -358,6 +358,20 @@ class ViewActions {
 				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'commit', commitHash: hash, label: abbrevCommit(hash) + ' ' + commit.message })
 			},
 			{
+				id: 'aiRegression',
+				title: t('AI Analyze Regression') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainRegression', repo: this.view.currentRepo, commitHash: hash, label: abbrevCommit(hash) + ' ' + commit.message })
+			},
+			{
+				id: 'editGitNote',
+				title: t('Add / Edit Git Note') + ELLIPSIS,
+				icon: MENU_ICONS.subject,
+				visible: true,
+				onClick: () => this.view.openEditCommitNoteDialog(hash)
+			},
+			{
 				id: 'copyHash',
 				title: t('Copy Commit Hash to Clipboard'),
 				icon: MENU_ICONS.copy,

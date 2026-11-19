@@ -2095,15 +2095,25 @@
 			const compReq = await waitFor('openCompanionFeature(repoInsights)', () => requestsOf('openCompanionFeature').length > compBefore ? requestsOf('openCompanionFeature').slice(-1)[0] : null);
 			assert(compReq.feature === 'repoInsights' && compReq.repo === REPO, 'Unexpected openCompanionFeature: ' + JSON.stringify(compReq));
 
-			// 2. PR & CI status badge renders beside .gitRef.head and opens external URL on click
+			// 2. PR & CI status badge renders beside .gitRef.head and opens interactive PR popover on click
 			prBadgesFixture = { feature: { number: 42, title: 'Add Time Machine', url: 'https://github.com/e2e/repo/pull/42', state: 'open', ciStatus: 'success', baseBranch: 'main' } };
 			mouse(document.getElementById('refreshBtn'), 'click');
 			const prBadge = await waitFor('the PR badge #42 on feature', () => document.querySelector('.gitRef.head[data-name="feature"] .gitRefPrBadge.ci-success'));
 			assert(prBadge.textContent.includes('#42'), 'Unexpected PR badge text: ' + prBadge.textContent);
-			const extBefore = requestsOf('openExternalUrl').length;
 			mouse(prBadge, 'click');
-			const extReq = await waitFor('openExternalUrl on PR badge click', () => requestsOf('openExternalUrl').length > extBefore ? requestsOf('openExternalUrl').slice(-1)[0] : null);
+			const prPopover = await waitFor('the interactive PR popover', () => document.getElementById('prDetailPopover'));
+			assert(prPopover.textContent.includes('#42') && prPopover.textContent.includes('Add Time Machine'), 'Unexpected PR popover: ' + prPopover.textContent);
+			const extBefore = requestsOf('openExternalUrl').length;
+			mouse(prPopover.querySelector('[data-pr-act="openUrl"]'), 'click');
+			const extReq = await waitFor('openExternalUrl on PR popover Open in Browser', () => requestsOf('openExternalUrl').length > extBefore ? requestsOf('openExternalUrl').slice(-1)[0] : null);
 			assert(extReq.url === 'https://github.com/e2e/repo/pull/42', 'Unexpected PR URL: ' + extReq.url);
+
+			// 2b. In-Graph Command Palette (Ctrl/Cmd+Shift+K) opens, filters, and closes on Escape
+			key(document.body, 'k', { ctrlKey: true, shiftKey: true });
+			const cmdPalette = await waitFor('the In-Graph Command Palette (#graphCmdPalette)', () => document.getElementById('graphCmdPalette'));
+			assert(cmdPalette.querySelectorAll('.gcpRow').length > 0 && document.body.dataset.smOverlay === 'command-palette', 'Command palette missing rows or AX overlay state');
+			key(document.getElementById('gcpInput'), 'Escape');
+			await waitFor('Command Palette to close', () => document.getElementById('graphCmdPalette') === null);
 
 			// 3. Graph Drag & Drop: drag non-active branch "feature" onto commit row 2 -> Move Branch Here
 			const featureRef = commitRow(0).querySelector('.gitRef.head[data-name="feature"]');
@@ -2150,7 +2160,7 @@
 				const applyHunkBefore = requestsOf('applyHunkPatch').length;
 				mouse(partialBtn, 'click');
 				const hunkReq = await waitFor('applyHunkPatch partial stage', () => requestsOf('applyHunkPatch').length > applyHunkBefore ? requestsOf('applyHunkPatch').slice(-1)[0] : null);
-				assert(hunkReq.action === 'stage' && hunkReq.patch.includes('-beta\n+BETA_NEW\n gamma'), 'Unexpected partial hunk patch:\n' + hunkReq.patch);
+				assert(hunkReq.action === 'stage' && hunkReq.partialSelection && JSON.stringify(hunkReq.partialSelection.selectedIndices) === JSON.stringify([1, 3]), 'Unexpected partial hunk request: ' + JSON.stringify(hunkReq));
 				key(document.body, 'Escape');
 				await waitFor('#cdvHunkModal to close', () => document.getElementById('cdvHunkModal') === null);
 				assert(document.body.dataset.smOverlay === 'cdv', 'Expected smOverlay=cdv after closing hunk modal, got ' + document.body.dataset.smOverlay);

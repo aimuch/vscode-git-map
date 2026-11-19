@@ -62,6 +62,11 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-map.viewFileHistory', (arg) => this.viewFileHistory(arg));
 		this.registerCommand('git-map.viewLineHistoryInGitMap', (arg) => this.viewLineHistoryInGitMap(arg));
 		this.registerCommand('git-map.viewCommitInGitMap', (repo, hash) => this.viewCommitInGitMap(repo, hash));
+		this.registerCommand('git-map.viewAuthorInGitMap', (repo, author) => {
+			if (typeof repo === 'string' && typeof author === 'string' && author !== '') {
+				GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, authorFilter: author });
+			}
+		});
 		this.registerCommand('git-map.toggleLineBlame', () => this.toggleLineBlame());
 
 		this.registerDisposable(

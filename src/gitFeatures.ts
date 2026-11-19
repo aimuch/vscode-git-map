@@ -778,7 +778,14 @@ export class GitFeatures {
 	/**
 	 * Create a commit (or amend HEAD) from staged changes, optionally staging all working-tree changes first when nothing is staged.
 	 */
-	public async commitStagedChanges(repo: string, message: string, amend: boolean, stageAllIfEmpty: boolean, sign: boolean): Promise<GitFeatureError> {
+	public async commitStagedChanges(
+		repo: string,
+		message: string,
+		amend: boolean,
+		stageAllIfEmpty: boolean,
+		sign: boolean,
+		options?: { readonly noVerify?: boolean, readonly signoff?: boolean }
+	): Promise<GitFeatureError> {
 		if (message.trim() === '') return 'The commit message can\'t be empty.';
 		if (!amend && stageAllIfEmpty) {
 			const cached = await this.run(repo, ['diff', '--cached', '--quiet', '--']);
@@ -787,8 +794,160 @@ export class GitFeatures {
 				if (stageErr !== null) return stageErr;
 			}
 		}
-		const args = ['commit', ...(sign ? ['-S'] : []), ...(amend ? ['--amend'] : [])];
+		const args = [
+			'commit',
+			...(sign ? ['-S'] : []),
+			...(options && options.signoff ? ['-s'] : []),
+			...(options && options.noVerify ? ['--no-verify'] : []),
+			...(amend ? ['--amend'] : [])
+		];
 		return this.withMessageFile(message, (file) => this.change(repo, [...args, '-F', file]));
+	}
+
+	/**
+	 * Detect active Git hooks (`.git/hooks/*` and `.husky/*`) and read any configured commit message template (`.gitmessage` or `commit.template`).
+	 */
+	public async getRepoHooksAndTemplate(repo: string): Promise<{
+		readonly hooks: ReadonlyArray<{ readonly name: string, readonly path: string }>,
+		readonly commitTemplate: string | null
+	}> {
+		const hooks: { name: string, path: string }[] = [];
+		const seenNames = new Set<string>();
+		const scanDir = async (dir: string, prefix: string) => {
+			try {
+				const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+				for (const ent of entries) {
+					if (!ent.isFile() || ent.name.endsWith('.sample') || ent.name.startsWith('.')) continue;
+					const key = prefix + ent.name;
+					if (seenNames.has(key)) continue;
+					seenNames.add(key);
+					hooks.push({ name: key, path: path.join(dir, ent.name) });
+				}
+			} catch (_) { /* directory absent */ }
+		};
+
+		const hooksPathRes = await this.run(repo, ['rev-parse', '--git-path', 'hooks']);
+		if (hooksPathRes.code === 0) {
+			const raw = hooksPathRes.stdout.toString().trim();
+			if (raw !== '') {
+				const absHooks = path.isAbsolute(raw) ? raw : path.resolve(repo, raw);
+				await scanDir(absHooks, '');
+			}
+		}
+		await scanDir(path.join(repo, '.husky'), '.husky/');
+
+		let commitTemplate: string | null = null;
+		const tmplRes = await this.run(repo, ['config', '--get', 'commit.template']);
+		const candidates: string[] = [];
+		if (tmplRes.code === 0) {
+			const configured = tmplRes.stdout.toString().trim();
+			if (configured !== '') {
+				candidates.push(configured.startsWith('~') ? path.join(os.homedir(), configured.substring(1)) : path.resolve(repo, configured));
+			}
+		}
+		candidates.push(path.join(repo, '.gitmessage'));
+		for (const cand of candidates) {
+			try {
+				const text = await fs.promises.readFile(cand, 'utf8');
+				const cleaned = text.split(/\r?\n/).filter((l) => !l.trim().startsWith('#')).join('\n').trim();
+				if (cleaned !== '') {
+					commitTemplate = cleaned;
+					break;
+				}
+			} catch (_) { /* not found */ }
+		}
+		return { hooks: hooks, commitTemplate: commitTemplate };
+	}
+
+	/**
+	 * Read the `git notes` text attached to a commit, or NULL if no note exists.
+	 */
+	public async getCommitNote(repo: string, commitHash: string): Promise<string | null> {
+		if (!HASH_REGEXP.test(commitHash)) return null;
+		const res = await this.run(repo, ['notes', 'show', commitHash]);
+		return res.code === 0 ? res.stdout.toString().trim() : null;
+	}
+
+	/**
+	 * Add, update, or remove a `git notes` entry on a commit.
+	 */
+	public async setCommitNote(repo: string, commitHash: string, note: string | null): Promise<GitFeatureError> {
+		if (!HASH_REGEXP.test(commitHash)) return 'Invalid commit hash.';
+		if (note === null || note.trim() === '') {
+			const res = await this.run(repo, ['notes', 'remove', commitHash]);
+			return res.code === 0 || res.stderr.includes('has no note') ? null : errorOf(res);
+		}
+		return this.withMessageFile(note.trim(), (file) => this.change(repo, ['notes', 'add', '-f', '-F', file, commitHash]));
+	}
+
+	/**
+	 * Retrieve GPG / SSH signature verification details (status, signer, key ID, fingerprint) for a commit.
+	 */
+	public async getCommitSignatureDetails(repo: string, commitHash: string): Promise<{
+		readonly status: string,
+		readonly signer: string,
+		readonly keyId: string,
+		readonly fingerprint: string
+	} | null> {
+		if (!HASH_REGEXP.test(commitHash)) return null;
+		const res = await this.run(repo, ['log', '-1', '--format=%G?%x1f%GS%x1f%GK%x1f%GF', commitHash]);
+		if (res.code !== 0) return null;
+		const parts = res.stdout.toString().trim().split('\x1f');
+		const status = (parts[0] || '').trim();
+		if (status === '' || status === 'N') return null;
+		return {
+			status: status,
+			signer: (parts[1] || '').trim(),
+			keyId: (parts[2] || '').trim(),
+			fingerprint: (parts[3] || '').trim()
+		};
+	}
+
+	/**
+	 * Execute a built-in or user-defined Git workflow macro (safe tokenized git subcommands — never executed via a shell).
+	 */
+	public async runWorkflowMacro(repo: string, macroId: string, customSteps?: ReadonlyArray<string>): Promise<{ summary: string, error: GitFeatureError }> {
+		if (macroId === 'fetch-rebase-prune') {
+			const fetchErr = await this.change(repo, ['fetch', '--all', '--prune']);
+			if (fetchErr !== null) return { summary: '', error: fetchErr };
+			const upRes = await this.run(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+			if (upRes.code !== 0) {
+				return { summary: 'Fetched and pruned remotes (no upstream tracking branch configured for rebase).', error: null };
+			}
+			const upstream = upRes.stdout.toString().trim();
+			const rebaseErr = await this.change(repo, ['rebase', upstream]);
+			if (rebaseErr !== null) return { summary: '', error: rebaseErr };
+			return { summary: 'Fetched, pruned, and rebased onto ' + upstream + '.', error: null };
+		}
+		if (macroId === 'stash-pull-pop') {
+			const wt = await this.getWorkingTreeStatus(repo);
+			const hasDirty = wt.files.length > 0;
+			if (hasDirty) {
+				const stashErr = await this.change(repo, ['stash', 'push', '-u', '-m', 'git-map-macro-autostash']);
+				if (stashErr !== null) return { summary: '', error: stashErr };
+			}
+			const pullErr = await this.change(repo, ['pull', '--rebase']);
+			if (pullErr !== null) return { summary: '', error: pullErr };
+			if (hasDirty) {
+				const popErr = await this.change(repo, ['stash', 'pop']);
+				if (popErr !== null) return { summary: '', error: popErr };
+			}
+			return { summary: hasDirty ? 'Stashed changes, pulled with rebase, and restored stash.' : 'Pulled latest changes with rebase.', error: null };
+		}
+		if (Array.isArray(customSteps) && customSteps.length > 0) {
+			const executed: string[] = [];
+			for (const rawStep of customSteps) {
+				const tokens = rawStep.trim().split(/\s+/).filter((s: string) => s !== '');
+				if (tokens.length === 0) continue;
+				const args = tokens[0] === 'git' ? tokens.slice(1) : tokens;
+				if (args.length === 0) continue;
+				const err = await this.change(repo, args);
+				if (err !== null) return { summary: executed.join(' → '), error: 'Step "git ' + args.join(' ') + '" failed: ' + err };
+				executed.push('git ' + args.join(' '));
+			}
+			return { summary: 'Completed: ' + executed.join(' → '), error: null };
+		}
+		return { summary: '', error: 'Unknown workflow macro: ' + macroId };
 	}
 
 	/**

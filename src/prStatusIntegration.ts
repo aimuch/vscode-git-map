@@ -5,7 +5,7 @@ import { ExtensionState } from './extensionState';
 import { runGit } from './historyRewrite';
 import { t } from './l10n';
 import { RepoManager } from './repoManager';
-import { PullRequestBadgeInfo } from './types';
+import { PullRequestBadgeInfo, PullRequestDetailsInfo } from './types';
 import { getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 
 export interface ParsedHostingRemote {
@@ -331,6 +331,128 @@ async function performFetchRepoPullRequestBadges(dataSource: DataSource, repo: s
 
 	prCache.set(repo, { expiresAt: Date.now() + PR_CACHE_TTL_MS, badges: badges });
 	return badges;
+}
+
+/**
+ * Fetch detailed Pull Request / Merge Request information (description, author, CI check runs, review summary)
+ * for the interactive PR popover card, falling back gracefully to cached badge metadata when offline.
+ */
+export async function fetchPullRequestDetails(
+	dataSource: DataSource,
+	repo: string,
+	prNumber: number,
+	branch: string
+): Promise<PullRequestDetailsInfo | null> {
+	const cachedBadges = prCache.get(repo);
+	const cachedBadge = typeof cachedBadges !== 'undefined' ? cachedBadges.badges[branch] : undefined;
+	const remote = await detectHostingRemote(dataSource, repo);
+	if (remote === null) {
+		return typeof cachedBadge !== 'undefined'
+			? {
+				number: cachedBadge.number,
+				title: cachedBadge.title,
+				body: '',
+				author: '',
+				state: cachedBadge.state,
+				url: cachedBadge.url,
+				baseBranch: cachedBadge.baseBranch,
+				headBranch: branch,
+				ciStatus: cachedBadge.ciStatus,
+				checks: [],
+				reviewSummary: ''
+			}
+			: null;
+	}
+	const token = await getHostingToken(remote.host);
+	let body = '', author = '', reviewSummary = '';
+	let title = typeof cachedBadge !== 'undefined' ? cachedBadge.title : ('#' + prNumber);
+	let state: PullRequestDetailsInfo['state'] = typeof cachedBadge !== 'undefined' ? cachedBadge.state : 'open';
+	let url = typeof cachedBadge !== 'undefined' ? cachedBadge.url : '';
+	let baseBranch = typeof cachedBadge !== 'undefined' ? cachedBadge.baseBranch : '';
+	let ciStatus: PullRequestDetailsInfo['ciStatus'] = typeof cachedBadge !== 'undefined' ? cachedBadge.ciStatus : 'unknown';
+	const checks: { name: string, status: string }[] = [];
+
+	if (remote.provider === 'github') {
+		const apiBase = remote.host === 'github.com' ? 'https://api.github.com' : ('https://' + remote.host + '/api/v3');
+		const headers: { [k: string]: string } = { 'Accept': 'application/vnd.github+json', 'User-Agent': 'vscode-git-map' };
+		if (token !== null) headers['Authorization'] = 'Bearer ' + token;
+		const [pr, reviews] = await Promise.all([
+			fetchJson(apiBase + '/repos/' + remote.ownerRepo + '/pulls/' + prNumber, headers),
+			fetchJson(apiBase + '/repos/' + remote.ownerRepo + '/pulls/' + prNumber + '/reviews?per_page=20', headers)
+		]);
+		if (pr) {
+			title = String(pr.title || title);
+			body = String(pr.body || '').trim();
+			author = pr.user && typeof pr.user.login === 'string' ? pr.user.login : '';
+			state = pr.merged ? 'merged' : pr.state === 'closed' ? 'closed' : (pr.draft ? 'draft' : 'open');
+			url = String(pr.html_url || url);
+			baseBranch = pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : baseBranch;
+			const sha = pr.head && typeof pr.head.sha === 'string' ? pr.head.sha : '';
+			if (sha !== '') {
+				const checkData = await fetchJson(apiBase + '/repos/' + remote.ownerRepo + '/commits/' + sha + '/check-runs?per_page=20', headers);
+				if (checkData && Array.isArray(checkData.check_runs)) {
+					for (const run of checkData.check_runs.slice(0, 12)) {
+						checks.push({ name: String(run.name || 'check'), status: String(run.conclusion || run.status || 'unknown') });
+					}
+					if (checkData.check_runs.some((r: any) => r.status !== 'completed')) ciStatus = 'pending';
+					else if (checkData.check_runs.some((r: any) => r.conclusion === 'failure' || r.conclusion === 'timed_out' || r.conclusion === 'cancelled')) ciStatus = 'failure';
+					else if (checkData.check_runs.length > 0 && checkData.check_runs.every((r: any) => r.conclusion === 'success' || r.conclusion === 'neutral' || r.conclusion === 'skipped')) ciStatus = 'success';
+				}
+			}
+		}
+		if (Array.isArray(reviews) && reviews.length > 0) {
+			const approved = reviews.filter((r: any) => r && r.state === 'APPROVED').length;
+			const changesRequested = reviews.filter((r: any) => r && r.state === 'CHANGES_REQUESTED').length;
+			const parts: string[] = [];
+			if (approved > 0) parts.push(approved + ' approved');
+			if (changesRequested > 0) parts.push(changesRequested + ' changes requested');
+			reviewSummary = parts.join(' · ');
+		}
+	} else if (remote.provider === 'gitlab') {
+		const apiBase = 'https://' + remote.host + '/api/v4';
+		const headers: { [k: string]: string } = { 'Accept': 'application/json' };
+		if (token !== null) headers['PRIVATE-TOKEN'] = token;
+		const mr = await fetchJson(apiBase + '/projects/' + encodeURIComponent(remote.ownerRepo) + '/merge_requests/' + prNumber, headers);
+		if (mr) {
+			title = String(mr.title || title);
+			body = String(mr.description || '').trim();
+			author = mr.author && typeof mr.author.username === 'string' ? mr.author.username : '';
+			state = mr.state === 'merged' ? 'merged' : mr.state === 'closed' ? 'closed' : (mr.draft || mr.work_in_progress ? 'draft' : 'open');
+			url = String(mr.web_url || url);
+			baseBranch = typeof mr.target_branch === 'string' ? mr.target_branch : baseBranch;
+			if (mr.head_pipeline && typeof mr.head_pipeline.status === 'string') {
+				checks.push({ name: 'Pipeline #' + (mr.head_pipeline.id || ''), status: mr.head_pipeline.status });
+			}
+		}
+	} else if (remote.provider === 'gitea') {
+		const apiBase = 'https://' + remote.host + '/api/v1';
+		const headers: { [k: string]: string } = { 'Accept': 'application/json', 'User-Agent': 'vscode-git-map' };
+		if (token !== null) headers['Authorization'] = 'token ' + token;
+		const pr = await fetchJson(apiBase + '/repos/' + remote.ownerRepo + '/pulls/' + prNumber, headers);
+		if (pr) {
+			title = String(pr.title || title);
+			body = String(pr.body || '').trim();
+			author = pr.user && typeof pr.user.login === 'string' ? pr.user.login : '';
+			state = pr.merged ? 'merged' : pr.state === 'closed' ? 'closed' : (pr.draft ? 'draft' : 'open');
+			url = String(pr.html_url || url);
+			baseBranch = pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : baseBranch;
+		}
+	}
+
+	if (body.length > 1200) body = body.substring(0, 1200) + '…';
+	return {
+		number: prNumber,
+		title: title,
+		body: body,
+		author: author,
+		state: state,
+		url: url,
+		baseBranch: baseBranch,
+		headBranch: branch,
+		ciStatus: ciStatus,
+		checks: checks,
+		reviewSummary: reviewSummary
+	};
 }
 
 export async function checkoutPullRequestCommand(dataSource: DataSource, repoManager: RepoManager, extensionState: ExtensionState, arg?: any) {

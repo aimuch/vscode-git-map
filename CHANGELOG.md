@@ -1,5 +1,15 @@
 # Change Log
 
+## 2.4.0 - 2026-11-19
+* **In-Graph Command Palette (`Ctrl/Cmd+K`)**: fuzzy search and jump to branches, commits, companion tools, exports, and workflow macros directly inside Git Map.
+* **AI Pre-Commit Guard & Smart Commit Splitter** (`Git Map: Pre-Commit Guard Check`, `Git Map: AI Smart Commit Splitter...`): automatically scans working-tree diffs for potential secrets/API keys, `console.log`/`debugger` leftovers, and `DO NOT COMMIT`/`FIXME` markers, and groups multi-file changes into atomic Conventional Commits for sequential 1-click committing.
+* **Dockable Compact Git Map Panel View**: live **Compact Commit Graph** view registered in the bottom Panel (movable to any Sidebar) so recent commits, branch state, and quick sync stay visible alongside the editor.
+* **Submodule Manager** (`Git Map: Submodule Manager`) & **Branch Lifecycle Dashboard** (`Git Map: Branch Lifecycle Dashboard`): inspect and update/sync/stage Git submodules, and sort/filter all local & remote branches by age, staleness (`>30d`), merge status, and linked PRs with batch deletion.
+* **Inline Commit Box Enhancements**: Conventional Commit prefix chips (`feat`, `fix`, `refactor`, `docs`, `chore`, `test`), automatic `.gitmessage` / `commit.template` prefill, active Git Hooks indicator (`.git/hooks` & `.husky`), and `--signoff` (`-s`), GPG (`-S`), and confirmed `--no-verify` commit toggles.
+* **Interactive PR Popover, Git Notes & Signature Details**: click any `#123` PR badge to inspect PR summary, CI checks, review status, Checkout PR, and AI Review PR; view and edit `git notes` and GPG/SSH signature fingerprints directly in Commit Details.
+* **AI Regression / Bisect Root-Cause Analysis, Workflow Macros & Export/Share**: 1-click **AI Analyze Root Cause…** on Bisect results and commits, built-in & custom `git-map.workflowMacros` (`Fetch + Rebase Upstream + Prune`, `Stash + Pull + Pop`), **Export Graph as SVG**, and **Export Changelog / Weekly Report Markdown**.
+* **Performance, Architecture & UX Refinements**: viewport-windowed SVG branch path rendering for large virtualized graphs, theme-aware syntax highlighting & persisted zoom in File Time Machine, single-source-of-truth partial hunk patching in the Extension Host (extracting `web/hunkModal.ts`, `web/graphDragDrop.ts`, `web/commandPalette.ts`), bulk **Accept All Ours / Theirs** + **Continue Operation** in Conflict Assistant, and clickable contributor drill-down from Repository Insights into Git Map.
+
 ## 2.3.2 - 2026-11-18
 * Explicit State Machines & Async Request Sequencing (`src/stateMachines.ts`, `web/stateMachines.ts`):
     * Replaced implicit boolean/nullable state flags across `GitGraphView` (`PanelSyncMachine` dirty-sync lattice), `BranchCompare`, `Dialog` (atomic `dangerous` consumption), Commit Details View overlay / `Escape` resolution, and companion panels (`AsyncRequestSequencer` out-of-order response protection across Reflog Explorer, Repository Insights, Multi-Repo Overview, and File Time Machine).

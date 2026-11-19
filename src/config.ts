@@ -692,6 +692,18 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-map.workflowMacros` Extension Setting.
+	 */
+	get workflowMacros(): ReadonlyArray<{ readonly id: string, readonly name: string, readonly steps: ReadonlyArray<string> }> {
+		const raw = this.config.get<unknown>('workflowMacros', []);
+		return Array.isArray(raw)
+			? raw.filter((m: any): m is { id: string, name: string, steps: string[] } =>
+				typeof m === 'object' && m !== null && typeof m.id === 'string' && typeof m.name === 'string' && Array.isArray(m.steps)
+			)
+			: [];
+	}
+
+	/**
 	 * Get the value of the `git-map.repository.onlyFollowFirstParent` Extension Setting.
 	 */
 	get onlyFollowFirstParent() {

@@ -616,6 +616,46 @@ function escapeHtml(text: string) {
 	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+const SYNTAX_KEYWORDS = new Set([
+	'async', 'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'def', 'default', 'delete',
+	'do', 'elif', 'else', 'enum', 'export', 'extends', 'false', 'finally', 'fn', 'for', 'from', 'func',
+	'function', 'if', 'impl', 'import', 'in', 'interface', 'let', 'match', 'new', 'null', 'package',
+	'private', 'protected', 'pub', 'public', 'readonly', 'return', 'static', 'struct', 'super', 'switch',
+	'this', 'throw', 'true', 'try', 'type', 'typeof', 'undefined', 'var', 'void', 'while', 'yield'
+]);
+
+/**
+ * Lightweight, XSS-safe single-line syntax highlighter used by File Time Machine and tests.
+ */
+export function highlightCodeLine(rawLine: string, fileExt: string = ''): string {
+	const ext = fileExt.toLowerCase();
+	const isHashCommentLang = ext === '.py' || ext === '.sh' || ext === '.yml' || ext === '.yaml' || ext === '.rb' || ext === '.toml';
+	const tokenRegex = isHashCommentLang
+		? /(#.*$|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g
+		: /(\/\/.*$|\/\*.*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b\d+(?:\.\d+)?\b|\b[A-Za-z_][A-Za-z0-9_]*\b)/g;
+	let out = '';
+	let lastIdx = 0;
+	let m: RegExpExecArray | null;
+	while ((m = tokenRegex.exec(rawLine)) !== null) {
+		if (m.index > lastIdx) out += escapeHtml(rawLine.substring(lastIdx, m.index));
+		const tok = m[0];
+		if (tok.startsWith('//') || tok.startsWith('/*') || (isHashCommentLang && tok.startsWith('#'))) {
+			out += '<span class="ftmCom">' + escapeHtml(tok) + '</span>';
+		} else if (tok.startsWith('"') || tok.startsWith('\'') || tok.startsWith('`')) {
+			out += '<span class="ftmStr">' + escapeHtml(tok) + '</span>';
+		} else if (/^\d/.test(tok)) {
+			out += '<span class="ftmNum">' + escapeHtml(tok) + '</span>';
+		} else if (SYNTAX_KEYWORDS.has(tok)) {
+			out += '<span class="ftmKw">' + escapeHtml(tok) + '</span>';
+		} else {
+			out += escapeHtml(tok);
+		}
+		lastIdx = m.index + tok.length;
+	}
+	if (lastIdx < rawLine.length) out += escapeHtml(rawLine.substring(lastIdx));
+	return out;
+}
+
 export function getFileTimeMachineHtml(
 	filePath: string,
 	entries: ReadonlyArray<TimeMachineEntry>,
@@ -830,6 +870,10 @@ button:focus-visible,input:focus-visible,.ftmCode:focus-visible{outline:2px soli
 .ftmRow.hunk{background:rgba(128,128,128,.12);color:var(--vscode-descriptionForeground);font-size:11.5px;padding:2px 10px}
 .ftmCollapsed{padding:4px 14px;margin:2px 0;background:color-mix(in srgb,var(--vscode-focusBorder,#0e7afe) 10%,transparent);color:var(--vscode-descriptionForeground);font-family:var(--vscode-font-family);font-size:11.5px;text-align:center;border-top:1px dashed rgba(128,128,128,.25);border-bottom:1px dashed rgba(128,128,128,.25)}
 .ftmEmpty{padding:28px 20px;color:var(--vscode-descriptionForeground)}
+.ftmKw{color:var(--vscode-symbolIcon-keywordForeground,#569cd6);font-weight:500}
+.ftmStr{color:var(--vscode-debugTokenExpression-string,#ce9178)}
+.ftmCom{color:var(--vscode-descriptionForeground,#6a9955);font-style:italic}
+.ftmNum{color:var(--vscode-debugTokenExpression-number,#b5cea8)}
 
 /* Time Machine Right Scrubber Dock (modeled on camera/Time Machine vertical timeline, adaptive to Dark / Light / High Contrast) */
 .ftmRulerDock{flex:0 0 212px;display:flex;flex-direction:column;height:100%;background:var(--ftm-dock-bg);color:var(--ftm-dock-fg);border-left:1px solid var(--ftm-dock-border);user-select:none}
@@ -1144,11 +1188,11 @@ const SCRIPT = `
 				} else {
 					flushSkipped();
 					if (item.kind === 'add') {
-						outCollapsed.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+						outCollapsed.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + hl(item.text) + '</span></div>');
 					} else if (item.kind === 'del') {
-						outCollapsed.push('<div class="ftmRow del"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+						outCollapsed.push('<div class="ftmRow del"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + hl(item.text) + '</span></div>');
 					} else if (item.kind === 'ctx') {
-						outCollapsed.push('<div class="ftmRow"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + esc(item.text) + '</span></div>');
+						outCollapsed.push('<div class="ftmRow"><span class="ftmLn">' + item.oldLn + '</span><span class="ftmLn">' + item.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + hl(item.text) + '</span></div>');
 					}
 				}
 			}
@@ -1162,14 +1206,37 @@ const SCRIPT = `
 			if (r.kind === 'hunk') {
 				outFull.push('<div class="ftmRow hunk">' + esc(r.text) + '</div>');
 			} else if (r.kind === 'add') {
-				outFull.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+				outFull.push('<div class="ftmRow add"><span class="ftmLn"></span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign">+</span><span class="ftmTxt">' + hl(r.text) + '</span></div>');
 			} else if (r.kind === 'del') {
-				outFull.push('<div class="ftmRow del"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+				outFull.push('<div class="ftmRow del"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn"></span><span class="ftmSign">&minus;</span><span class="ftmTxt">' + hl(r.text) + '</span></div>');
 			} else if (r.kind === 'ctx') {
-				outFull.push('<div class="ftmRow"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + esc(r.text) + '</span></div>');
+				outFull.push('<div class="ftmRow"><span class="ftmLn">' + r.oldLn + '</span><span class="ftmLn">' + r.newLn + '</span><span class="ftmSign"> </span><span class="ftmTxt">' + hl(r.text) + '</span></div>');
 			}
 		}
 		return outFull.length > 0 ? outFull.join('') : '<div class="ftmEmpty">' + esc(STRINGS.noDiff) + '</div>';
+	}
+
+	var HL_KW = { async:1,await:1,break:1,case:1,catch:1,class:1,const:1,continue:1,def:1,default:1,delete:1,do:1,elif:1,else:1,enum:1,export:1,extends:1,false:1,finally:1,fn:1,for:1,from:1,func:1,function:1,if:1,impl:1,import:1,in:1,interface:1,let:1,match:1,new:1,null:1,package:1,private:1,protected:1,pub:1,public:1,readonly:1,return:1,static:1,struct:1,super:1,switch:1,this:1,throw:1,true:1,try:1,type:1,typeof:1,undefined:1,var:1,void:1,while:1,yield:1 };
+	function hl(raw) {
+		if (!raw || raw.length > 600) return esc(raw || '');
+		var f = ENTRIES[currentIndex] ? ENTRIES[currentIndex].f : '';
+		var hashCom = /\\.(py|sh|yml|yaml|rb|toml)$/i.test(f);
+		var rx = hashCom
+			? /(#.*$|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\b\\d+(?:\\.\\d+)?\\b|\\b[A-Za-z_][A-Za-z0-9_]*\\b)/g
+			: /(\\/\\/.*$|\\/\\*.*?\\*\\/|"(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\x60(?:\\\\.|[^\\x60\\\\])*\\x60|\\b\\d+(?:\\.\\d+)?\\b|\\b[A-Za-z_][A-Za-z0-9_]*\\b)/g;
+		var out = '', last = 0, m;
+		while ((m = rx.exec(raw)) !== null) {
+			if (m.index > last) out += esc(raw.substring(last, m.index));
+			var tok = m[0];
+			if (tok.startsWith('//') || tok.startsWith('/*') || (hashCom && tok.startsWith('#'))) out += '<span class="ftmCom">' + esc(tok) + '</span>';
+			else if (tok.charAt(0) === '"' || tok.charAt(0) === "'" || tok.charAt(0) === String.fromCharCode(96)) out += '<span class="ftmStr">' + esc(tok) + '</span>';
+			else if (/^\\d/.test(tok)) out += '<span class="ftmNum">' + esc(tok) + '</span>';
+			else if (HL_KW[tok]) out += '<span class="ftmKw">' + esc(tok) + '</span>';
+			else out += esc(tok);
+			last = m.index + tok.length;
+		}
+		if (last < raw.length) out += esc(raw.substring(last));
+		return out;
 	}
 
 	function renderSnapshotHtml(text, isBinary, isDeleted) {
@@ -1183,7 +1250,7 @@ const SCRIPT = `
 		for (var i = 0; i < lines.length; i++) {
 			var ln = i + 1;
 			var sel = sMin > 0 && ln >= sMin && ln <= sMax;
-			out.push('<div class="ftmRow' + (sel ? ' selLine' : '') + '"><span class="ftmLn" data-snap-ln="' + ln + '">' + ln + '</span><span class="ftmTxt">' + esc(lines[i]) + '</span></div>');
+			out.push('<div class="ftmRow' + (sel ? ' selLine' : '') + '"><span class="ftmLn" data-snap-ln="' + ln + '">' + ln + '</span><span class="ftmTxt">' + hl(lines[i]) + '</span></div>');
 		}
 		return out.join('');
 	}
@@ -1292,11 +1359,17 @@ const SCRIPT = `
 	track.addEventListener('pointerup', function () { dragging = false; });
 	track.addEventListener('pointercancel', function () { dragging = false; });
 
-	// Zoom controls
+	// Zoom controls (persisted in webview state)
 	var slider = document.getElementById('ftmZoomSlider');
+	var savedFtmState = vscode.getState();
+	if (savedFtmState && typeof savedFtmState.zoom === 'number' && savedFtmState.zoom >= 1 && savedFtmState.zoom <= 8) {
+		zoom = savedFtmState.zoom;
+		slider.value = String(zoom);
+	}
 	function applyZoom(val) {
 		zoom = Math.min(Math.max(val, 1), 8);
 		slider.value = String(zoom);
+		vscode.setState({ zoom: zoom });
 		renderRuler();
 		updatePlayheadPosition(null, true);
 	}

@@ -468,5 +468,14 @@
 	"command.checkoutPullRequest.title": "签出拉取请求 (PR / MR)...",
 	"command.setHostingToken.title": "设置代码托管平台令牌（用于 PR 与 CI 徽章）...",
 	"command.clearHostingToken.title": "清除代码托管平台令牌",
+	"command.preCommitCheck.title": "提交前安全与调试代码自检",
+	"command.aiSmartCommitSplit.title": "AI 智能拆分原子提交...",
+	"command.ai.explainRegression.title": "AI 回归根因分析...",
+	"command.submoduleManager.title": "子模块管理器 (Submodule)",
+	"command.branchDashboard.title": "分支生命周期看板",
+	"command.exportChangelog.title": "导出更新日志 / 周报 Markdown...",
+	"view.compactGraph.containerTitle": "Git Map",
+	"view.compactGraph.name": "紧凑提交图",
+	"config.workflowMacros.description": "自定义 Git 工作流宏（每项包含 `id`、`name` 与一组安全 Git 子命令 `steps`，例如 `[\"fetch --all --prune\", \"rebase origin/main\"]`）。",
 	"config.integrations.pullRequestStatus.enabled.description": "在分支图的本地分支标签旁显示关联的 GitHub、GitLab、Gitea / Forgejo / Codeberg、Bitbucket 与 Azure DevOps 拉取请求（PR / MR）编号与 CI 状态徽章。"
 }

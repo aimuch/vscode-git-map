@@ -468,5 +468,14 @@
 	"command.checkoutPullRequest.title": "Checkout Pull Request...",
 	"command.setHostingToken.title": "Set Git Hosting Token for PR & CI Badges...",
 	"command.clearHostingToken.title": "Clear Git Hosting Token",
+	"command.preCommitCheck.title": "Pre-Commit Guard Check",
+	"command.aiSmartCommitSplit.title": "AI Smart Commit Splitter...",
+	"command.ai.explainRegression.title": "AI Analyze Regression / Root Cause...",
+	"command.submoduleManager.title": "Submodule Manager",
+	"command.branchDashboard.title": "Branch Lifecycle Dashboard",
+	"command.exportChangelog.title": "Export Changelog / Weekly Report...",
+	"view.compactGraph.containerTitle": "Git Map",
+	"view.compactGraph.name": "Compact Commit Graph",
+	"config.workflowMacros.description": "Custom Git workflow macros (each with `id`, `name`, and an array of safe Git subcommand `steps`, e.g. `[\"fetch --all --prune\", \"rebase origin/main\"]`).",
 	"config.integrations.pullRequestStatus.enabled.description": "Show open Pull Request / Merge Request numbers and CI check status badges beside local branch labels on the graph for GitHub, GitLab, Gitea / Forgejo / Codeberg, Bitbucket, and Azure DevOps remotes."
 }

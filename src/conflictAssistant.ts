@@ -94,6 +94,7 @@ export function hasConflictMarkersInText(content: string): boolean {
 export class ConflictAssistant extends Disposable {
 	private static instance: ConflictAssistant | null = null;
 
+	private readonly dataSource: DataSource;
 	private readonly repoManager: RepoManager;
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
@@ -106,6 +107,7 @@ export class ConflictAssistant extends Disposable {
 
 	constructor(dataSource: DataSource, repoManager: RepoManager, extensionState: ExtensionState, logger: Logger) {
 		super();
+		this.dataSource = dataSource;
 		this.repoManager = repoManager;
 		this.extensionState = extensionState;
 		this.logger = logger;
@@ -289,6 +291,19 @@ export class ConflictAssistant extends Disposable {
 			this.panel.webview.postMessage({ command: 'conflictState', state: state });
 			return;
 		}
+		if (msg.command === 'continueOperation') {
+			const op = await this.dataSource.getOperationInProgress(repo);
+			if (op === null) {
+				showInformationMessage(t('No Git operation is currently in progress.'));
+				return;
+			}
+			const err = await this.dataSource.controlOperation(repo, op, 'continue');
+			if (err !== null) showErrorMessage(err);
+			else showInformationMessage(t('Continued {0} successfully.', op));
+			const state = await this.loadConflictState(repo);
+			if (this.panel !== null) this.panel.webview.postMessage({ command: 'conflictState', state: state });
+			return;
+		}
 		if (typeof msg.file !== 'string' || msg.file === '') return;
 		const repoResolved = path.resolve(repo);
 		const abs = path.resolve(repoResolved, msg.file);
@@ -302,6 +317,22 @@ export class ConflictAssistant extends Disposable {
 		if (msg.command === 'stageFile') {
 			const err = await this.gitFeatures.stageFiles(repo, [msg.file]);
 			if (err !== null) showErrorMessage(err);
+			const state = await this.loadConflictState(repo);
+			if (this.panel !== null) this.panel.webview.postMessage({ command: 'conflictState', state: state });
+			return;
+		}
+		if (msg.command === 'resolveAllInFile' && (msg.resolution === 'ours' || msg.resolution === 'theirs')) {
+			let content = await fs.promises.readFile(abs, 'utf8');
+			let guard = 0;
+			while (guard++ < 500) {
+				const blocks = parseConflictBlocks(content);
+				if (blocks.length === 0) break;
+				const next = replaceConflictBlockInText(content, 0, msg.resolution === 'ours' ? blocks[0].ours : blocks[0].theirs);
+				if (next === null) break;
+				content = next;
+			}
+			await fs.promises.writeFile(abs, content, 'utf8');
+			this.updateEditorConflictContext();
 			const state = await this.loadConflictState(repo);
 			if (this.panel !== null) this.panel.webview.postMessage({ command: 'conflictState', state: state });
 			return;
@@ -448,7 +479,10 @@ function getConflictAssistantHtml(initialState: any, cspSource: string) {
 		ours: t('Current (Ours)'),
 		theirs: t('Incoming (Theirs)'),
 		aiLoading: t('Generating merge suggestion…'),
-		stop: t('Stop')
+		stop: t('Stop'),
+		acceptAllOurs: t('Accept All Ours'),
+		acceptAllTheirs: t('Accept All Theirs'),
+		continueOp: t('Continue Operation')
 	};
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
@@ -494,7 +528,7 @@ const CA_SCRIPT = `
 		document.getElementById('caIntents').innerHTML = '<span><b>' + esc(STRINGS.ours) + ':</b> ' + esc(STATE.oursSummary) + '</span><span><b>' + esc(STRINGS.theirs) + ':</b> ' + esc(STATE.theirsSummary) + '</span>';
 		var main = document.getElementById('caMain');
 		if (!STATE.files || STATE.files.length === 0) {
-			main.innerHTML = '<div class="caEmpty">' + esc(STRINGS.noConflicts) + '</div>';
+			main.innerHTML = '<div class="caEmpty"><p>' + esc(STRINGS.noConflicts) + '</p><button type="button" class="caBtn primary" data-cmd="continueOperation">' + esc(STRINGS.continueOp) + '</button></div>';
 			return;
 		}
 		main.innerHTML = STATE.files.map(function (f) {
@@ -515,7 +549,11 @@ const CA_SCRIPT = `
 							'<button type="button" class="caBtn primary" data-cmd="aiSuggest" data-file="' + esc(f.path) + '" data-idx="' + b.index + '">&#10024; ' + esc(STRINGS.aiSuggest) + '</button>' +
 						'</div>' + sgHtml + '</div>';
 				}).join('');
-			return '<section class="caFileCard"><div class="caFileHdr"><span class="caFilePath">' + esc(f.path) + ' (' + f.blocks.length + ')</span><button type="button" class="caBtn" data-cmd="openFile" data-file="' + esc(f.path) + '">' + esc(STRINGS.openEditor) + '</button></div>' + body + '</section>';
+			var bulkBtns = f.blocks.length > 0
+				? '<button type="button" class="caBtn" data-cmd="resolveAll" data-res="ours" data-file="' + esc(f.path) + '">' + esc(STRINGS.acceptAllOurs) + '</button>' +
+					'<button type="button" class="caBtn" data-cmd="resolveAll" data-res="theirs" data-file="' + esc(f.path) + '">' + esc(STRINGS.acceptAllTheirs) + '</button>'
+				: '';
+			return '<section class="caFileCard"><div class="caFileHdr"><span class="caFilePath">' + esc(f.path) + ' (' + f.blocks.length + ')</span><div class="caActions">' + bulkBtns + '<button type="button" class="caBtn" data-cmd="openFile" data-file="' + esc(f.path) + '">' + esc(STRINGS.openEditor) + '</button></div></div>' + body + '</section>';
 		}).join('');
 	}
 	document.getElementById('caRefresh').addEventListener('click', function () { vscode.postMessage({ command: 'refresh' }); });
@@ -524,6 +562,8 @@ const CA_SCRIPT = `
 		if (!btn) return;
 		var cmd = btn.dataset.cmd, file = btn.dataset.file, idx = btn.dataset.idx ? parseInt(btn.dataset.idx, 10) : 0;
 		if (cmd === 'stopAi') { vscode.postMessage({ command: 'stopAi' }); return; }
+		if (cmd === 'continueOperation') { vscode.postMessage({ command: 'continueOperation' }); return; }
+		if (cmd === 'resolveAll') { vscode.postMessage({ command: 'resolveAllInFile', file: file, resolution: btn.dataset.res }); return; }
 		if (cmd === 'openFile' || cmd === 'stageFile') vscode.postMessage({ command: cmd, file: file });
 		else if (cmd === 'resolve') { delete suggestions[keyOf(file, idx)]; vscode.postMessage({ command: 'resolveBlock', file: file, blockIndex: idx, resolution: btn.dataset.res }); }
 		else if (cmd === 'aiSuggest') { suggestions[keyOf(file, idx)] = { loading: true }; render(); vscode.postMessage({ command: 'aiSuggestBlock', file: file, blockIndex: idx }); }

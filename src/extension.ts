@@ -23,8 +23,13 @@ import { VisualFileHistory } from './visualFileHistory';
 import { AiAssistantPanel } from './aiAssistantPanel';
 import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMessage';
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
+import { BranchDashboard } from './branchDashboard';
+import { CompactPanelView } from './compactPanelView';
 import { ConflictAssistant } from './conflictAssistant';
+import { exportChangelogCommand } from './exportShare';
+import { PreCommitAndSplitter } from './preCommitGuard';
 import { checkoutPullRequestCommand, clearHostingTokenCommand, setHostingSecretStorage, setHostingTokenCommand } from './prStatusIntegration';
+import { SubmoduleManager } from './submoduleManager';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
 import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, isInternalHideUnchangedWrite, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
@@ -100,6 +105,10 @@ export async function activate(context: vscode.ExtensionContext) {
 	const reflogExplorer = new ReflogExplorer(dataSource, repoManager, extensionState, logger);
 	const repoInsights = new RepoInsights(dataSource, repoManager, extensionState, logger);
 	const multiRepoOverview = new MultiRepoOverview(dataSource, repoManager, logger);
+	const preCommitAndSplitter = new PreCommitAndSplitter(dataSource, repoManager, extensionState, logger);
+	const compactPanelView = new CompactPanelView(dataSource, repoManager, extensionState, logger, onDidChangeGitState);
+	const submoduleManager = new SubmoduleManager(dataSource, repoManager, extensionState, logger);
+	const branchDashboard = new BranchDashboard(dataSource, repoManager, extensionState, logger);
 
 	const applyDiffViewMode = async (onlyChanges: boolean) => {
 		await setDiffHideUnchangedRegions(onlyChanges);
@@ -114,6 +123,7 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('git-map.setHostingToken', () => setHostingTokenCommand()),
 		vscode.commands.registerCommand('git-map.clearHostingToken', () => clearHostingTokenCommand()),
 		vscode.commands.registerCommand('git-map.checkoutPullRequest', (arg?: unknown) => checkoutPullRequestCommand(dataSource, repoManager, extensionState, arg)),
+		vscode.commands.registerCommand('git-map.exportChangelog', (arg?: unknown) => exportChangelogCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.diff.showChangesOnly', () => applyDiffViewMode(true)),
 		vscode.commands.registerCommand('git-map.diff.showFullFile', () => applyDiffViewMode(false)),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),
@@ -177,6 +187,10 @@ export async function activate(context: vscode.ExtensionContext) {
 		reflogExplorer,
 		repoInsights,
 		multiRepoOverview,
+		preCommitAndSplitter,
+		compactPanelView,
+		submoduleManager,
+		branchDashboard,
 		commandManager,
 		statusBarItem,
 		repoManager,

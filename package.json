@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.3.2",
+	"version": "2.4.0",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -388,12 +388,75 @@
 				"command": "git-map.clearHostingToken",
 				"title": "%command.clearHostingToken.title%",
 				"icon": "$(trash)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.preCommitCheck",
+				"title": "%command.preCommitCheck.title%",
+				"icon": "$(shield)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.aiSmartCommitSplit",
+				"title": "%command.aiSmartCommitSplit.title%",
+				"icon": "$(sparkle)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.explainRegression",
+				"title": "%command.ai.explainRegression.title%",
+				"icon": "$(bug)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.submoduleManager",
+				"title": "%command.submoduleManager.title%",
+				"icon": "$(repo-forked)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.branchDashboard",
+				"title": "%command.branchDashboard.title%",
+				"icon": "$(git-branch)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.exportChangelog",
+				"title": "%command.exportChangelog.title%",
+				"icon": "$(markdown)"
 			}
 		],
 		"configuration": {
 			"type": "object",
 			"title": "Git Map",
 			"properties": {
+				"git-map.workflowMacros": {
+					"type": "array",
+					"default": [],
+					"description": "%config.workflowMacros.description%",
+					"items": {
+						"type": "object",
+						"properties": {
+							"id": {
+								"type": "string"
+							},
+							"name": {
+								"type": "string"
+							},
+							"steps": {
+								"type": "array",
+								"items": {
+									"type": "string"
+								}
+							}
+						},
+						"required": [
+							"id",
+							"name",
+							"steps"
+						]
+					}
+				},
 				"git-map.ai.baseUrl": {
 					"type": "string",
 					"default": "",
@@ -2606,6 +2669,13 @@
 					"title": "%view.lineHistory.containerTitle%",
 					"icon": "resources/line-history.svg"
 				}
+			],
+			"panel": [
+				{
+					"id": "gitMapPanel",
+					"title": "%view.compactGraph.containerTitle%",
+					"icon": "resources/webview-icon.svg"
+				}
 			]
 		},
 		"views": {
@@ -2614,6 +2684,13 @@
 					"type": "webview",
 					"id": "git-map.lineHistory",
 					"name": "%view.lineHistory.name%"
+				}
+			],
+			"gitMapPanel": [
+				{
+					"type": "webview",
+					"id": "git-map.compactGraph",
+					"name": "%view.compactGraph.name%"
 				}
 			]
 		},

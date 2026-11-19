@@ -63,6 +63,10 @@ class Branch {
 		return this.colour;
 	}
 
+	public getStart() {
+		return this.lines.length > 0 ? this.lines[0].p1.y : this.end;
+	}
+
 	public getEnd() {
 		return this.end;
 	}
@@ -422,6 +426,7 @@ class Graph {
 	private readonly gradientStop1: SVGStopElement;
 	private readonly gradientStop2: SVGStopElement;
 	private group: SVGGElement | null = null;
+	private branchGroup: SVGGElement | null = null;
 	private vertexGroup: SVGGElement | null = null;
 	private pathElemsByBranch: SVGElement[][] = [];
 	private vertexElemsByBranch: SVGElement[][] = [];
@@ -531,13 +536,13 @@ class Graph {
 		this.pinnedIndices = pinned;
 		this.highlightedBranch = null;
 		this.svg.classList.remove('branchHighlight');
-		let group = document.createElementNS(SVG_NAMESPACE, 'g'), i, contentWidth = this.getContentWidth();
+		let group = document.createElementNS(SVG_NAMESPACE, 'g'), contentWidth = this.getContentWidth();
 		group.setAttribute('mask', 'url(#GraphMask)');
 
-		this.pathElemsByBranch = this.branches.map(() => []);
-		for (i = 0; i < this.branches.length; i++) {
-			this.branches[i].draw(group, this.config, this.expandedCommitIndex, this.pathElemsByBranch[i]);
-		}
+		const branchGroup = document.createElementNS(SVG_NAMESPACE, 'g');
+		group.appendChild(branchGroup);
+		this.branchGroup = branchGroup;
+		this.renderBranches(visibleRange);
 
 		const vertexGroup = document.createElementNS(SVG_NAMESPACE, 'g');
 		group.appendChild(vertexGroup);
@@ -552,15 +557,57 @@ class Graph {
 		this.closeTooltip();
 	}
 
+	private renderBranches(visibleRange: { start: number, end: number } | null) {
+		if (this.branchGroup === null) return;
+		this.branchGroup.innerHTML = '';
+		this.pathElemsByBranch = this.branches.map(() => []);
+		const start = visibleRange !== null ? Math.max(0, visibleRange.start - 2) : 0;
+		const end = visibleRange !== null ? visibleRange.end + 2 : this.vertices.length;
+		for (let i = 0; i < this.branches.length; i++) {
+			const branch = this.branches[i];
+			if (visibleRange !== null && (branch.getEnd() < start || branch.getStart() > end)) continue;
+			branch.draw(this.branchGroup, this.config, this.expandedCommitIndex, this.pathElemsByBranch[i]);
+		}
+	}
+
 	/**
-	 * Update the vertices rendered when the virtualised window of rows changes on scroll.
+	 * Update the branches & vertices rendered when the virtualised window of rows changes on scroll.
 	 */
 	public updateVisibleVertices(visibleRange: { start: number, end: number } | null, pinned: ReadonlySet<number> | null) {
 		this.visibleRange = visibleRange;
 		this.pinnedIndices = pinned;
 		if (this.vertexGroup === null) return;
 		this.closeTooltip();
+		this.renderBranches(visibleRange);
 		this.renderVertices(visibleRange, pinned);
+	}
+
+	/**
+	 * Serialize the commit graph (up to 120 rows) with commit labels into a clean standalone SVG document.
+	 */
+	public exportStandaloneSvg(commits: ReadonlyArray<GG.GitCommit>): string {
+		const maxRows = Math.min(commits.length, 120);
+		const graphWidth = Math.max(80, Math.round(this.getContentWidth()) + 16);
+		const totalWidth = graphWidth + 680;
+		const rowH = this.config.grid.y;
+		const totalHeight = Math.max(60, Math.round(maxRows * rowH + this.config.grid.offsetY));
+		const bg = getComputedStyle(document.body).backgroundColor || '#1e1e1e';
+		const fg = getComputedStyle(document.body).color || '#d4d4d4';
+		const clone = <SVGElement>this.svg.cloneNode(true);
+		const innerSvg = clone.innerHTML;
+		const labels: string[] = [];
+		for (let i = 0; i < maxRows; i++) {
+			const c = commits[i];
+			const y = Math.round(i * rowH + this.config.grid.offsetY + 4);
+			const refs = c.heads.concat(c.tags.map((tag) => tag.name)).slice(0, 3).map((r) => '[' + r + ']').join(' ');
+			const lineText = (refs !== '' ? refs + ' ' : '') + c.message + ' (' + abbrevCommit(c.hash) + ' · ' + c.author + ')';
+			labels.push('<text x="' + graphWidth + '" y="' + y + '" fill="' + escapeHtml(fg) + '" font-family="system-ui,-apple-system,sans-serif" font-size="12">' + escapeHtml(lineText.substring(0, 110)) + '</text>');
+		}
+		return '<?xml version="1.0" encoding="UTF-8"?>\n' +
+			'<svg xmlns="http://www.w3.org/2000/svg" width="' + totalWidth + '" height="' + totalHeight + '" viewBox="0 0 ' + totalWidth + ' ' + totalHeight + '">' +
+			'<rect width="100%" height="100%" fill="' + escapeHtml(bg) + '"/>' +
+			innerSvg +
+			'<g>' + labels.join('') + '</g></svg>';
 	}
 
 	private renderVertices(visibleRange: { start: number, end: number } | null, pinned: ReadonlySet<number> | null) {

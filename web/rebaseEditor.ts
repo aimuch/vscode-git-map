@@ -331,6 +331,10 @@ class OperationBar {
 		if (bisect === null) return;
 		if (action === 'viewFirstBad') {
 			if (bisect.firstBad !== null) this.view.scrollToCommit(bisect.firstBad, true, true);
+		} else if (action === 'explainFirstBad') {
+			if (bisect.firstBad !== null) {
+				sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainRegression', repo: this.view.currentRepo, commitHash: bisect.firstBad, label: abbrevCommit(bisect.firstBad) });
+			}
 		} else if (action === 'viewLog') {
 			sendMessage({ command: 'viewBisectLog', repo: this.view.currentRepo });
 		} else if (action === 'good' || action === 'bad' || action === 'skip' || action === 'reset') {
@@ -387,7 +391,8 @@ class OperationBar {
 			const commit = this.view.getLoadedCommits().find((commit) => commit.hash === bisect.firstBad);
 			return SVG_ICONS.alert + '<span class="operationBarText"><b>' + t('Found the first bad commit:') + '</b> <span class="bisectHash">' + abbrevCommit(bisect.firstBad) + '</span>' +
 				(typeof commit !== 'undefined' ? ' “' + escapeHtml(commit.message) + '” · ' + escapeHtml(commit.author) : '') + '</span><span class="operationBarSpacer"></span>' +
-				button('viewFirstBad', t('View Commit'), 'primary') + button('reset', t('Stop Bisecting'));
+				button('explainFirstBad', MENU_ICONS.sparkle + t('AI Analyze Root Cause…'), 'primary') +
+				button('viewFirstBad', t('View Commit')) + button('reset', t('Stop Bisecting'));
 		}
 		const status = bisect.bad === null || bisect.good.length === 0
 			? (bisect.bad === null ? t('Mark a bad commit (with the bug) to continue.') : t('Mark a good commit (without the bug) to continue.'))

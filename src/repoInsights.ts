@@ -253,7 +253,7 @@ export class RepoInsights extends Disposable {
 	private async onMessage(raw: unknown) {
 		if (typeof raw !== 'object' || raw === null || this.currentRepo === null || this.panel === null) return;
 		const repo = this.currentRepo;
-		const msg = <{ command?: unknown, days?: unknown, filePath?: unknown }>raw;
+		const msg = <{ command?: unknown, days?: unknown, filePath?: unknown, author?: unknown }>raw;
 		if (msg.command === 'changeRange' && typeof msg.days === 'number') {
 			const seq = this.dataSeq.begin();
 			const data = await this.loadData(repo, msg.days);
@@ -264,6 +264,8 @@ export class RepoInsights extends Disposable {
 			await vscode.commands.executeCommand('git-map.fileTimeMachine', { repo: repo, filePath: msg.filePath });
 		} else if (msg.command === 'openVisualHistory' && typeof msg.filePath === 'string') {
 			await vscode.commands.executeCommand('git-map.visualFileHistory', { repo: repo, filePath: msg.filePath });
+		} else if (msg.command === 'filterAuthorInGitMap' && typeof msg.author === 'string') {
+			await vscode.commands.executeCommand('git-map.viewAuthorInGitMap', repo, msg.author);
 		}
 	}
 }
@@ -288,6 +290,7 @@ function getRepoInsightsHtml(repoName: string, data: RepoInsightsData | null, cs
 		monthly: t('Monthly Commit Trend'),
 		timeMachine: t('Time Machine'),
 		visual: t('Chart'),
+		viewCommits: t('Commits'),
 		soleOwner: t('Primary owner: {0} ({1}%)'),
 		loading: t('Loading ...'),
 		empty: t('No commits in this time range.'),
@@ -378,7 +381,7 @@ const RI_SCRIPT = `
 						'<button type="button" class="riMiniBtn" data-tm="' + esc(f.path) + '">' + esc(STRINGS.timeMachine) + '</button></div>';
 				}).join('')) + '</section>' +
 				'<section class="riCard"><h2>' + esc(STRINGS.authors) + '</h2>' + DATA.contributors.slice(0, 12).map(function (c) {
-					return '<div class="riRow"><span class="riPath">' + esc(c.author) + '</span><b>' + c.commits + '</b><span class="riAdd">+' + c.additions + '</span><span class="riDel">−' + c.deletions + '</span></div>';
+					return '<div class="riRow"><span class="riPath">' + esc(c.author) + '</span><b>' + c.commits + '</b><span class="riAdd">+' + c.additions + '</span><span class="riDel">−' + c.deletions + '</span><button type="button" class="riMiniBtn" data-author="' + esc(c.author) + '">' + esc(STRINGS.viewCommits) + '</button></div>';
 				}).join('') + '</section>' +
 				'<section class="riCard"><h2>' + esc(STRINGS.monthly) + '</h2>' + monthsHtml + '</section>' +
 			'</div>' +
@@ -387,7 +390,7 @@ const RI_SCRIPT = `
 	document.addEventListener('click', function (e) {
 		var t = e.target instanceof Element ? e.target : null;
 		if (!t) return;
-		var rb = t.closest('[data-days]'), tm = t.closest('[data-tm]'), vfh = t.closest('[data-vfh]');
+		var rb = t.closest('[data-days]'), tm = t.closest('[data-tm]'), vfh = t.closest('[data-vfh]'), auth = t.closest('[data-author]');
 		if (rb) {
 			document.querySelectorAll('.riRanges button').forEach(function (b) { b.classList.toggle('active', b === rb); });
 			loading = true;
@@ -398,6 +401,8 @@ const RI_SCRIPT = `
 			vscode.postMessage({ command: 'openTimeMachine', filePath: tm.dataset.tm });
 		} else if (vfh) {
 			vscode.postMessage({ command: 'openVisualHistory', filePath: vfh.dataset.vfh });
+		} else if (auth) {
+			vscode.postMessage({ command: 'filterAuthorInGitMap', author: auth.dataset.author });
 		}
 	});
 	window.addEventListener('message', function (ev) {
