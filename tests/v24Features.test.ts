@@ -6,11 +6,14 @@ import * as vscode from './mocks/vscode';
 jest.mock('vscode', () => vscode, { virtual: true });
 
 import { buildAiRegressionPrompt } from '../src/aiAssistantPanel';
-import { parseBranchLifecycleRows } from '../src/branchDashboard';
+import { detectDefaultBranch, parseBranchLifecycleRows } from '../src/branchDashboard';
+import { applyWholeFileResolutions, parseWholeFileAiResolutions } from '../src/conflictAssistant';
 import { buildChangelogMarkdown } from '../src/exportShare';
 import { highlightCodeLine } from '../src/fileTimeMachine';
 import { GitFeatures } from '../src/gitFeatures';
+import { handleCompanionMessage } from '../src/gitGraphCompanionRouter';
 import { parseCommitSplitPlan, scanDiffForPreCommitIssues } from '../src/preCommitGuard';
+import { getMonthDateRange } from '../src/repoInsights';
 import { parseSubmoduleStatus } from '../src/submoduleManager';
 
 const GIT_ENV = Object.assign({}, process.env, {
@@ -199,6 +202,72 @@ describe('v2.4.0 Features & Improvements', () => {
 			const macroRes = await features.runWorkflowMacro(tmpRepo, 'custom-tag', ['tag v1.0.0']);
 			expect(macroRes.error).toBeNull();
 			expect(gitIn(tmpRepo, 'tag')).toContain('v1.0.0');
+
+			// Companion router openHookFile directly opens single hook
+			const execSpy = jest.spyOn(vscode.commands, 'executeCommand').mockResolvedValue(undefined);
+			const handled = await handleCompanionMessage(
+				{ command: 'openHookFile', repo: tmpRepo },
+				{
+					dataSource: <any>{},
+					gitFeatures: features,
+					undoManager: <any>{},
+					signCommits: false,
+					sendMessage: () => { }
+				}
+			);
+			expect(handled).toBe(true);
+			expect(execSpy).toHaveBeenCalledWith('vscode.open', expect.objectContaining({ fsPath: path.join(tmpRepo, '.husky', 'pre-commit') }));
+			execSpy.mockRestore();
+		});
+	});
+
+	describe('v2.4.1 Closing Polish Helpers', () => {
+		it('Should parse and apply whole-file AI conflict resolutions across multiple blocks', () => {
+			const conflicted = [
+				'header',
+				'<<<<<<< HEAD',
+				'const a = 1;',
+				'=======',
+				'const a = 2;',
+				'>>>>>>> feat',
+				'middle',
+				'<<<<<<< HEAD',
+				'const b = 3;',
+				'=======',
+				'const b = 4;',
+				'>>>>>>> feat',
+				'footer'
+			].join('\n');
+
+			const parsed = parseWholeFileAiResolutions('```json\n["const a = 12;", "const b = 34;"]\n```', 2);
+			expect(parsed).toEqual(['const a = 12;', 'const b = 34;']);
+			expect(parseWholeFileAiResolutions('["only one"]', 2)).toBeNull();
+
+			const merged = applyWholeFileResolutions(conflicted, parsed!);
+			expect(merged).toBe('header\nconst a = 12;\nmiddle\nconst b = 34;\nfooter');
+		});
+
+		it('Should compute exact month date ranges including leap years', () => {
+			expect(getMonthDateRange('2024-02')).toEqual({ after: '2024-02-01', before: '2024-02-29' });
+			expect(getMonthDateRange('2025-02')).toEqual({ after: '2025-02-01', before: '2025-02-28' });
+			expect(getMonthDateRange('2026-11')).toEqual({ after: '2026-11-01', before: '2026-11-30' });
+			expect(getMonthDateRange('2026-13')).toBeNull();
+			expect(getMonthDateRange('invalid')).toBeNull();
+		});
+
+		it('Should detect default branch from origin/HEAD or standard fallbacks', () => {
+			const rows = parseBranchLifecycleRows(
+				[
+					'*\x1frefs/heads\x1ffeat/ui\x1fAlice\x1f1700000000\x1f\x1fui work',
+					' \x1frefs/heads\x1fmain\x1fAlice\x1f1700000000\x1forigin/main\x1finit',
+					' \x1frefs/remotes\x1forigin/main\x1fAlice\x1f1700000000\x1f\x1finit'
+				].join('\n'),
+				new Set(),
+				{},
+				1700000000
+			);
+			expect(detectDefaultBranch(rows, 'origin/main')).toBe('main');
+			expect(detectDefaultBranch(rows, null)).toBe('main');
 		});
 	});
 });

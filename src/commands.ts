@@ -67,6 +67,16 @@ export class CommandManager extends Disposable {
 				GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, authorFilter: author });
 			}
 		});
+		this.registerCommand('git-map.viewDateRangeInGitMap', (repo, after, before) => {
+			if (typeof repo === 'string' && typeof after === 'string' && typeof before === 'string' && after !== '' && before !== '') {
+				GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, dateRange: { after: after, before: before } });
+			}
+		});
+		this.registerCommand('git-map.compareBranchesInGitMap', (repo, left, right) => {
+			if (typeof repo === 'string' && typeof left === 'string' && typeof right === 'string' && left !== '' && right !== '' && left !== right) {
+				GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: repo, compareBranches: { left: left, right: right } });
+			}
+		});
 		this.registerCommand('git-map.toggleLineBlame', () => this.toggleLineBlame());
 
 		this.registerDisposable(

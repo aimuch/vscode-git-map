@@ -1,7 +1,14 @@
 # Change Log
 
+## 2.4.1 - 2026-11-19
+* **Conflict Assistant — AI Merge Whole File**: added **AI Merge File** to generate coordinated resolutions across all conflict blocks in a file at once, with per-block review/editing and 1-click **Apply All AI Suggestions**.
+* **Repository Insights — Clickable Monthly Trend Drill-Down**: click any monthly commit bar to jump directly into Git Map filtered to that month's exact date range (`git-map.viewDateRangeInGitMap`).
+* **Branch Lifecycle Dashboard — Sortable Columns & Compare with Default**: click `Branch`, `Author`, `Age`, or `Status` column headers to sort ascending/descending, and click **Compare** on any branch row to jump straight into Git Map's Branch Comparison against the repository's default branch (`git-map.compareBranchesInGitMap`).
+* **Inline Commit Box — Clickable Git Hooks Badge**: click the `Hooks: N` badge to open the active Git hook script directly in the VS Code editor (or pick from a QuickPick when multiple hooks exist).
+* **Extension Host Modularization**: extracted companion-feature and inline-staging message routing from `src/gitGraphView.ts` into `src/gitGraphCompanionRouter.ts`.
+
 ## 2.4.0 - 2026-11-19
-* **In-Graph Command Palette (`Ctrl/Cmd+K`)**: fuzzy search and jump to branches, commits, companion tools, exports, and workflow macros directly inside Git Map.
+* **In-Graph Command Palette (`Ctrl/Cmd+Shift+K`)**: fuzzy search and jump to branches, commits, companion tools, exports, and workflow macros directly inside Git Map.
 * **AI Pre-Commit Guard & Smart Commit Splitter** (`Git Map: Pre-Commit Guard Check`, `Git Map: AI Smart Commit Splitter...`): automatically scans working-tree diffs for potential secrets/API keys, `console.log`/`debugger` leftovers, and `DO NOT COMMIT`/`FIXME` markers, and groups multi-file changes into atomic Conventional Commits for sequential 1-click committing.
 * **Dockable Compact Git Map Panel View**: live **Compact Commit Graph** view registered in the bottom Panel (movable to any Sidebar) so recent commits, branch state, and quick sync stay visible alongside the editor.
 * **Submodule Manager** (`Git Map: Submodule Manager`) & **Branch Lifecycle Dashboard** (`Git Map: Branch Lifecycle Dashboard`): inspect and update/sync/stage Git submodules, and sort/filter all local & remote branches by age, staleness (`>30d`), merge status, and linked PRs with batch deletion.

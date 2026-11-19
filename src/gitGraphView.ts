@@ -9,13 +9,11 @@ import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
 import { explainCommit, generateCommitMessage, getLanguageModels } from './explainCommit';
 import { ExtensionState } from './extensionState';
 import { buildFileIconTheme, findFileIconTheme, getFileIconThemeExtensionPaths, getLanguageFiles } from './fileIconTheme';
-import { GitFeatures, buildPartialHunkPatch } from './gitFeatures';
+import { GitFeatures } from './gitFeatures';
+import { handleCompanionMessage } from './gitGraphCompanionRouter';
 import { Logger } from './logger';
 import { RepoFileWatcher } from './repoFileWatcher';
 import { RepoManager } from './repoManager';
-import { exportGraphSvgToFile } from './exportShare';
-import { scanRepoWorkingTreeForIssues } from './preCommitGuard';
-import { fetchPullRequestDetails, fetchRepoPullRequestBadges } from './prStatusIntegration';
 import { PanelSyncMachine } from './stateMachines';
 import { UndoManager, getUndoManager } from './undoManager';
 import { ErrorInfo, GitConfigLocation, GitFileStatus, GitGraphViewInitialState, GitPushBranchMode, GitRepoSet, LoadGitGraphViewTo, MergeActionOn, RebaseActionOn, RequestMessage, ResponseMessage, TabIconColourTheme } from './types';
@@ -1096,169 +1094,30 @@ export class GitGraphView extends Disposable {
 				}
 				break;
 			}
-			case 'loadWorkingTreeStatus': {
-				const [wt, meta, preIssues] = await Promise.all([
-					this.gitFeatures.getWorkingTreeStatus(msg.repo),
-					this.gitFeatures.getRepoHooksAndTemplate(msg.repo),
-					scanRepoWorkingTreeForIssues(this.dataSource, msg.repo).catch(() => [])
-				]);
-				this.sendMessage({
-					command: 'loadWorkingTreeStatus',
-					repo: msg.repo,
-					files: wt.files,
-					headMessage: wt.headMessage,
-					hooks: meta.hooks,
-					commitTemplate: meta.commitTemplate,
-					preCommitIssues: preIssues,
-					error: wt.error
-				});
-				break;
-			}
+			case 'loadWorkingTreeStatus':
 			case 'stageFiles':
-				this.sendMessage({ command: 'stageFiles', error: await this.gitFeatures.stageFiles(msg.repo, msg.paths) });
-				break;
 			case 'unstageFiles':
-				this.sendMessage({ command: 'unstageFiles', error: await this.gitFeatures.unstageFiles(msg.repo, msg.paths) });
-				break;
 			case 'discardWorkingChanges':
-				this.sendMessage({ command: 'discardWorkingChanges', error: await this.gitFeatures.discardWorkingChanges(msg.repo, msg.trackedPaths, msg.untrackedPaths) });
-				break;
-			case 'loadFileHunkDiff': {
-				const hunkDiff = await this.gitFeatures.getFileHunkDiff(msg.repo, msg.filePath, msg.staged);
-				this.sendMessage({ command: 'loadFileHunkDiff', filePath: msg.filePath, staged: msg.staged, diff: hunkDiff.diff, error: hunkDiff.error });
-				break;
-			}
-			case 'applyHunkPatch': {
-				let patchToApply: string | null = typeof msg.patch === 'string' ? msg.patch : null;
-				if (msg.partialSelection) {
-					patchToApply = buildPartialHunkPatch(
-						msg.partialSelection.diffHeader,
-						msg.partialSelection.hunkHeaderLine,
-						msg.partialSelection.hunkLines,
-						new Set<number>(msg.partialSelection.selectedIndices),
-						msg.action,
-						msg.filePath
-					);
-				}
-				const err = patchToApply === null
-					? t('No changed lines were selected.')
-					: await this.gitFeatures.applyHunkPatch(msg.repo, patchToApply, msg.action);
-				this.sendMessage({ command: 'applyHunkPatch', filePath: msg.filePath, staged: msg.staged, error: err });
-				break;
-			}
-			case 'commitStagedChanges': {
-				const sign = typeof msg.gpgSign === 'boolean' ? msg.gpgSign : signCommits;
-				this.sendMessage({
-					command: 'commitStagedChanges',
-					error: await this.undoManager.trackHead(
-						msg.repo,
-						msg.amend ? t('Amend Commit') : t('Commit Changes'),
-						() => this.gitFeatures.commitStagedChanges(msg.repo, msg.message, msg.amend, msg.stageAllIfEmpty, sign, { noVerify: !!msg.noVerify, signoff: !!msg.signoff }),
-						(err) => err === null,
-						!msg.amend
-					)
-				});
-				break;
-			}
+			case 'loadFileHunkDiff':
+			case 'applyHunkPatch':
+			case 'commitStagedChanges':
 			case 'moveBranch':
-				this.sendMessage({
-					command: 'moveBranch',
-					error: await this.gitFeatures.moveBranch(msg.repo, msg.branchName, msg.targetHash)
+			case 'loadPullRequestBadges':
+			case 'loadPullRequestDetails':
+			case 'loadCommitExtras':
+			case 'setCommitNote':
+			case 'runWorkflowMacro':
+			case 'exportGraphSvg':
+			case 'openHookFile':
+			case 'openCompanionFeature':
+				await handleCompanionMessage(msg, {
+					dataSource: this.dataSource,
+					gitFeatures: this.gitFeatures,
+					undoManager: this.undoManager,
+					signCommits: signCommits,
+					sendMessage: (response) => this.sendMessage(response)
 				});
 				break;
-			case 'loadPullRequestBadges': {
-				const badges = await fetchRepoPullRequestBadges(this.dataSource, msg.repo, !!msg.force);
-				this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: badges });
-				break;
-			}
-			case 'loadPullRequestDetails': {
-				const details = await fetchPullRequestDetails(this.dataSource, msg.repo, msg.prNumber, msg.branch);
-				this.sendMessage({ command: 'loadPullRequestDetails', branch: msg.branch, prNumber: msg.prNumber, details: details, error: null });
-				break;
-			}
-			case 'loadCommitExtras': {
-				const [note, signatureDetails] = await Promise.all([
-					this.gitFeatures.getCommitNote(msg.repo, msg.commitHash),
-					this.gitFeatures.getCommitSignatureDetails(msg.repo, msg.commitHash)
-				]);
-				this.sendMessage({ command: 'loadCommitExtras', commitHash: msg.commitHash, note: note, signatureDetails: signatureDetails });
-				break;
-			}
-			case 'setCommitNote': {
-				const err = await this.gitFeatures.setCommitNote(msg.repo, msg.commitHash, msg.note);
-				this.sendMessage({ command: 'setCommitNote', commitHash: msg.commitHash, note: msg.note, error: err });
-				break;
-			}
-			case 'runWorkflowMacro': {
-				const custom = getConfig().workflowMacros.find((m) => m.id === msg.macroId);
-				const macroRes = await this.gitFeatures.runWorkflowMacro(msg.repo, msg.macroId, custom ? custom.steps : undefined);
-				if (macroRes.error === null && macroRes.summary !== '') {
-					vscode.window.setStatusBarMessage(macroRes.summary, 4000);
-				}
-				this.sendMessage({ command: 'runWorkflowMacro', macroId: msg.macroId, summary: macroRes.summary, error: macroRes.error });
-				break;
-			}
-			case 'exportGraphSvg': {
-				await exportGraphSvgToFile(msg.repo, msg.svg);
-				break;
-			}
-			case 'openCompanionFeature': {
-				const payload = { repo: msg.repo, mode: msg.mode, commitHash: msg.commitHash, fromRef: msg.fromRef, toRef: msg.toRef, label: msg.label };
-				switch (msg.feature) {
-					case 'aiReview':
-						vscode.commands.executeCommand('git-map.ai.reviewChanges', payload).then(() => { }, () => { });
-						break;
-					case 'aiReleaseNotes':
-						vscode.commands.executeCommand('git-map.ai.generateReleaseNotes', payload).then(() => { }, () => { });
-						break;
-					case 'aiExplainRegression':
-						vscode.commands.executeCommand('git-map.ai.explainRegression', payload).then(() => { }, () => { });
-						break;
-					case 'conflictAssistant':
-						vscode.commands.executeCommand('git-map.conflictAssistant', payload).then(() => { }, () => { });
-						break;
-					case 'reflogExplorer':
-						vscode.commands.executeCommand('git-map.reflogExplorer', payload).then(() => { }, () => { });
-						break;
-					case 'repoInsights':
-						vscode.commands.executeCommand('git-map.repoInsights', payload).then(() => { }, () => { });
-						break;
-					case 'multiRepoOverview':
-						vscode.commands.executeCommand('git-map.multiRepoOverview').then(() => { }, () => { });
-						break;
-					case 'checkoutPullRequest':
-						vscode.commands.executeCommand('git-map.checkoutPullRequest', payload).then(() => { }, () => { });
-						break;
-					case 'preCommitCheck':
-						vscode.commands.executeCommand('git-map.preCommitCheck', payload).then(() => { }, () => { });
-						break;
-					case 'aiSmartCommitSplit':
-						vscode.commands.executeCommand('git-map.aiSmartCommitSplit', payload).then(() => { }, () => { });
-						break;
-					case 'submoduleManager':
-						vscode.commands.executeCommand('git-map.submoduleManager', payload).then(() => { }, () => { });
-						break;
-					case 'branchDashboard':
-						vscode.commands.executeCommand('git-map.branchDashboard', payload).then(() => { }, () => { });
-						break;
-					case 'exportChangelog':
-						vscode.commands.executeCommand('git-map.exportChangelog', payload).then(() => { }, () => { });
-						break;
-					case 'setHostingToken':
-						await vscode.commands.executeCommand('git-map.setHostingToken');
-						if (typeof msg.repo === 'string' && msg.repo !== '') {
-							this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: await fetchRepoPullRequestBadges(this.dataSource, msg.repo, true) });
-						}
-						break;
-					case 'clearHostingToken':
-						await vscode.commands.executeCommand('git-map.clearHostingToken');
-						if (typeof msg.repo === 'string' && msg.repo !== '') {
-							this.sendMessage({ command: 'loadPullRequestBadges', repo: msg.repo, badges: await fetchRepoPullRequestBadges(this.dataSource, msg.repo, true) });
-						}
-						break;
-				}
-				break;
-			}
 		}
 	}
 

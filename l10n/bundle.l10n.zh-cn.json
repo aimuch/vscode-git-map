@@ -1643,5 +1643,12 @@
 	"AI Analyze Root Cause…": "AI 回归根因分析…",
 	"Workflow Macro Failed": "工作流宏执行失败",
 	"AI Analyze Regression": "AI 回归根因分析",
-	"Add / Edit Git Note": "添加 / 编辑 Git 备注"
+	"Add / Edit Git Note": "添加 / 编辑 Git 备注",
+	"Age": "距今",
+	"Status": "状态",
+	"Last Commit": "最近提交",
+	"Could not parse whole-file merge suggestions from the AI response. Try resolving individual blocks.": "无法从 AI 响应中解析整文件合并建议，请尝试逐块解决冲突。",
+	"AI Merge File": "AI 整文件合并",
+	"Apply All AI Suggestions": "应用全部 AI 建议",
+	"Select a Git hook script to open in the editor": "选择要在编辑器中打开的 Git 钩子脚本"
 }

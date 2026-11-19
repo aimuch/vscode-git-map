@@ -804,6 +804,14 @@ class GitGraphView {
 				this.clearCommits();
 				this.requestLoadRepoInfoAndCommits(true, true);
 				return;
+			} else if (this.loadViewTo.dateRange) {
+				const range = this.loadViewTo.dateRange;
+				this.loadViewTo = null;
+				this.findWidget.searchDateRange(range.after, range.before);
+			} else if (this.loadViewTo.compareBranches) {
+				const cmp = this.loadViewTo.compareBranches;
+				this.loadViewTo = null;
+				this.branchCompare.start(cmp.left, cmp.right);
 			}
 		}
 		if (!keepLoadViewTo) this.loadViewTo = null;
@@ -4384,7 +4392,7 @@ class GitGraphView {
 				'</span><button type="button" class="cdvMiniBtn" data-inline-stage="preCheck">' + t('Inspect') + '</button></div>'
 			: '';
 		const hooksHtml = hooks.length > 0
-			? '<span class="cdvHooksBadge" title="' + escapeHtml(hooks.map((h) => h.name).join(', ')) + '">' + t('Hooks: {0}', hooks.length) + '</span>'
+			? '<button type="button" class="cdvHooksBadge" data-inline-stage="openHook" title="' + escapeHtml(hooks.map((h) => h.name).join(', ')) + '">' + t('Hooks: {0}', hooks.length) + '</button>'
 			: '';
 		const convChipsHtml = '<div class="cdvConvChips">' +
 			['feat', 'fix', 'refactor', 'docs', 'chore', 'test'].map((k) => '<button type="button" class="cdvConvChip" data-conv-prefix="' + k + ': ">' + k + '</button>').join('') +
@@ -4486,6 +4494,9 @@ class GitGraphView {
 					break;
 				case 'aiSplit':
 					sendMessage({ command: 'openCompanionFeature', feature: 'aiSmartCommitSplit', repo: this.currentRepo });
+					break;
+				case 'openHook':
+					sendMessage({ command: 'openHookFile', repo: this.currentRepo });
 					break;
 				case 'aiMsg':
 					this.commitExplainer.openCommitMessageModal();

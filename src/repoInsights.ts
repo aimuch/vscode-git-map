@@ -39,6 +39,19 @@ export interface RepoInsightsData {
 	readonly monthlyCommits: ReadonlyArray<{ readonly month: string; readonly count: number }>;
 }
 
+export function getMonthDateRange(yearMonth: string): { readonly after: string; readonly before: string } | null {
+	const match = /^(\d{4})-(\d{2})$/.exec(yearMonth);
+	if (match === null) return null;
+	const year = parseInt(match[1], 10);
+	const month = parseInt(match[2], 10);
+	if (month < 1 || month > 12) return null;
+	const lastDay = new Date(year, month, 0).getDate();
+	return {
+		after: yearMonth + '-01',
+		before: yearMonth + '-' + String(lastDay).padStart(2, '0')
+	};
+}
+
 export function computeRepoInsights(rawLog: string): RepoInsightsData {
 	const fileMap = new Map<string, { commits: number, add: number, del: number, authorCounts: Map<string, number> }>();
 	const authorMap = new Map<string, { email: string, commits: number, add: number, del: number, days: Set<string> }>();
@@ -253,7 +266,7 @@ export class RepoInsights extends Disposable {
 	private async onMessage(raw: unknown) {
 		if (typeof raw !== 'object' || raw === null || this.currentRepo === null || this.panel === null) return;
 		const repo = this.currentRepo;
-		const msg = <{ command?: unknown, days?: unknown, filePath?: unknown, author?: unknown }>raw;
+		const msg = <{ command?: unknown, days?: unknown, filePath?: unknown, author?: unknown, month?: unknown }>raw;
 		if (msg.command === 'changeRange' && typeof msg.days === 'number') {
 			const seq = this.dataSeq.begin();
 			const data = await this.loadData(repo, msg.days);
@@ -266,6 +279,11 @@ export class RepoInsights extends Disposable {
 			await vscode.commands.executeCommand('git-map.visualFileHistory', { repo: repo, filePath: msg.filePath });
 		} else if (msg.command === 'filterAuthorInGitMap' && typeof msg.author === 'string') {
 			await vscode.commands.executeCommand('git-map.viewAuthorInGitMap', repo, msg.author);
+		} else if (msg.command === 'filterMonthInGitMap' && typeof msg.month === 'string') {
+			const range = getMonthDateRange(msg.month);
+			if (range !== null) {
+				await vscode.commands.executeCommand('git-map.viewDateRangeInGitMap', repo, range.after, range.before);
+			}
 		}
 	}
 }
@@ -333,7 +351,8 @@ button{font:inherit;color:inherit}
 .riHeat{display:grid;grid-template-columns:32px repeat(24,1fr);gap:3px;align-items:center;font-size:10.5px}
 .riCell{height:14px;border-radius:2px;background:rgba(128,128,128,.12)}
 .riMonths{display:flex;align-items:flex-end;gap:8px;height:110px;padding-top:12px}
-.riMonthCol{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--vscode-descriptionForeground)}
+.riMonthCol{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--vscode-descriptionForeground);border:0;background:transparent;padding:2px 0;border-radius:4px;cursor:pointer}
+.riMonthCol:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.16));color:var(--vscode-foreground)}
 .riMonthBar{width:100%;max-width:34px;border-radius:4px 4px 0 0;background:var(--vscode-button-background,#0e7afe)}
 `;
 
@@ -363,7 +382,7 @@ const RI_SCRIPT = `
 		DATA.monthlyCommits.forEach(function (m) { if (m.count > maxMonth) maxMonth = m.count; });
 		var monthsHtml = '<div class="riMonths">' + DATA.monthlyCommits.map(function (m) {
 			var h = Math.max(4, Math.round((m.count / maxMonth) * 76));
-			return '<div class="riMonthCol"><span>' + m.count + '</span><div class="riMonthBar" style="height:' + h + 'px"></div><span>' + esc(m.month.substring(5)) + '</span></div>';
+			return '<button type="button" class="riMonthCol" data-month="' + esc(m.month) + '" title="' + esc(m.month + ': ' + m.count) + '"><span>' + m.count + '</span><div class="riMonthBar" style="height:' + h + 'px"></div><span>' + esc(m.month.substring(5)) + '</span></button>';
 		}).join('') + '</div>';
 
 		main.innerHTML = '<div class="riKpis">' +
@@ -390,7 +409,7 @@ const RI_SCRIPT = `
 	document.addEventListener('click', function (e) {
 		var t = e.target instanceof Element ? e.target : null;
 		if (!t) return;
-		var rb = t.closest('[data-days]'), tm = t.closest('[data-tm]'), vfh = t.closest('[data-vfh]'), auth = t.closest('[data-author]');
+		var rb = t.closest('[data-days]'), tm = t.closest('[data-tm]'), vfh = t.closest('[data-vfh]'), auth = t.closest('[data-author]'), mon = t.closest('[data-month]');
 		if (rb) {
 			document.querySelectorAll('.riRanges button').forEach(function (b) { b.classList.toggle('active', b === rb); });
 			loading = true;
@@ -403,6 +422,8 @@ const RI_SCRIPT = `
 			vscode.postMessage({ command: 'openVisualHistory', filePath: vfh.dataset.vfh });
 		} else if (auth) {
 			vscode.postMessage({ command: 'filterAuthorInGitMap', author: auth.dataset.author });
+		} else if (mon) {
+			vscode.postMessage({ command: 'filterMonthInGitMap', month: mon.dataset.month });
 		}
 	});
 	window.addEventListener('message', function (ev) {

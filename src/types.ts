@@ -619,7 +619,9 @@ export type LoadGitGraphViewTo = {
 	readonly runCommandOnLoad?: 'fetch' | 'cleanUpBranches',
 	readonly fileHistory?: string | null, // The path of a file whose history is shown (NULL => all commits are shown)
 	readonly lineRange?: GitLineRange | null, // The lines of the file whose history is shown (NULL => the whole file)
-	readonly authorFilter?: string | null // Optional author filter (e.g. jumped from Repository Insights)
+	readonly authorFilter?: string | null, // Optional author filter (e.g. jumped from Repository Insights)
+	readonly dateRange?: { readonly after: string, readonly before: string } | null, // Optional date range filter (e.g. jumped from Repository Insights monthly bar)
+	readonly compareBranches?: { readonly left: string, readonly right: string } | null // Optional branch comparison (e.g. jumped from Branch Lifecycle Dashboard)
 } | null;
 
 export interface MuteCommitsConfig {
@@ -2290,6 +2292,11 @@ export interface RequestExportGraphSvg extends RepoRequest {
 	readonly svg: string;
 }
 
+export interface RequestOpenHookFile extends RepoRequest {
+	readonly command: 'openHookFile';
+	readonly hookPath?: string;
+}
+
 export interface RequestOpenCompanionFeature extends BaseMessage {
 	readonly command: 'openCompanionFeature';
 	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'aiExplainRegression' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken' | 'preCommitCheck' | 'aiSmartCommitSplit' | 'submoduleManager' | 'branchDashboard' | 'exportChangelog';
@@ -2425,6 +2432,7 @@ export type RequestMessage =
 	| RequestSetCommitNote
 	| RequestRunWorkflowMacro
 	| RequestExportGraphSvg
+	| RequestOpenHookFile
 	| RequestOpenCompanionFeature;
 
 export type ResponseMessage =
