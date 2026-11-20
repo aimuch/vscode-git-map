@@ -571,6 +571,16 @@
 			const readmeIcon = Array.from(document.querySelectorAll('#cdvFileView .fileTypeIcon')).find((elem) => elem.textContent === 'M');
 			assert(getComputedStyle(readmeIcon).color === 'rgb(18, 52, 86)', 'The colour of the icon isn\'t from the theme: ' + getComputedStyle(readmeIcon).color);
 
+			// Clicking a changed file highlights the row as the last viewed file and preserves it across view switches
+			const firstFileRow = document.querySelector('#cdvFileView .fileTreeFileRecord');
+			mouse(firstFileRow.querySelector('.fileTreeFile'), 'click');
+			assert(firstFileRow.classList.contains('lastViewed') && firstFileRow.querySelector('#cdvLastFileViewed') !== null, 'Clicked changed file was not highlighted as lastViewed');
+			mouse(document.getElementById('cdvFileViewTypeList'), 'click');
+			const highlightedInList = document.querySelectorAll('#cdvFileView .fileTreeFileRecord.lastViewed');
+			assert(highlightedInList.length === 1 && highlightedInList[0].querySelector('#cdvLastFileViewed') !== null, 'lastViewed highlight was not preserved when switching to List view');
+			mouse(document.getElementById('cdvFileViewTypeTree'), 'click');
+			assert(document.querySelectorAll('#cdvFileView .fileTreeFileRecord.lastViewed').length === 1, 'lastViewed highlight was not preserved when switching back to Tree view');
+
 			mouse(document.querySelector('.cdvTab[data-tab="message"]'), 'click');
 			const messageView = document.getElementById('cdvMessageView');
 			assert(!messageView.classList.contains('hidden') && document.getElementById('cdvFileView').classList.contains('hidden') && messageView.textContent.includes('Commit:'), 'The Commit Message tab wasn\'t shown');

@@ -1,5 +1,8 @@
 # Change Log
 
+## 2.4.2 - 2026-11-20
+* **Changed Files — Last Viewed File Highlight**: clicking a file in the Commit Details View ("Changed Files") or Branch Comparison panel now highlights the entire row with a theme-accent left border, tinted background, bold filename, and highlighted eye indicator, and synchronously persists both the highlight and scroll position so returning from the Diff Editor immediately locates the file you just viewed.
+
 ## 2.4.1 - 2026-11-19
 * **Conflict Assistant — AI Merge Whole File**: added **AI Merge File** to generate coordinated resolutions across all conflict blocks in a file at once, with per-block review/editing and 1-click **Apply All AI Suggestions**.
 * **Repository Insights — Clickable Monthly Trend Drill-Down**: click any monthly commit bar to jump directly into Git Map filtered to that month's exact date range (`git-map.viewDateRangeInGitMap`).

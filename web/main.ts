@@ -1209,9 +1209,15 @@ class GitGraphView {
 		if (this.saveStatePending) return;
 		this.saveStatePending = true;
 		Promise.resolve().then(() => {
+			if (!this.saveStatePending) return;
 			this.saveStatePending = false;
 			this.writeState();
 		});
+	}
+
+	public saveStateNow() {
+		this.saveStatePending = false;
+		this.writeState();
 	}
 
 	/**
@@ -2889,7 +2895,7 @@ class GitGraphView {
 		}
 		expandedCommit.avatar = avatar;
 		expandedCommit.codeReview = codeReview;
-		if (!refresh) {
+		if (!refresh && (lastViewedFile !== null || expandedCommit.lastViewedFile === null)) {
 			expandedCommit.lastViewedFile = lastViewedFile;
 		}
 		expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
@@ -2987,7 +2993,7 @@ class GitGraphView {
 			GitGraphView.closeCdvContextMenuIfOpen(expandedCommit);
 		}
 		expandedCommit.codeReview = codeReview;
-		if (!refresh) {
+		if (!refresh && (lastViewedFile !== null || expandedCommit.lastViewedFile === null)) {
 			expandedCommit.lastViewedFile = lastViewedFile;
 		}
 		expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);

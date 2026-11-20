@@ -23,6 +23,7 @@ class BranchCompare {
 	private mode: 'left' | 'right' | 'both' = 'both';
 	private panelOpen: boolean = false;
 	private fromMergeBase: boolean = true; // Are the changes since the merge base (A...B) shown, otherwise between the latest commits (A..B)
+	private lastViewedFile: string | null = null;
 	private readonly sides: Map<string, 'left' | 'right' | 'base'> = new Map();
 
 	/**
@@ -95,6 +96,7 @@ class BranchCompare {
 		this.comparison = null;
 		this.fileChanges = [];
 		this.mode = 'both';
+		this.lastViewedFile = null;
 		this.sides.clear();
 		this.view.setCompareFilter(null);
 		this.view.setShownBranches([this.getDropdownValue(left), this.getDropdownValue(right)]);
@@ -141,6 +143,7 @@ class BranchCompare {
 		this.machine.send({ type: 'RESET' });
 		this.left = this.right = this.comparison = null;
 		this.fileChanges = [];
+		this.lastViewedFile = null;
 		this.sides.clear();
 		this.setPanelOpen(false);
 		this.render();
@@ -154,6 +157,7 @@ class BranchCompare {
 	public reset() {
 		this.machine.send({ type: 'RESET' });
 		this.left = this.right = this.comparison = null;
+		this.lastViewedFile = null;
 		this.sides.clear();
 		this.setPanelOpen(false);
 		this.render();
@@ -169,16 +173,16 @@ class BranchCompare {
 	/**
 	 * Get the serialisable state of the comparison, or NULL if no comparison is active.
 	 */
-	public getState(): { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null {
+	public getState(): { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean, lastViewedFile: string | null } | null {
 		const cur = this.machine.state;
 		if (cur.status === 'inactive' || this.left === null || this.right === null) return null;
-		return { left: this.left, right: this.right, previousBranches: cur.previousBranches, mode: this.mode, fromMergeBase: this.fromMergeBase };
+		return { left: this.left, right: this.right, previousBranches: cur.previousBranches, mode: this.mode, fromMergeBase: this.fromMergeBase, lastViewedFile: this.lastViewedFile };
 	}
 
 	/**
 	 * Restore a previously active branch comparison.
 	 */
-	public restoreState(state: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null | undefined) {
+	public restoreState(state: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean, lastViewedFile?: string | null } | null | undefined) {
 		if (!state || typeof state.left !== 'string' || typeof state.right !== 'string') return;
 		this.machine.send({ type: 'RESET' });
 		this.machine.send({ type: 'START', previousBranches: state.previousBranches });
@@ -186,6 +190,7 @@ class BranchCompare {
 		this.right = state.right;
 		this.mode = state.mode || 'both';
 		this.fromMergeBase = typeof state.fromMergeBase === 'boolean' ? state.fromMergeBase : true;
+		this.lastViewedFile = typeof state.lastViewedFile === 'string' ? state.lastViewedFile : null;
 		this.comparison = null;
 		this.fileChanges = [];
 		this.sides.clear();
@@ -336,7 +341,7 @@ class BranchCompare {
 			(comparison.mergeBase !== null ? '<label class="compareFromBase"><input type="checkbox" data-panel="fromMergeBase"' + (this.fromMergeBase ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Compare from the merge base (A...B)') + '</label>' : '') +
 			'<div class="comparePanelFiles">' + (this.fileChanges.length > 0 ? this.fileChanges.map((file, index) => {
 			const slash = file.newFilePath.lastIndexOf('/');
-			return '<button type="button" class="comparePanelFile" data-index="' + index + '" title="' + escapeHtml(file.newFilePath) + '"><span class="comparePanelStatus status' + file.type + '">' + file.type + '</span>' +
+			return '<button type="button" class="comparePanelFile' + (file.newFilePath === this.lastViewedFile ? ' ' + CLASS_LAST_VIEWED_FILE : '') + '" data-index="' + index + '" title="' + escapeHtml(file.newFilePath) + '"><span class="comparePanelStatus status' + file.type + '">' + file.type + '</span>' +
 					'<span class="comparePanelFileName">' + escapeHtml(file.newFilePath.substring(slash + 1)) + ' <span>' + escapeHtml(file.type === GG.GitFileStatus.Renamed ? t('{0} (from {1})', file.newFilePath.substring(0, slash + 1), file.oldFilePath) : file.newFilePath.substring(0, slash + 1)) + '</span></span>' +
 					(file.additions !== null && file.deletions !== null ? '<span class="comparePanelStats"><span class="fileTreeFileAdd">+' + file.additions + '</span> <span class="fileTreeFileDel">−' + file.deletions + '</span></span>' : '') + '</button>';
 		}).join('') : '<div class="comparePanelEmpty">' + t('No files are changed.') + '</div>') + '</div>' +
@@ -356,6 +361,13 @@ class BranchCompare {
 		if (fileElem !== null) {
 			const file = this.fileChanges[parseInt(fileElem.dataset.index!)];
 			if (typeof file === 'undefined') return;
+			this.lastViewedFile = file.newFilePath;
+			const panel = document.getElementById('comparePanel');
+			if (panel !== null) {
+				alterClassOfCollection(<HTMLCollectionOf<HTMLElement>>panel.getElementsByClassName(CLASS_LAST_VIEWED_FILE), CLASS_LAST_VIEWED_FILE, false);
+			}
+			fileElem.classList.add(CLASS_LAST_VIEWED_FILE);
+			this.view.saveStateNow();
 			sendMessage({ command: 'viewDiff', repo: this.view.currentRepo, fromHash: fromHash, toHash: comparison.leftHash, oldFilePath: file.oldFilePath, newFilePath: file.newFilePath, type: file.type });
 		} else if (actionElem !== null) {
 			switch (actionElem.dataset.panel) {

@@ -4273,3 +4273,7 @@ tr.commit.dragDropTarget > td{
 .cdvPreCommitBanner.high{border-color:rgba(248,81,73,.55);background:rgba(248,81,73,.14)}
 .cdvNoteBox{margin:6px 0;padding:6px 8px;border-radius:5px;border-left:3px solid var(--vscode-focusBorder,#0e7afe);background:rgba(128,128,128,.1);font-size:12px;white-space:pre-wrap}
 .cdvSigMeta{font-size:11px;color:var(--vscode-descriptionForeground);margin:2px 0 6px;font-family:var(--vscode-editor-font-family)}
+.fileTreeFileRecord.lastViewed, .comparePanelFile.lastViewed{background-color:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 34%,var(--vscode-list-inactiveSelectionBackground,rgba(128,128,128,.22)));box-shadow:inset 3px 0 0 var(--vscode-list-highlightForeground,var(--vscode-focusBorder,#3794ff))}
+.fileTreeFileRecord.lastViewed:hover, .fileTreeFileRecord.lastViewed.contextMenuActive, .fileTreeFileRecord.lastViewed.dialogActive, .comparePanelFile.lastViewed:hover{background-color:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 46%,var(--vscode-list-hoverBackground,rgba(128,128,128,.26)))}
+.fileTreeFileRecord.lastViewed .gitFileName, .comparePanelFile.lastViewed .comparePanelFileName{font-weight:600;color:var(--vscode-list-highlightForeground,var(--vscode-foreground))}
+#cdvLastFileViewed svg, .fileTreeFileRecord:hover #cdvLastFileViewed svg{fill:var(--vscode-list-highlightForeground,var(--vscode-focusBorder,#3794ff));fill-opacity:1}

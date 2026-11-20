@@ -194,6 +194,7 @@ const CLASS_DISABLED = 'disabled';
 const CLASS_ENABLED = 'enabled';
 const CLASS_FETCH_SUPPORTED = 'fetchSupported';
 const CLASS_FOCUSSED = 'focussed';
+const CLASS_LAST_VIEWED_FILE = 'lastViewed';
 const CLASS_LOADING = 'loading';
 const CLASS_PENDING_REVIEW = 'pendingReview';
 const CLASS_REFRESHING = 'refreshing';

@@ -72,7 +72,7 @@ declare global {
 		readonly scrollTop: number;
 		readonly findWidget: FindWidgetState;
 		readonly settingsWidget: SettingsWidgetState;
-		readonly branchCompare?: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean } | null;
+		readonly branchCompare?: { left: string, right: string, previousBranches: string[] | null, mode: 'left' | 'right' | 'both', fromMergeBase: boolean, lastViewedFile?: string | null } | null;
 	}
 
 

@@ -26,6 +26,8 @@ class CdvFileView {
 
 		if (fileWasViewed) {
 			expandedCommit.lastViewedFile = filePath;
+			alterClassOfCollection(<HTMLCollectionOf<HTMLElement>>filesElem.getElementsByClassName(CLASS_LAST_VIEWED_FILE), CLASS_LAST_VIEWED_FILE, false);
+			fileElem.classList.add(CLASS_LAST_VIEWED_FILE);
 			let lastViewedElem = document.getElementById('cdvLastFileViewed');
 			if (lastViewedElem !== null) lastViewedElem.remove();
 			lastViewedElem = document.createElement('span');
@@ -33,6 +35,10 @@ class CdvFileView {
 			lastViewedElem.title = t('Last File Viewed');
 			lastViewedElem.innerHTML = SVG_ICONS.eyeOpen;
 			insertBeforeFirstChildWithClass(lastViewedElem, fileElem, 'fileTreeFileAction');
+			const scrollElem = document.getElementById('cdvFiles') || document.getElementById('cdvContent');
+			if (scrollElem !== null) {
+				expandedCommit.scrollTop.fileView = scrollElem.scrollTop;
+			}
 		}
 
 		if (expandedCommit.codeReview !== null) {
@@ -61,7 +67,11 @@ class CdvFileView {
 			}
 		}
 
-		this.view.saveState();
+		if (fileWasViewed) {
+			this.view.saveStateNow();
+		} else {
+			this.view.saveState();
+		}
 	}
 
 	public getFileViewType() {
