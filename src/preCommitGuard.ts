@@ -1,16 +1,18 @@
 import * as vscode from 'vscode';
-import { setApiKey } from './aiProviders';
+import { escapeCompanionHtml, resolveTargetRepo, selectAiModelWithConsent } from './companionPanelBase';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
-import { getLanguageModels, runCustomAiPrompt, wrapUntrustedBlock } from './explainCommit';
+import { runCustomAiPrompt, wrapUntrustedBlock } from './explainCommit';
 import { ExtensionState } from './extensionState';
 import { GitFeatures } from './gitFeatures';
 import { runGit } from './historyRewrite';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
+import { AsyncRequestSequencer } from './stateMachines';
 import { PreCommitIssue } from './types';
-import { getNonce, getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
+import { getUndoManager } from './undoManager';
+import { getNonce, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
 export interface CommitSplitGroup {
@@ -150,6 +152,8 @@ export class PreCommitAndSplitter extends Disposable {
 	private readonly extensionState: ExtensionState;
 	private readonly logger: Logger;
 	private readonly gitFeatures: GitFeatures;
+	private readonly splitSeq: AsyncRequestSequencer = new AsyncRequestSequencer();
+	private activeAiCancellation: vscode.CancellationTokenSource | null = null;
 	private panel: vscode.WebviewPanel | null = null;
 	private currentRepo: string | null = null;
 
@@ -166,6 +170,8 @@ export class PreCommitAndSplitter extends Disposable {
 			vscode.commands.registerCommand('git-map.aiSmartCommitSplit', (arg?: unknown) => this.runSmartSplitCommand(arg)),
 			{
 				dispose: () => {
+					this.splitSeq.cancel();
+					this.cancelActiveAi();
 					if (this.panel !== null) this.panel.dispose();
 					if (PreCommitAndSplitter.instance === this) PreCommitAndSplitter.instance = null;
 				}
@@ -173,25 +179,20 @@ export class PreCommitAndSplitter extends Disposable {
 		);
 	}
 
+	private cancelActiveAi() {
+		if (this.activeAiCancellation !== null) {
+			this.activeAiCancellation.cancel();
+			this.activeAiCancellation.dispose();
+			this.activeAiCancellation = null;
+		}
+	}
+
 	public static getInstance() {
 		return PreCommitAndSplitter.instance;
 	}
 
-	private resolveRepo(arg?: any): string | null {
-		let repo: string | null = typeof arg === 'object' && arg !== null && typeof arg.repo === 'string' ? arg.repo : null;
-		if (repo === null && vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
-			repo = this.repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
-		}
-		if (repo === null) {
-			const last = this.extensionState.getLastActiveRepo();
-			const repos = this.repoManager.getRepos();
-			repo = last !== null && typeof repos[last] !== 'undefined' ? last : (Object.keys(repos)[0] || null);
-		}
-		return repo;
-	}
-
 	public async runPreCommitCheckCommand(arg?: any) {
-		const repo = this.resolveRepo(arg);
+		const repo = resolveTargetRepo(this.repoManager, this.extensionState, arg);
 		if (repo === null) {
 			showErrorMessage(t('No Git repositories were found in the current workspace.'));
 			return;
@@ -226,7 +227,7 @@ export class PreCommitAndSplitter extends Disposable {
 	}
 
 	public async runSmartSplitCommand(arg?: any) {
-		const repo = this.resolveRepo(arg);
+		const repo = resolveTargetRepo(this.repoManager, this.extensionState, arg);
 		if (repo === null) {
 			showErrorMessage(t('No Git repositories were found in the current workspace.'));
 			return;
@@ -238,43 +239,12 @@ export class PreCommitAndSplitter extends Disposable {
 			return;
 		}
 
-		let modelsResult = await getLanguageModels();
-		if (modelsResult.needsApiKey) {
-			const setKeyLabel = t('Set API Key...');
-			const choice = await vscode.window.showErrorMessage(modelsResult.error || t('Set an API key first.'), setKeyLabel);
-			if (choice !== setKeyLabel || !(await setApiKey())) return;
-			modelsResult = await getLanguageModels();
-		}
-		if (modelsResult.error !== null || modelsResult.models.length === 0) {
-			showErrorMessage(modelsResult.error || t('No language model is available.'));
-			return;
-		}
-		const globalViewState = this.extensionState.getGlobalViewState();
-		const selected = modelsResult.models.find((m) => m.id === globalViewState.explainCommitModel) || modelsResult.models[0];
-		const consentTarget = selected.endpoint !== null ? 'direct:' + selected.vendor + ':' + selected.endpoint : 'vscode:' + selected.vendor;
-		const targetLabel = selected.endpoint !== null ? selected.vendor + ' · ' + selected.endpoint : selected.vendor;
-		if (!(globalViewState.explainCommitAccepted === true && globalViewState.explainCommitAcceptedTarget === consentTarget)) {
-			if (typeof vscode.window.showQuickPick === 'function') {
-				const picked = await vscode.window.showQuickPick(
-					[
-						{ label: t('Continue Once'), remember: false },
-						{ label: t('Always Allow for {0}', targetLabel), remember: true }
-					],
-					{
-						title: t('Git Map: AI Smart Commit Splitter'),
-						placeHolder: t('Send working-tree diff from "{0}" to {1} ({2})?', getRepoName(repo), selected.name, targetLabel),
-						ignoreFocusOut: true
-					}
-				);
-				if (typeof picked === 'undefined') return;
-				if (picked.remember) {
-					await this.extensionState.setGlobalViewState(Object.assign({}, globalViewState, {
-						explainCommitAccepted: true,
-						explainCommitAcceptedTarget: consentTarget
-					}));
-				}
-			}
-		}
+		const selected = await selectAiModelWithConsent(
+			this.extensionState,
+			repo,
+			t('Git Map: AI Smart Commit Splitter')
+		);
+		if (selected === null) return;
 
 		this.currentRepo = repo;
 		const title = t('AI Smart Commit Splitter: {0}', getRepoName(repo));
@@ -291,6 +261,8 @@ export class PreCommitAndSplitter extends Disposable {
 				msgSub.dispose();
 				dispSub.dispose();
 				if (this.panel === created) {
+					this.splitSeq.cancel();
+					this.cancelActiveAi();
 					this.panel = null;
 					this.currentRepo = null;
 				}
@@ -301,7 +273,10 @@ export class PreCommitAndSplitter extends Disposable {
 		}
 
 		this.panel.webview.html = getSplitterHtml(getRepoName(repo), this.panel.webview.cspSource);
+		const seq = this.splitSeq.begin();
 		const diffData = await this.gitFeatures.getChangesForCommitMessage(repo);
+		if (!this.splitSeq.isCurrent(seq) || this.panel === null || this.currentRepo !== repo) return;
+
 		const lang = getLanguage();
 		const prompt = [
 			'You are an expert Git workflow engineer. Group the changed files below into logical, atomic Conventional Commits.',
@@ -312,12 +287,13 @@ export class PreCommitAndSplitter extends Disposable {
 			wrapUntrustedBlock('DIFF_SUMMARY', diffData.text)
 		].join('\n');
 
-		const cts = new vscode.CancellationTokenSource();
+		this.cancelActiveAi();
+		const cts = this.activeAiCancellation = new vscode.CancellationTokenSource();
 		try {
 			const res = await runCustomAiPrompt(prompt, selected.id, () => { }, cts.token);
-			if (this.panel === null || this.currentRepo !== repo) return;
+			if (!this.splitSeq.complete(seq) || cts.token.isCancellationRequested || this.panel === null || this.currentRepo !== repo) return;
 			if (res.error !== null) {
-				this.panel.webview.postMessage({ command: 'splitError', error: res.error });
+				this.panel.webview.postMessage({ command: 'splitError', error: res.error, committedCount: 0 });
 				return;
 			}
 			const groups = parseCommitSplitPlan(res.text, filePaths);
@@ -332,6 +308,7 @@ export class PreCommitAndSplitter extends Disposable {
 			this.logger.log('Generated AI Smart Commit Split plan with ' + groups.length + ' groups for ' + repo);
 		} finally {
 			cts.dispose();
+			if (this.activeAiCancellation === cts) this.activeAiCancellation = null;
 		}
 	}
 
@@ -341,7 +318,14 @@ export class PreCommitAndSplitter extends Disposable {
 		const msg = <{ command?: unknown, groups?: unknown }>raw;
 		if (msg.command === 'executePlan' && Array.isArray(msg.groups)) {
 			const sign = getConfig().signCommits;
+			const undoManager = getUndoManager(this.dataSource);
 			let committed = 0;
+			const fail = (err: string) => {
+				showErrorMessage(err);
+				if (this.panel !== null && this.currentRepo === repo) {
+					this.panel.webview.postMessage({ command: 'splitError', error: err, committedCount: committed });
+				}
+			};
 			for (const g of msg.groups) {
 				if (!g || typeof g !== 'object') continue;
 				const rec = <{ message?: unknown, files?: unknown }>g;
@@ -350,29 +334,33 @@ export class PreCommitAndSplitter extends Disposable {
 				if (message === '' || files.length === 0) continue;
 				const unstageErr = await this.gitFeatures.unstageFiles(repo, null);
 				if (unstageErr !== null) {
-					showErrorMessage(unstageErr);
+					fail(unstageErr);
 					return;
 				}
 				const stageErr = await this.gitFeatures.stageFiles(repo, files);
 				if (stageErr !== null) {
-					showErrorMessage(stageErr);
+					fail(stageErr);
 					return;
 				}
-				const commitErr = await this.gitFeatures.commitStagedChanges(repo, message, false, false, sign);
+				const commitErr = await undoManager.trackHead(
+					repo,
+					t('Commit Changes'),
+					() => this.gitFeatures.commitStagedChanges(repo, message, false, false, sign),
+					(err) => err === null,
+					true
+				);
 				if (commitErr !== null) {
-					showErrorMessage(commitErr);
+					fail(commitErr);
 					return;
 				}
 				committed++;
 			}
 			showInformationMessage(t('Created {0} atomic commits in "{1}".', String(committed), getRepoName(repo)));
-			if (this.panel !== null) this.panel.webview.postMessage({ command: 'splitDone', count: committed });
+			if (this.panel !== null && this.currentRepo === repo) {
+				this.panel.webview.postMessage({ command: 'splitDone', count: committed });
+			}
 		}
 	}
-}
-
-function escP(text: string) {
-	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 function getSplitterHtml(repoName: string, cspSource: string) {
@@ -382,23 +370,27 @@ function getSplitterHtml(repoName: string, cspSource: string) {
 		title: t('AI Smart Commit Splitter'),
 		loading: t('Analyzing changes and grouping atomic commits…'),
 		execute: t('Create All Commits Sequentially'),
+		retryRemaining: t('Retry Remaining Commits'),
 		done: t('All planned commits have been created!'),
+		commitHeading: t('Commit #{0}'),
+		committedBadge: t('Committed'),
 		messageLabel: t('Commit Message')
 	};
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
 		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' +
 		'*{box-sizing:border-box}body{margin:0;padding:16px 20px;font-family:var(--vscode-font-family);font-size:13px;color:var(--vscode-foreground);background:var(--vscode-editor-background)}' +
-		'h1{margin:0 0 12px;font-size:15px}.scCard{border:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));border-radius:8px;padding:12px 14px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px}' +
+		'h1{margin:0 0 12px;font-size:15px}.scCard{border:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));border-radius:8px;padding:12px 14px;margin-bottom:12px;display:flex;flex-direction:column;gap:8px}.scCard.done{opacity:.65}' +
 		'.scInput{width:100%;padding:6px 8px;border-radius:4px;border:1px solid var(--vscode-input-border,rgba(128,128,128,.4));background:var(--vscode-input-background);color:inherit;font:inherit}' +
 		'.scFiles{font-family:var(--vscode-editor-font-family);font-size:12px;display:flex;flex-wrap:wrap;gap:6px}.scFile{padding:2px 7px;border-radius:4px;background:rgba(128,128,128,.16)}' +
-		'.scBtn{height:28px;padding:0 14px;border:0;border-radius:6px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600;cursor:pointer}' +
+		'.scBtn{height:28px;padding:0 14px;border:0;border-radius:6px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600;cursor:pointer}.scBtn:disabled{opacity:.55;cursor:wait}' +
+		'.scErr{margin:0 0 12px;padding:8px 12px;border-radius:6px;border:1px solid color-mix(in srgb,var(--vscode-errorForeground,#cf222e) 50%,transparent);background:color-mix(in srgb,var(--vscode-errorForeground,#cf222e) 14%,transparent);color:var(--vscode-errorForeground,#cf222e)}' +
 		'.scMuted{color:var(--vscode-descriptionForeground);font-size:12px}</style></head><body data-sm-status="loading">' +
-		'<h1>' + escP(strings.title) + ' — ' + escP(repoName) + '</h1><div id="scBody"><p class="scMuted">' + escP(strings.loading) + '</p></div>' +
+		'<h1>' + escapeCompanionHtml(strings.title) + ' — ' + escapeCompanionHtml(repoName) + '</h1><div id="scBody"><p class="scMuted">' + escapeCompanionHtml(strings.loading) + '</p></div>' +
 		'<script nonce="' + nonce + '">var STRINGS=' + JSON.stringify(strings).replace(/</g, '\\u003c') + ';' +
-		'(function(){var vscode=acquireVsCodeApi(),GROUPS=[];function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}' +
-		'function render(){var el=document.getElementById("scBody");el.innerHTML=GROUPS.map(function(g,i){return "<div class=\\"scCard\\"><label class=\\"scMuted\\">Commit #"+(i+1)+"</label><input class=\\"scInput\\" data-msg-idx=\\""+i+"\\" value=\\""+esc(g.message)+"\\">"+(g.rationale?"<div class=\\"scMuted\\">"+esc(g.rationale)+"</div>":"")+"<div class=\\"scFiles\\">"+g.files.map(function(f){return "<span class=\\"scFile\\">"+esc(f)+"</span>";}).join("")+"</div></div>";}).join("")+"<button type=\\"button\\" id=\\"scRun\\" class=\\"scBtn\\">"+esc(STRINGS.execute)+"</button>";' +
-		'var run=document.getElementById("scRun");if(run)run.addEventListener("click",function(){var payload=GROUPS.map(function(g,i){var inp=document.querySelector("[data-msg-idx=\\""+i+"\\"]");return{message:inp?inp.value:g.message,files:g.files};});run.disabled=true;vscode.postMessage({command:"executePlan",groups:payload});});}' +
-		'window.addEventListener("message",function(ev){var m=ev.data;if(!m)return;if(m.command==="splitPlan"){GROUPS=m.groups||[];document.body.dataset.smStatus="ready";render();}else if(m.command==="splitError"){document.body.dataset.smStatus="error";document.getElementById("scBody").innerHTML="<p>"+esc(m.error)+"</p>";}else if(m.command==="splitDone"){document.body.dataset.smStatus="done";document.getElementById("scBody").innerHTML="<p>"+esc(STRINGS.done)+"</p>";}});})();' +
+		'(function(){var vscode=acquireVsCodeApi(),GROUPS=[],DONE_COUNT=0,LAST_ERR="";function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}' +
+		'function render(){var el=document.getElementById("scBody");var errHtml=LAST_ERR?"<div class=\\"scErr\\">"+esc(LAST_ERR)+"</div>":"";el.innerHTML=errHtml+GROUPS.map(function(g,i){var isDone=i<DONE_COUNT;return "<div class=\\"scCard"+(isDone?" done":"")+"\\"><label class=\\"scMuted\\">"+esc(STRINGS.commitHeading.replace("{0}",String(i+1)))+(isDone?" — "+esc(STRINGS.committedBadge):"")+"</label><input class=\\"scInput\\" data-msg-idx=\\""+i+"\\" value=\\""+esc(g.message)+"\\""+(isDone?" disabled":"")+">"+(g.rationale?"<div class=\\"scMuted\\">"+esc(g.rationale)+"</div>":"")+"<div class=\\"scFiles\\">"+g.files.map(function(f){return "<span class=\\"scFile\\">"+esc(f)+"</span>";}).join("")+"</div></div>";}).join("")+"<button type=\\"button\\" id=\\"scRun\\" class=\\"scBtn\\">"+esc(DONE_COUNT>0?STRINGS.retryRemaining:STRINGS.execute)+"</button>";' +
+		'var run=document.getElementById("scRun");if(run)run.addEventListener("click",function(){var payload=[];GROUPS.forEach(function(g,i){if(i<DONE_COUNT)return;var inp=document.querySelector("[data-msg-idx=\\""+i+"\\"]");var msg=inp?inp.value:g.message;g.message=msg;payload.push({message:msg,files:g.files});});if(payload.length===0)return;LAST_ERR="";run.disabled=true;vscode.postMessage({command:"executePlan",groups:payload});});}' +
+		'window.addEventListener("message",function(ev){var m=ev.data;if(!m)return;if(m.command==="splitPlan"){GROUPS=m.groups||[];DONE_COUNT=0;LAST_ERR="";document.body.dataset.smStatus="ready";render();}else if(m.command==="splitError"){document.body.dataset.smStatus="error";LAST_ERR=m.error||"";if(typeof m.committedCount==="number"&&m.committedCount>0)DONE_COUNT+=m.committedCount;if(GROUPS.length>0){render();}else{document.getElementById("scBody").innerHTML="<div class=\\"scErr\\">"+esc(LAST_ERR)+"</div>";}}else if(m.command==="splitDone"){document.body.dataset.smStatus="done";document.getElementById("scBody").innerHTML="<p>"+esc(STRINGS.done)+"</p>";}});})();' +
 		'</script></body></html>';
 }

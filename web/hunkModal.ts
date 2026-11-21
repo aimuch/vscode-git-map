@@ -31,14 +31,31 @@ class HunkStagingModal {
 		this.state = { filePath: filePath, staged: staged };
 		const modal = document.createElement('div');
 		modal.id = 'cdvHunkModal';
+		modal.setAttribute('role', 'dialog');
+		modal.setAttribute('aria-modal', 'true');
 		modal.innerHTML = '<div class="cdvHunkCard"><div class="cdvHunkHeader">' +
 			'<span class="cdvHunkTitle">' + escapeHtml(filePath) + '</span>' +
-			'<div class="cdvHunkTabs">' +
-			'<button type="button" class="cdvMiniBtn' + (!staged ? ' active' : '') + '" data-hunk-tab="unstaged">' + t('Unstaged Hunks') + '</button>' +
-			'<button type="button" class="cdvMiniBtn' + (staged ? ' active' : '') + '" data-hunk-tab="staged">' + t('Staged Hunks') + '</button>' +
+			'<div class="cdvHunkTabs" role="tablist">' +
+			'<button type="button" role="tab" aria-selected="' + (!staged ? 'true' : 'false') + '" class="cdvMiniBtn' + (!staged ? ' active' : '') + '" data-hunk-tab="unstaged">' + t('Unstaged Hunks') + '</button>' +
+			'<button type="button" role="tab" aria-selected="' + (staged ? 'true' : 'false') + '" class="cdvMiniBtn' + (staged ? ' active' : '') + '" data-hunk-tab="staged">' + t('Staged Hunks') + '</button>' +
 			'</div>' +
-			'<button type="button" class="aiCommitClose" data-hunk-close="1" title="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button>' +
+			'<button type="button" class="aiCommitClose" data-hunk-close="1" title="' + escapeHtml(t('Close')) + '" aria-label="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button>' +
 			'</div><div id="cdvHunkBody" class="cdvHunkBody"><div class="explainLoading">' + SVG_ICONS.loading + t('Loading hunks…') + '</div></div></div>';
+		modal.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Tab') {
+				const focusable = Array.from(modal.querySelectorAll<HTMLElement>('button:not([disabled]), [tabindex="0"]'));
+				if (focusable.length > 0) {
+					const first = focusable[0], last = focusable[focusable.length - 1];
+					if (e.shiftKey && document.activeElement === first) {
+						e.preventDefault();
+						last.focus();
+					} else if (!e.shiftKey && document.activeElement === last) {
+						e.preventDefault();
+						first.focus();
+					}
+				}
+			}
+		});
 		modal.addEventListener('mousedown', (e) => {
 			if (e.target === modal) this.close();
 		});
@@ -56,6 +73,8 @@ class HunkStagingModal {
 		document.body.appendChild(modal);
 		this.elem = modal;
 		this.view.syncAxState();
+		const initialFocus = <HTMLElement | null>(modal.querySelector('[data-hunk-tab].active') || modal.querySelector('[data-hunk-close]'));
+		if (initialFocus !== null) initialFocus.focus();
 		sendMessage({ command: 'loadFileHunkDiff', repo: this.view.currentRepo, filePath: filePath, staged: staged });
 	}
 
@@ -94,7 +113,7 @@ class HunkStagingModal {
 						'<pre class="cdvHunkPre">' + hunk.lines.map((ln, lIdx) => {
 						const selectable = ln.startsWith('+') || ln.startsWith('-');
 						const cls = (ln.startsWith('+') ? 'add' : ln.startsWith('-') ? 'del' : 'ctx') + (selectable ? ' selectable' : '') + (selectedByHunk[idx].has(lIdx) ? ' selected' : '');
-						return '<div class="cdvHunkLine ' + cls + '"' + (selectable ? ' data-sel-hunk="' + idx + '" data-sel-line="' + lIdx + '"' : '') + '>' + escapeHtml(ln) + '</div>';
+						return '<div class="cdvHunkLine ' + cls + '"' + (selectable ? ' tabindex="0" role="checkbox" aria-checked="' + (selectedByHunk[idx].has(lIdx) ? 'true' : 'false') + '" data-sel-hunk="' + idx + '" data-sel-line="' + lIdx + '"' : '') + '>' + escapeHtml(ln) + '</div>';
 					}).join('') + '</pre></div>';
 				}).join('');
 		};
@@ -110,11 +129,23 @@ class HunkStagingModal {
 			const set = selectedByHunk[idx];
 			block.querySelectorAll<HTMLElement>('.cdvHunkLine[data-sel-line]').forEach((el) => {
 				const lIdx = parseInt(el.dataset.selLine || '-1', 10);
-				el.classList.toggle('selected', set.has(lIdx));
+				const isSel = set.has(lIdx);
+				el.classList.toggle('selected', isSel);
+				el.setAttribute('aria-checked', isSel ? 'true' : 'false');
 			});
 		};
 
 		renderHunkBlocks();
+
+		body.onkeydown = (e: KeyboardEvent) => {
+			if ((e.key === ' ' || e.key === 'Enter') && e.target instanceof Element) {
+				const lineEl = <HTMLElement | null>e.target.closest('[data-sel-hunk]');
+				if (lineEl !== null) {
+					e.preventDefault();
+					lineEl.click();
+				}
+			}
+		};
 
 		body.onclick = (e: MouseEvent) => {
 			if (!(e.target instanceof Element) || this.state === null) return;

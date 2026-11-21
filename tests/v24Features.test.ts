@@ -7,6 +7,7 @@ jest.mock('vscode', () => vscode, { virtual: true });
 
 import { buildAiRegressionPrompt } from '../src/aiAssistantPanel';
 import { detectDefaultBranch, parseBranchLifecycleRows } from '../src/branchDashboard';
+import { escapeCompanionHtml, resolveSafeRepoSubpath } from '../src/companionPanelBase';
 import { applyWholeFileResolutions, parseWholeFileAiResolutions } from '../src/conflictAssistant';
 import { buildChangelogMarkdown } from '../src/exportShare';
 import { highlightCodeLine } from '../src/fileTimeMachine';
@@ -268,6 +269,16 @@ describe('v2.4.0 Features & Improvements', () => {
 			);
 			expect(detectDefaultBranch(rows, 'origin/main')).toBe('main');
 			expect(detectDefaultBranch(rows, null)).toBe('main');
+		});
+
+		it('Should reject path traversal and option-like paths in resolveSafeRepoSubpath and escape HTML safely', () => {
+			const repoRoot = path.resolve('/tmp/sample-repo');
+			expect(resolveSafeRepoSubpath(repoRoot, 'libs/submod')).toBe(path.join(repoRoot, 'libs/submod'));
+			expect(resolveSafeRepoSubpath(repoRoot, '../outside')).toBeNull();
+			expect(resolveSafeRepoSubpath(repoRoot, '/etc/passwd')).toBeNull();
+			expect(resolveSafeRepoSubpath(repoRoot, '--exec=evil')).toBeNull();
+			expect(resolveSafeRepoSubpath(repoRoot, '')).toBeNull();
+			expect(escapeCompanionHtml('<a href="x">&\'</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;');
 		});
 	});
 });

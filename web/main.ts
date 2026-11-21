@@ -126,14 +126,8 @@ class GitGraphView {
 	private saveAvatarsTimeout: number | null = null;
 	private readonly scrollShadowElem: HTMLElement;
 	private pullRequestBadges: { [branch: string]: GG.PullRequestBadgeInfo } = {};
-	private workingTreeStatus: GG.ResponseLoadWorkingTreeStatus | null = null;
-	private inlineCommitDraft: string = '';
-	private inlineCommitAmend: boolean = false;
-	private inlineCommitSignoff: boolean = false;
-	private inlineCommitGpgSign: boolean = false;
-	private inlineCommitNoVerify: boolean = false;
-	private prPopoverElem: HTMLElement | null = null;
-	private prPopoverBranch: string | null = null;
+	private readonly inlineCommitBox: InlineCommitBox;
+	private readonly prPopover: PullRequestPopover;
 	private cdvNoteText: string | null = null;
 	private cdvSigDetails: GG.CommitSignatureDetails | null = null;
 
@@ -155,6 +149,8 @@ class GitGraphView {
 		this.commitExplainer = new CommitExplainer(this);
 		this.hunkModal = new HunkStagingModal(this);
 		this.commandPalette = new GraphCommandPalette(this);
+		this.inlineCommitBox = new InlineCommitBox(this);
+		this.prPopover = new PullRequestPopover(this);
 		this.dragDrop = new GraphDragDropController(this);
 		this.currentRepoRefreshState = {
 			inProgress: false,
@@ -426,7 +422,7 @@ class GitGraphView {
 		this.gitStashes = [];
 		this.gitUpstreams = {};
 		this.pullRequestBadges = {};
-		this.workingTreeStatus = null;
+		this.inlineCommitBox.resetStatus();
 		this.closeHunkModal();
 		this.stashStats = {};
 		this.commitStats = {};
@@ -2432,7 +2428,7 @@ class GitGraphView {
 				if (this.commandPalette.isOpen()) {
 					this.commandPalette.close();
 					handledEvent(e);
-				} else if (this.prPopoverElem !== null) {
+				} else if (this.prPopover.isOpen()) {
 					this.closePrPopover();
 					handledEvent(e);
 				} else if (this.isHunkModalOpen()) {
@@ -3163,7 +3159,7 @@ class GitGraphView {
 			this.cdvFileView.makeCdvFileViewInteractive();
 			this.renderCdvActions();
 			if (expandedCommit.commitHash === UNCOMMITTED && expandedCommit.compareWithHash === null) {
-				this.renderInlineCommitBox();
+				this.inlineCommitBox.render();
 				sendMessage({ command: 'loadWorkingTreeStatus', repo: this.currentRepo });
 			} else if (expandedCommit.compareWithHash === null && expandedCommit.commitHash !== UNCOMMITTED) {
 				this.cdvNoteText = null;
@@ -3551,7 +3547,7 @@ class GitGraphView {
 	public getActiveOverlay(): string {
 		if (dialog.isOpen()) return 'dialog';
 		if (this.commandPalette && this.commandPalette.isOpen()) return 'command-palette';
-		if (this.prPopoverElem !== null) return 'pr-popover';
+		if (this.prPopover && this.prPopover.isOpen()) return 'pr-popover';
 		if (contextMenu.isOpen()) return 'context-menu';
 		if (this.isHunkModalOpen()) return 'hunk-modal';
 		if (this.isCdvActionsCustomizerOpen()) return 'cdv-actions-modal';
@@ -4198,83 +4194,15 @@ class GitGraphView {
 	}
 
 	public closePrPopover() {
-		if (this.prPopoverElem !== null) {
-			this.prPopoverElem.remove();
-			this.prPopoverElem = null;
-		}
-		this.prPopoverBranch = null;
-		this.syncAxState();
+		this.prPopover.close();
 	}
 
 	private openPrPopover(branch: string, prNumber: number, fallbackUrl: string, anchorElem: HTMLElement) {
-		this.closePrPopover();
-		const cached = this.pullRequestBadges[branch];
-		const rect = anchorElem.getBoundingClientRect();
-		const pop = document.createElement('div');
-		pop.id = 'prDetailPopover';
-		pop.style.left = Math.min(Math.max(12, Math.round(rect.left)), Math.max(12, window.innerWidth - 370)) + 'px';
-		pop.style.top = Math.min(Math.round(rect.bottom + 6), Math.max(12, window.innerHeight - 260)) + 'px';
-		pop.innerHTML = this.renderPrPopoverHtml({
-			number: prNumber,
-			title: typeof cached !== 'undefined' ? cached.title : ('#' + prNumber),
-			body: '',
-			author: '',
-			state: typeof cached !== 'undefined' ? cached.state : 'open',
-			url: fallbackUrl || (typeof cached !== 'undefined' ? cached.url : ''),
-			baseBranch: typeof cached !== 'undefined' ? cached.baseBranch : '',
-			headBranch: branch,
-			ciStatus: typeof cached !== 'undefined' ? cached.ciStatus : 'unknown',
-			checks: [],
-			reviewSummary: ''
-		}, true);
-		pop.addEventListener('click', (e) => {
-			if (!(e.target instanceof Element)) return;
-			const act = <HTMLElement | null>e.target.closest('[data-pr-act]');
-			if (act === null) return;
-			const cmd = act.dataset.prAct;
-			const url = act.dataset.prUrl || fallbackUrl;
-			if (cmd === 'close') {
-				this.closePrPopover();
-			} else if (cmd === 'openUrl' && url !== '') {
-				sendMessage({ command: 'openExternalUrl', url: url });
-				this.closePrPopover();
-			} else if (cmd === 'checkoutPr') {
-				sendMessage({ command: 'openCompanionFeature', feature: 'checkoutPullRequest', repo: this.currentRepo });
-				this.closePrPopover();
-			} else if (cmd === 'aiReviewPr') {
-				const base = act.dataset.prBase || 'main';
-				sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.currentRepo, mode: 'range', fromRef: base, toRef: branch, label: 'PR #' + prNumber + ' (' + base + ' → ' + branch + ')' });
-				this.closePrPopover();
-			}
-		});
-		document.body.appendChild(pop);
-		this.prPopoverElem = pop;
-		this.prPopoverBranch = branch;
-		this.syncAxState();
-		sendMessage({ command: 'loadPullRequestDetails', repo: this.currentRepo, branch: branch, prNumber: prNumber });
-	}
-
-	private renderPrPopoverHtml(d: GG.PullRequestDetailsInfo, loading: boolean) {
-		const checksHtml = d.checks.length > 0
-			? '<div class="prPopChecks">' + d.checks.slice(0, 6).map((c) => '<span class="prPopCheck">' + escapeHtml(c.name) + ': ' + escapeHtml(c.status) + '</span>').join('') + '</div>'
-			: '';
-		return '<div class="prPopHdr"><b>#' + d.number + ' ' + escapeHtml(d.title) + '</b><button type="button" class="aiCommitClose" data-pr-act="close">' + SVG_ICONS.close + '</button></div>' +
-			'<div class="prPopMeta"><span class="gitRefPrBadge ci-' + d.ciStatus + '">' + escapeHtml(d.state.toUpperCase() + ' · CI: ' + d.ciStatus) + '</span>' +
-			(d.baseBranch !== '' ? '<span>' + escapeHtml(d.headBranch + ' → ' + d.baseBranch) + '</span>' : '') +
-			(d.author !== '' ? '<span>@' + escapeHtml(d.author) + '</span>' : '') +
-			(d.reviewSummary !== '' ? '<span>' + escapeHtml(d.reviewSummary) + '</span>' : '') + '</div>' +
-			(loading ? '<div class="prPopBody">' + t('Loading ...') + '</div>' : (d.body !== '' ? '<div class="prPopBody">' + escapeHtml(d.body) + '</div>' : '')) +
-			checksHtml +
-			'<div class="prPopBtns">' +
-			(d.url !== '' ? '<button type="button" class="cdvMiniBtn primary" data-pr-act="openUrl" data-pr-url="' + escapeHtml(d.url) + '">' + t('Open in Browser') + '</button>' : '') +
-			'<button type="button" class="cdvMiniBtn" data-pr-act="checkoutPr">' + t('Checkout PR') + '</button>' +
-			'<button type="button" class="cdvMiniBtn" data-pr-act="aiReviewPr" data-pr-base="' + escapeHtml(d.baseBranch || 'main') + '">' + MENU_ICONS.sparkle + t('AI Review') + '</button>' +
-			'</div>';
+		this.prPopover.open(branch, prNumber, fallbackUrl, anchorElem, this.pullRequestBadges[branch]);
 	}
 
 	public processLoadPullRequestDetailsResponse(msg: GG.ResponseLoadPullRequestDetails) {
-		if (this.prPopoverElem === null || this.prPopoverBranch !== msg.branch || msg.details === null) return;
-		this.prPopoverElem.innerHTML = this.renderPrPopoverHtml(msg.details, false);
+		this.prPopover.processDetailsResponse(msg);
 	}
 
 	public processLoadCommitExtrasResponse(msg: GG.ResponseLoadCommitExtras) {
@@ -4337,208 +4265,15 @@ class GitGraphView {
 	}
 
 	public processLoadWorkingTreeStatusResponse(msg: GG.ResponseLoadWorkingTreeStatus) {
-		this.workingTreeStatus = msg;
-		if (this.inlineCommitDraft === '' && !this.inlineCommitAmend && typeof msg.commitTemplate === 'string' && msg.commitTemplate !== '') {
-			this.inlineCommitDraft = msg.commitTemplate;
-		}
-		this.renderInlineCommitBox();
+		this.inlineCommitBox.processWorkingTreeStatusResponse(msg);
 	}
 
 	public setInlineCommitDraft(text: string) {
-		this.inlineCommitDraft = text;
-		const input = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
-		if (input !== null) input.value = text;
+		this.inlineCommitBox.setDraft(text);
 	}
 
 	public clearInlineCommitDraft() {
-		this.inlineCommitDraft = '';
-		this.inlineCommitAmend = false;
-		this.renderInlineCommitBox();
-	}
-
-	private renderInlineCommitBox() {
-		const container = document.getElementById('cdvInlineCommitBox');
-		if (container === null) return;
-		const status = this.workingTreeStatus;
-		const files = status !== null ? status.files : [];
-		const stagedFiles = files.filter((f) => f.staged);
-		const unstagedFiles = files.filter((f) => f.unstaged);
-		const conflictedCount = files.filter((f) => f.conflicted).length;
-
-		let filesSummaryHtml = '<div class="cdvStagingBar">' +
-			'<span class="cdvStagingCounts">' + t('Staged: {0}', stagedFiles.length) + ' &middot; ' + t('Unstaged: {0}', unstagedFiles.length) +
-			(conflictedCount > 0 ? ' &middot; <button type="button" class="cdvLinkBtn danger" data-inline-stage="conflicts">' + t('{0} Conflicted', conflictedCount) + '</button>' : '') +
-			'</span>' +
-			'<span class="cdvStagingBtns">' +
-			(unstagedFiles.length > 0 ? '<button type="button" class="cdvMiniBtn" data-inline-stage="stageAll" title="' + escapeHtml(t('Stage All Changes')) + '">+ ' + t('Stage All') + '</button>' : '') +
-			(stagedFiles.length > 0 ? '<button type="button" class="cdvMiniBtn" data-inline-stage="unstageAll" title="' + escapeHtml(t('Unstage All Changes')) + '">&minus; ' + t('Unstage All') + '</button>' : '') +
-			'</span></div>';
-
-		if (files.length > 0 && files.length <= 40) {
-			filesSummaryHtml += '<div class="cdvQuickStageList">' + files.map((f) => {
-				const badge = f.conflicted ? '!' : f.untracked ? 'U' : (f.staged && f.unstaged) ? 'SM' : f.staged ? 'S' : 'M';
-				return '<div class="cdvQuickStageRow">' +
-					'<span class="cdvQuickStageBadge status-' + badge.toLowerCase() + '">' + badge + '</span>' +
-					'<span class="cdvQuickStagePath" title="' + escapeHtml(f.path) + '">' + escapeHtml(f.path) + '</span>' +
-					(!f.staged || f.unstaged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="stage" title="' + escapeHtml(t('Stage File')) + '">+</button>' : '') +
-					(f.staged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="unstage" title="' + escapeHtml(t('Unstage File')) + '">&minus;</button>' : '') +
-					(!f.untracked && !f.conflicted ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-staged="' + (f.staged && !f.unstaged ? '1' : '0') + '" data-inline-op="hunks" title="' + escapeHtml(t('Stage / Unstage Hunks…')) + '">&plusmn;</button>' : '') +
-					(f.unstaged && !f.conflicted ? '<button type="button" class="cdvMiniBtn danger" data-inline-file="' + escapeHtml(f.path) + '" data-inline-untracked="' + (f.untracked ? '1' : '0') + '" data-inline-op="discard" title="' + escapeHtml(t('Discard Changes')) + '">&times;</button>' : '') +
-					'</div>';
-			}).join('') + '</div>';
-		}
-
-		const hooks = status && Array.isArray(status.hooks) ? status.hooks : [];
-		const preIssues = status && Array.isArray(status.preCommitIssues) ? status.preCommitIssues : [];
-		const highIssues = preIssues.filter((i) => i.severity === 'high').length;
-		const preBannerHtml = preIssues.length > 0
-			? '<div class="cdvPreCommitBanner' + (highIssues > 0 ? ' high' : '') + '"><span>&#9888; ' +
-				t('Pre-Commit Guard: {0} potential issue(s)', preIssues.length) +
-				(highIssues > 0 ? ' (' + highIssues + ' HIGH)' : '') +
-				'</span><button type="button" class="cdvMiniBtn" data-inline-stage="preCheck">' + t('Inspect') + '</button></div>'
-			: '';
-		const hooksHtml = hooks.length > 0
-			? '<button type="button" class="cdvHooksBadge" data-inline-stage="openHook" title="' + escapeHtml(hooks.map((h) => h.name).join(', ')) + '">' + t('Hooks: {0}', hooks.length) + '</button>'
-			: '';
-		const convChipsHtml = '<div class="cdvConvChips">' +
-			['feat', 'fix', 'refactor', 'docs', 'chore', 'test'].map((k) => '<button type="button" class="cdvConvChip" data-conv-prefix="' + k + ': ">' + k + '</button>').join('') +
-			hooksHtml +
-			(files.length >= 2 ? '<button type="button" class="cdvConvChip aiSplit" data-inline-stage="aiSplit">' + MENU_ICONS.sparkle + t('AI Split') + '</button>' : '') +
-			'</div>';
-
-		container.innerHTML = filesSummaryHtml + preBannerHtml +
-			'<div class="cdvCommitForm">' +
-			convChipsHtml +
-			'<textarea id="cdvCommitInput" class="cdvCommitInput" rows="3" placeholder="' + escapeHtml(t('Commit message (Ctrl/Cmd+Enter to commit)…')) + '">' + escapeHtml(this.inlineCommitDraft) + '</textarea>' +
-			'<div class="cdvCommitControls">' +
-			'<label class="cdvAmendLabel"><input type="checkbox" id="cdvCommitAmend"' + (this.inlineCommitAmend ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Amend') + '</label>' +
-			'<label class="cdvAmendLabel" title="git commit -s"><input type="checkbox" id="cdvCommitSignoff"' + (this.inlineCommitSignoff ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Sign-off') + '</label>' +
-			'<label class="cdvAmendLabel" title="git commit -S"><input type="checkbox" id="cdvCommitGpgSign"' + (this.inlineCommitGpgSign ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('GPG') + '</label>' +
-			(hooks.length > 0 ? '<label class="cdvAmendLabel" title="git commit --no-verify"><input type="checkbox" id="cdvCommitNoVerify"' + (this.inlineCommitNoVerify ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('No Verify') + '</label>' : '') +
-			'<span class="cdvCommitSpacer"></span>' +
-			'<button type="button" class="cdvActionBtn" data-inline-stage="aiMsg" title="' + escapeHtml(t('Generate Commit Message with AI')) + '">' + MENU_ICONS.sparkle + 'AI</button>' +
-			'<button type="button" class="cdvActionBtn primary" data-inline-stage="commit">' + MENU_ICONS.checkout + (this.inlineCommitAmend ? t('Amend Commit') : stagedFiles.length > 0 ? t('Commit Staged ({0})', stagedFiles.length) : t('Stage All & Commit')) + '</button>' +
-			'</div></div>';
-
-		const inputElem = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
-		if (inputElem !== null) {
-			inputElem.addEventListener('input', () => {
-				this.inlineCommitDraft = inputElem.value;
-			});
-			inputElem.addEventListener('keydown', (e: KeyboardEvent) => {
-				if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-					e.preventDefault();
-					const commitBtn = <HTMLElement | null>container.querySelector('[data-inline-stage="commit"]');
-					if (commitBtn !== null) commitBtn.click();
-				}
-			});
-		}
-
-		const amendElem = <HTMLInputElement | null>document.getElementById('cdvCommitAmend');
-		if (amendElem !== null) {
-			amendElem.addEventListener('change', () => {
-				this.inlineCommitAmend = amendElem.checked;
-				if (this.inlineCommitAmend && this.inlineCommitDraft.trim() === '' && status !== null && status.headMessage !== null) {
-					this.inlineCommitDraft = status.headMessage;
-				}
-				this.renderInlineCommitBox();
-			});
-		}
-		const signoffElem = <HTMLInputElement | null>document.getElementById('cdvCommitSignoff');
-		if (signoffElem !== null) signoffElem.addEventListener('change', () => { this.inlineCommitSignoff = signoffElem.checked; });
-		const gpgElem = <HTMLInputElement | null>document.getElementById('cdvCommitGpgSign');
-		if (gpgElem !== null) gpgElem.addEventListener('change', () => { this.inlineCommitGpgSign = gpgElem.checked; });
-		const noVerifyElem = <HTMLInputElement | null>document.getElementById('cdvCommitNoVerify');
-		if (noVerifyElem !== null) noVerifyElem.addEventListener('change', () => { this.inlineCommitNoVerify = noVerifyElem.checked; });
-
-		container.onclick = (e: MouseEvent) => {
-			if (!(e.target instanceof Element)) return;
-			const convChip = <HTMLElement | null>e.target.closest('[data-conv-prefix]');
-			if (convChip !== null && typeof convChip.dataset.convPrefix === 'string') {
-				const prefix = convChip.dataset.convPrefix;
-				const stripped = this.inlineCommitDraft.replace(/^(?:feat|fix|refactor|docs|chore|test)(?:\([^)]*\))?!?:\s*/i, '');
-				this.inlineCommitDraft = prefix + stripped;
-				const ta = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
-				if (ta !== null) {
-					ta.value = this.inlineCommitDraft;
-					ta.focus();
-				}
-				return;
-			}
-			const fileBtn = <HTMLElement | null>e.target.closest('[data-inline-op]');
-			if (fileBtn !== null && typeof fileBtn.dataset.inlineFile === 'string') {
-				const filePath = unescapeHtml(fileBtn.dataset.inlineFile);
-				const op = fileBtn.dataset.inlineOp;
-				if (op === 'stage') {
-					runAction({ command: 'stageFiles', repo: this.currentRepo, paths: [filePath] }, t('Staging File'));
-				} else if (op === 'unstage') {
-					runAction({ command: 'unstageFiles', repo: this.currentRepo, paths: [filePath] }, t('Unstaging File'));
-				} else if (op === 'hunks') {
-					this.openHunkStagingModal(filePath, fileBtn.dataset.inlineStaged === '1');
-				} else if (op === 'discard') {
-					const isUntracked = fileBtn.dataset.inlineUntracked === '1';
-					dialog.asDangerous().showConfirmation(t('Are you sure you want to discard uncommitted changes to <b><i>{0}</i></b>?', escapeHtml(filePath)), t('Discard Changes'), () => {
-						runAction({ command: 'discardWorkingChanges', repo: this.currentRepo, trackedPaths: isUntracked ? [] : [filePath], untrackedPaths: isUntracked ? [filePath] : [] }, t('Discarding Changes'));
-					}, null);
-				}
-				return;
-			}
-			const stageBtn = <HTMLElement | null>e.target.closest('[data-inline-stage]');
-			if (stageBtn === null) return;
-			switch (stageBtn.dataset.inlineStage) {
-				case 'stageAll':
-					runAction({ command: 'stageFiles', repo: this.currentRepo, paths: null }, t('Staging All Changes'));
-					break;
-				case 'unstageAll':
-					runAction({ command: 'unstageFiles', repo: this.currentRepo, paths: null }, t('Unstaging All Changes'));
-					break;
-				case 'conflicts':
-					sendMessage({ command: 'openCompanionFeature', feature: 'conflictAssistant', repo: this.currentRepo });
-					break;
-				case 'preCheck':
-					sendMessage({ command: 'openCompanionFeature', feature: 'preCommitCheck', repo: this.currentRepo });
-					break;
-				case 'aiSplit':
-					sendMessage({ command: 'openCompanionFeature', feature: 'aiSmartCommitSplit', repo: this.currentRepo });
-					break;
-				case 'openHook':
-					sendMessage({ command: 'openHookFile', repo: this.currentRepo });
-					break;
-				case 'aiMsg':
-					this.commitExplainer.openCommitMessageModal();
-					break;
-				case 'commit': {
-					const msg = this.inlineCommitDraft.trim();
-					if (msg === '') {
-						dialog.showError(t('Unable to Commit Changes'), t('Please enter a commit message first.'), null, null);
-						return;
-					}
-					const executeCommit = () => {
-						runAction({
-							command: 'commitStagedChanges',
-							repo: this.currentRepo,
-							message: msg,
-							amend: this.inlineCommitAmend,
-							stageAllIfEmpty: true,
-							signoff: this.inlineCommitSignoff,
-							gpgSign: this.inlineCommitGpgSign,
-							noVerify: this.inlineCommitNoVerify
-						}, this.inlineCommitAmend ? t('Amending Commit') : t('Committing Changes'));
-					};
-					if (this.inlineCommitNoVerify) {
-						dialog.asDangerous().showConfirmation(
-							t('Commit with <b>--no-verify</b>? This skips Git pre-commit and commit-msg hooks.'),
-							t('Commit Without Hooks'),
-							executeCommit,
-							null
-						);
-					} else {
-						executeCommit();
-					}
-					break;
-				}
-			}
-		};
+		this.inlineCommitBox.clearDraft();
 	}
 
 	public isHunkModalOpen() {

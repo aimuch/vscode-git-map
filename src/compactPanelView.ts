@@ -155,9 +155,13 @@ function getCompactViewHtml(cspSource: string) {
 		'<style>*{box-sizing:border-box}html,body{height:100%;margin:0;padding:0;font-family:var(--vscode-font-family);font-size:12.5px;color:var(--vscode-foreground);background:var(--vscode-panel-background,var(--vscode-editor-background))}' +
 		'.cpBar{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));position:sticky;top:0;background:inherit;z-index:2}' +
 		'.cpSelect,.cpBtn{height:24px;padding:0 8px;border-radius:4px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:var(--vscode-dropdown-background,transparent);color:inherit;font:inherit;cursor:pointer}' +
+		'.cpSelect:focus-visible,.cpBtn:focus-visible,.cpRow:focus-visible{outline:1px solid var(--vscode-focusBorder);outline-offset:-1px}' +
 		'.cpBtn.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}' +
-		'.cpList{overflow-y:auto;height:calc(100% - 37px)}.cpRow{display:flex;align-items:center;gap:8px;padding:5px 10px;border-bottom:1px solid rgba(128,128,128,.1);cursor:pointer}' +
-		'.cpRow:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.12))}.cpDot{width:8px;height:8px;border-radius:50%;background:var(--vscode-button-background,#0e7afe);flex:0 0 auto}' +
+		'.cpList{overflow-y:auto;height:calc(100% - 37px)}.cpRow{width:100%;display:flex;align-items:center;gap:8px;padding:5px 10px;border:0;border-bottom:1px solid rgba(128,128,128,.1);background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;position:relative}' +
+		'.cpRow:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.12))}.cpGraphCell{position:relative;display:inline-flex;align-items:center;justify-content:center;width:12px;align-self:stretch;flex:0 0 auto}' +
+		'.cpGraphCell::before{content:"";position:absolute;top:-5px;bottom:-5px;left:50%;width:2px;transform:translateX(-50%);background:color-mix(in srgb,var(--vscode-button-background,#0e7afe) 45%,transparent)}' +
+		'.cpRow:first-child .cpGraphCell::before{top:50%}.cpRow:last-child .cpGraphCell::before{bottom:50%}' +
+		'.cpDot{width:8px;height:8px;border-radius:50%;background:var(--vscode-button-background,#0e7afe);position:relative;z-index:1;box-shadow:0 0 0 2px var(--vscode-panel-background,var(--vscode-editor-background))}' +
 		'.cpSubj{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.cpRef{padding:1px 5px;border-radius:3px;font-size:11px;background:rgba(128,128,128,.2);white-space:nowrap}' +
 		'.cpMeta{font-size:11px;color:var(--vscode-descriptionForeground);white-space:nowrap;font-family:var(--vscode-editor-font-family)}</style></head>' +
 		'<body data-sm-status="loading"><div class="cpBar"><select id="cpRepo" class="cpSelect"></select><span id="cpBranch" class="cpRef"></span><span style="flex:1"></span>' +
@@ -176,6 +180,6 @@ function getCompactViewHtml(cspSource: string) {
 		'var sel=document.getElementById("cpRepo");sel.innerHTML=(m.repos||[]).map(function(r){return "<option value=\\""+esc(r.path)+"\\""+(r.path===m.activeRepo?" selected":"")+">"+esc(r.name)+"</option>";}).join("");' +
 		'document.getElementById("cpBranch").textContent=m.branch||"";' +
 		'var list=document.getElementById("cpList");if(!m.commits||m.commits.length===0){list.innerHTML="<div style=\\"padding:14px;color:var(--vscode-descriptionForeground)\\">"+esc(STRINGS.empty)+"</div>";return;}' +
-		'list.innerHTML=m.commits.map(function(c){return "<div class=\\"cpRow\\" data-hash=\\""+esc(c.hash)+"\\"><span class=\\"cpDot\\"></span>"+c.refs.slice(0,2).map(function(r){return "<span class=\\"cpRef\\">"+esc(r)+"</span>";}).join("")+"<span class=\\"cpSubj\\">"+esc(c.subject)+"</span><span class=\\"cpMeta\\">"+esc(c.author)+" · "+esc(c.hash.substring(0,7))+"</span></div>";}).join("");});})();' +
+		'list.innerHTML=m.commits.map(function(c){return "<button type=\\"button\\" class=\\"cpRow\\" data-hash=\\""+esc(c.hash)+"\\"><span class=\\"cpGraphCell\\"><span class=\\"cpDot\\"></span></span>"+c.refs.slice(0,2).map(function(r){return "<span class=\\"cpRef\\">"+esc(r)+"</span>";}).join("")+"<span class=\\"cpSubj\\">"+esc(c.subject)+"</span><span class=\\"cpMeta\\">"+esc(c.author)+" · "+esc(c.hash.substring(0,7))+"</span></button>";}).join("");});})();' +
 		'</script></body></html>';
 }

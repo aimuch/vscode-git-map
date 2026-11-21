@@ -235,7 +235,7 @@ export class GitFeatures {
 			steps = value('bisect_steps');
 		}
 		const logFile = await this.getGitPath(repo, 'BISECT_LOG');
-		const log = logFile !== null && fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '';
+		const log = logFile !== null ? await fs.promises.readFile(logFile, 'utf8').catch(() => '') : '';
 		// Git writes "# first bad commit: [hash]" or "# first 'bad' commit: [hash]" (depending on how the bisect finished)
 		const firstBad = log.match(/^# first '?[^\s']+'? commit: \[([0-9a-f]{40,64})\]/m);
 		return {
@@ -335,7 +335,7 @@ export class GitFeatures {
 	public async checkPatch(repo: string, file: string): Promise<{ patch: GitPatchInfo | null, error: GitFeatureError }> {
 		let contents: string;
 		try {
-			contents = fs.readFileSync(file, 'utf8');
+			contents = await fs.promises.readFile(file, 'utf8');
 		} catch (error) {
 			return { patch: null, error: 'Unable to read the file: ' + String(error) };
 		}

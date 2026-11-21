@@ -559,6 +559,7 @@ export interface GitGraphViewConfig {
 	readonly onlyFollowFirstParent: boolean;
 	readonly onRepoLoad: OnRepoLoadConfig;
 	readonly pullRequestStatusEnabled: boolean;
+	readonly workflowMacros?: ReadonlyArray<{ readonly id: string, readonly name: string, readonly steps: ReadonlyArray<string> }>;
 	readonly referenceLabels: ReferenceLabelsConfig;
 	readonly repoDropdownOrder: RepoDropdownOrder;
 	readonly showRemoteBranches: boolean;

@@ -1,5 +1,20 @@
 # Change Log
 
+## 2.4.3 - 2026-11-21
+* **Security & Reliability Hardening**:
+    * Added repository subpath traversal validation (`resolveSafeRepoSubpath`) in `SubmoduleManager` and `ConflictAssistant`.
+    * Fixed **AI Smart Commit Splitter** recovery on partial failure (re-enables button to retry remaining groups, marks already-committed groups, records commits in `UndoManager`, and guards concurrent requests with `AsyncRequestSequencer` + cancellation).
+    * Fixed **Conflict Assistant — AI Merge File** for files with more than 12 conflict blocks by batching requests sequentially and surfacing refresh warnings if markers changed before apply.
+    * Replaced synchronous `fs.readFileSync` calls in `GitFeatures` (`BISECT_LOG` & patch inspection) with async `fs.promises.readFile`.
+* **Interaction, Accessibility & UI Polish**:
+    * **Command Palette (`Ctrl/Cmd+Shift+K`)**: active item now scrolls into view on `ArrowUp`/`ArrowDown`, syncs on mouse hover, exposes ARIA combobox/listbox roles, and includes **Conflict Assistant**, **Multi-Repository Overview**, and user-configured `git-map.workflowMacros`.
+    * **Hunk Staging Modal**: focuses active controls on open, traps `Tab` navigation inside the dialog, and supports `Space`/`Enter` keyboard selection on changed lines.
+    * **Branch Lifecycle Dashboard & Submodule Manager**: switched badge/danger colors to theme-native VS Code CSS variables for full Light/Dark theme contrast, added sticky table headers, select-all checkbox, live selected count, **Force Delete (`-D`)** option, and busy/progress indicators on long-running Git operations.
+    * **Conflict Assistant & Compact Panel**: responsive single-column stacking for narrow panes in Conflict Assistant; keyboard-focusable commit buttons with vertical graph connector rail in Compact Panel; added **Since Last Tag (`tag..HEAD`)** option to Changelog Markdown export.
+* **Architecture & Localization**:
+    * Extracted shared companion helpers into `src/companionPanelBase.ts` and extracted `web/inlineCommitBox.ts` and `web/prPopover.ts` from `web/main.ts`.
+    * Localized remaining status badges, headings, and fallback error messages across all companion panels (`1675/1675` EN + zh-CN parity).
+
 ## 2.4.2 - 2026-11-20
 * **Changed Files — Last Viewed File Highlight**: clicking a file in the Commit Details View ("Changed Files") or Branch Comparison panel now highlights the entire row with a theme-accent left border, tinted background, bold filename, and highlighted eye indicator, and synchronously persists both the highlight and scroll position so returning from the Diff Editor immediately locates the file you just viewed.
 

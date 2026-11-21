@@ -1407,6 +1407,7 @@ export class GitGraphView extends Disposable {
 				onlyFollowFirstParent: config.onlyFollowFirstParent,
 				onRepoLoad: config.onRepoLoad,
 				pullRequestStatusEnabled: config.pullRequestStatusEnabled,
+				workflowMacros: config.workflowMacros,
 				referenceLabels: config.referenceLabels,
 				repoDropdownOrder: config.repoDropdownOrder,
 				showRemoteBranches: config.showRemoteBranches,

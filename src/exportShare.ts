@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as vscode from 'vscode';
+import { resolveTargetRepo } from './companionPanelBase';
 import { DataSource } from './dataSource';
 import { ExtensionState } from './extensionState';
 import { runGit } from './historyRewrite';
@@ -63,25 +64,24 @@ export async function exportChangelogCommand(
 	extensionState: ExtensionState,
 	arg?: any
 ) {
-	let repo: string | null = typeof arg === 'object' && arg !== null && typeof arg.repo === 'string' ? arg.repo : null;
-	if (repo === null && vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
-		repo = repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
-	}
-	if (repo === null) {
-		const last = extensionState.getLastActiveRepo();
-		const repos = repoManager.getRepos();
-		repo = last !== null && typeof repos[last] !== 'undefined' ? last : (Object.keys(repos)[0] || null);
-	}
+	const repo = resolveTargetRepo(repoManager, extensionState, arg);
 	if (repo === null) {
 		showErrorMessage(t('No Git repositories were found in the current workspace.'));
 		return;
 	}
 
-	const rangeChoices = [
-		{ label: t('Last 7 Days (Weekly Report)'), since: '7.days.ago', limit: 200 },
-		{ label: t('Last 30 Days (Monthly Changelog)'), since: '30.days.ago', limit: 300 },
-		{ label: t('Latest 50 Commits'), since: null, limit: 50 }
-	];
+	const lastTagRes = await runGit(dataSource, repo, ['describe', '--tags', '--abbrev=0']);
+	const lastTag = lastTagRes.code === 0 ? lastTagRes.stdout.toString().trim() : '';
+
+	const rangeChoices: { label: string, since: string | null, rangeSpec: string | null, limit: number }[] = [];
+	if (lastTag !== '') {
+		rangeChoices.push({ label: t('Since Last Tag ({0}..HEAD)', lastTag), since: null, rangeSpec: lastTag + '..HEAD', limit: 300 });
+	}
+	rangeChoices.push(
+		{ label: t('Last 7 Days (Weekly Report)'), since: '7.days.ago', rangeSpec: null, limit: 200 },
+		{ label: t('Last 30 Days (Monthly Changelog)'), since: '30.days.ago', rangeSpec: null, limit: 300 },
+		{ label: t('Latest 50 Commits'), since: null, rangeSpec: null, limit: 50 }
+	);
 	let chosen = rangeChoices[0];
 	if (typeof vscode.window.showQuickPick === 'function') {
 		const picked = await vscode.window.showQuickPick(rangeChoices, {
@@ -95,9 +95,10 @@ export async function exportChangelogCommand(
 
 	const args = ['-c', 'log.showSignature=false', 'log', '--no-merges', '-n', String(chosen.limit), '--format=%H%x1f%s%x1f%an%x1f%cs'];
 	if (chosen.since !== null) args.push('--since=' + chosen.since);
+	if (chosen.rangeSpec !== null) args.push(chosen.rangeSpec);
 	const res = await runGit(dataSource, repo, args);
 	if (res.code !== 0) {
-		showErrorMessage(res.stderr || 'Failed to read commit log.');
+		showErrorMessage(res.stderr || t('Failed to read commit log.'));
 		return;
 	}
 	const commits: ChangelogCommitItem[] = res.stdout.toString().split(/\r?\n/).filter((l) => l.trim() !== '').map((line) => {

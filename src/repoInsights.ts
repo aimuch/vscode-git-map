@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { escapeCompanionHtml, resolveTargetRepo } from './companionPanelBase';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { ExtensionState } from './extensionState';
@@ -7,7 +8,7 @@ import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { AsyncRequestSequencer } from './stateMachines';
-import { getNonce, getPathFromUri, getRepoName, showErrorMessage } from './utils';
+import { getNonce, getRepoName, showErrorMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
 export interface HotspotFile {
@@ -207,15 +208,7 @@ export class RepoInsights extends Disposable {
 	}
 
 	public async show(arg?: any) {
-		let repo: string | null = typeof arg === 'object' && arg !== null && typeof arg.repo === 'string' ? arg.repo : null;
-		if (repo === null && vscode.window.activeTextEditor && vscode.window.activeTextEditor.document.uri.scheme === 'file') {
-			repo = this.repoManager.getRepoContainingFile(getPathFromUri(vscode.window.activeTextEditor.document.uri));
-		}
-		if (repo === null) {
-			const last = this.extensionState.getLastActiveRepo();
-			const repos = this.repoManager.getRepos();
-			repo = last !== null && typeof repos[last] !== 'undefined' ? last : (Object.keys(repos)[0] || null);
-		}
+		const repo = resolveTargetRepo(this.repoManager, this.extensionState, arg);
 		if (repo === null) {
 			showErrorMessage(t('No Git repositories were found in the current workspace.'));
 			return;
@@ -288,10 +281,6 @@ export class RepoInsights extends Disposable {
 	}
 }
 
-function escI(text: string) {
-	return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
 function getRepoInsightsHtml(repoName: string, data: RepoInsightsData | null, cspSource: string) {
 	const nonce = getNonce();
 	const locale = getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
@@ -317,8 +306,8 @@ function getRepoInsightsHtml(repoName: string, data: RepoInsightsData | null, cs
 	return '<!DOCTYPE html><html lang="' + locale + '"><head><meta charset="UTF-8">' +
 		'<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src ' + cspSource + ' \'unsafe-inline\'; script-src \'nonce-' + nonce + '\';">' +
 		'<meta name="viewport" content="width=device-width, initial-scale=1.0"><style>' + RI_STYLES + '</style></head><body data-sm-status="' + (data === null ? 'loading' : 'ready') + '">' +
-		'<header class="riHeader"><h1>' + escI(strings.title) + ' <span class="riRepo">' + escI(repoName) + '</span></h1>' +
-		'<div class="riRanges" role="group"><button type="button" data-days="90" class="active">' + escI(strings.days90) + '</button><button type="button" data-days="365">' + escI(strings.year) + '</button><button type="button" data-days="0">' + escI(strings.all) + '</button></div></header>' +
+		'<header class="riHeader"><h1>' + escapeCompanionHtml(strings.title) + ' <span class="riRepo">' + escapeCompanionHtml(repoName) + '</span></h1>' +
+		'<div class="riRanges" role="group"><button type="button" data-days="90" class="active">' + escapeCompanionHtml(strings.days90) + '</button><button type="button" data-days="365">' + escapeCompanionHtml(strings.year) + '</button><button type="button" data-days="0">' + escapeCompanionHtml(strings.all) + '</button></div></header>' +
 		'<main id="riMain" class="riMain"></main>' +
 		'<script nonce="' + nonce + '">var DATA=' + JSON.stringify(data).replace(/</g, '\\u003c') + ',STRINGS=' + JSON.stringify(strings).replace(/</g, '\\u003c') + ';' + RI_SCRIPT + '</script></body></html>';
 }
