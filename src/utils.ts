@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AI_PROVIDER_VALUES } from './aiProviders';
-import { COMMIT_ACTION_IDS, GRAPH_COLOUR_PRESET_NAMES, getConfig, getSettingFallback, saveSettingFallback } from './config';
+import { COMMIT_ACTION_IDS, GRAPH_COLOUR_PRESET_NAMES, ROW_ACTIONS_POSITIONS, getConfig, getSettingFallback, saveSettingFallback } from './config';
 import { DataSource } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
@@ -357,6 +357,7 @@ const UPDATABLE_EXTENSION_SETTINGS: { readonly [key: string]: ReadonlyArray<stri
 	'ai.commitMessage.enabled': [true, false],
 	'ai.explainCommit.enabled': [true, false],
 	'ai.provider': AI_PROVIDER_VALUES,
+	'commitRow.actionsPosition': ROW_ACTIONS_POSITIONS,
 	'diff.hideUnchangedRegions': [true, false],
 	'graph.colourPreset': GRAPH_COLOUR_PRESET_NAMES,
 	'graph.density': ['Comfortable', 'Compact'],
@@ -455,7 +456,7 @@ export function getSettingTarget(config: vscode.WorkspaceConfiguration, key: str
  */
 export function updateExtensionSetting(key: string, value: string | boolean | ReadonlyArray<string>): Thenable<ErrorInfo> {
 	let normalisedValue: string | boolean | ReadonlyArray<string> = value;
-	if (key === 'commitDetailsView.actions') {
+	if (key === 'commitDetailsView.actions' || key === 'commitRow.actions') {
 		if (!Array.isArray(value) || value.length > COMMIT_ACTION_IDS.length || !value.every((item) => typeof item === 'string' && COMMIT_ACTION_IDS.includes(item))) {
 			return Promise.resolve(t('The Extension Setting "{0}" can\'t be set to "{1}".', 'git-map.' + key, JSON.stringify(value)));
 		}
@@ -490,7 +491,7 @@ export function updateExtensionSetting(key: string, value: string | boolean | Re
 		return setDiffHideUnchangedRegions(<boolean>normalisedValue).then(() => null);
 	}
 	const config = vscode.workspace.getConfiguration('git-map');
-	if (key === 'commitDetailsView.actions') {
+	if (key === 'commitDetailsView.actions' || key === 'commitRow.actions' || key === 'commitRow.actionsPosition') {
 		return updateConfigResilient(config, key, normalisedValue, true).then(async (wrote) => {
 			await saveSettingFallback(key, wrote ? undefined : normalisedValue);
 			return null;

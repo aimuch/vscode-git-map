@@ -114,7 +114,7 @@ class CdvFileView {
 			const commit = this.view.commits[this.view.commitLookup[expandedCommit.commitHash]];
 			if (expandedCommit.compareWithHash !== null) {
 				return this.view.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash).to;
-			} else if (commit.stash !== null && file.type === GG.GitFileStatus.Untracked) {
+			} else if (typeof commit !== 'undefined' && commit.stash !== null && file.type === GG.GitFileStatus.Untracked) {
 				return commit.stash.untrackedFilesHash!;
 			} else {
 				return expandedCommit.commitHash;
@@ -131,7 +131,7 @@ class CdvFileView {
 				const commitOrder = this.view.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash);
 				fromHash = commitOrder.from;
 				toHash = commitOrder.to;
-			} else if (commit.stash !== null) {
+			} else if (typeof commit !== 'undefined' && commit.stash !== null) {
 				// Stash Commit
 				if (fileStatus === GG.GitFileStatus.Untracked) {
 					fromHash = commit.stash.untrackedFilesHash!;
@@ -259,6 +259,114 @@ class CdvFileView {
 			const fileElem = getFileElemOfEventTarget(e.target);
 			triggerOpenFile(getFileOfFileElem(expandedCommit.fileChanges, fileElem), fileElem);
 		});
+
+		// Pointer-following floating action pill for Changed Files in Commit Details View
+		const filesElem = getCdvFileViewElem();
+		if (filesElem !== null) {
+			filesElem.classList.add('hasFloatingFileBar');
+			let barElem = document.getElementById('cdvFileFloatingBar');
+			if (barElem === null) {
+				barElem = document.createElement('div');
+				barElem.id = 'cdvFileFloatingBar';
+				barElem.className = 'hidden';
+				barElem.setAttribute('role', 'toolbar');
+			}
+			filesElem.appendChild(barElem);
+
+			let currentRecord: HTMLElement | null = null;
+			const hideBar = () => {
+				if (currentRecord !== null) currentRecord.classList.remove('rowActionsTarget');
+				currentRecord = null;
+				barElem!.classList.remove('gliding', 'tip-below');
+				barElem!.classList.add('hidden');
+			};
+			const placeBar = (clientX: number, updateVertical: boolean) => {
+				if (currentRecord === null || barElem!.classList.contains('hidden')) return;
+				const hostRect = filesElem.getBoundingClientRect();
+				const rowRect = currentRecord.getBoundingClientRect();
+				const barW = barElem!.offsetWidth || 76;
+				const barH = barElem!.offsetHeight || 24;
+				const minL = 10;
+				const maxL = Math.max(minL, hostRect.width - barW - 14);
+				const relX = clientX - hostRect.left;
+				let left = relX + 18;
+				if (left > maxL) left = relX - 18 - barW;
+				left = Math.max(minL, Math.min(left, maxL));
+				if (updateVertical) {
+					barElem!.classList.remove('gliding');
+					barElem!.classList.toggle('tip-below', rowRect.top - hostRect.top < 28);
+					const top = rowRect.top - hostRect.top + filesElem.scrollTop + (rowRect.height - barH) / 2;
+					barElem!.style.top = Math.round(top) + 'px';
+				} else {
+					barElem!.classList.add('gliding');
+				}
+				barElem!.style.left = Math.round(left + filesElem.scrollLeft) + 'px';
+			};
+			filesElem.onmousemove = (ev: MouseEvent) => {
+				if (ev.altKey || contextMenu.isOpen() || dialog.isOpen()) {
+					hideBar();
+					return;
+				}
+				const targetEl = ev.target instanceof Element ? ev.target : null;
+				if (targetEl && barElem!.contains(targetEl)) return;
+				const rec = targetEl ? <HTMLElement | null>targetEl.closest('.fileTreeFileRecord') : null;
+				const expandedCommit = this.view.expandedCommit;
+				if (rec === null || expandedCommit === null || expandedCommit.fileChanges === null) {
+					hideBar();
+					return;
+				}
+				if (rec === currentRecord && !barElem!.classList.contains('hidden')) {
+					const bRect = barElem!.getBoundingClientRect();
+					if (ev.clientX < bRect.left - 22 || ev.clientX > bRect.right + 22) {
+						placeBar(ev.clientX, false);
+					}
+					return;
+				}
+				if (currentRecord !== null) currentRecord.classList.remove('rowActionsTarget');
+				currentRecord = rec;
+				currentRecord.classList.add('rowActionsTarget');
+				const file = getFileOfFileElem(expandedCommit.fileChanges, rec);
+				const commitOrder = this.view.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
+				const isUncommitted = commitOrder.to === UNCOMMITTED;
+				const textFile = file.additions !== null && file.deletions !== null;
+				const diffPossible = file.type === GG.GitFileStatus.Untracked || textFile;
+				const copyTitle = escapeHtml(t('Copy Absolute File Path to Clipboard'));
+				const revTitle = escapeHtml(t('View File at this Revision'));
+				const openTitle = escapeHtml(t('Open File'));
+				let html = '<button type="button" class="rowAction" data-cdv-act="copy" data-tip="' + copyTitle + '" aria-label="' + copyTitle + '">' + SVG_ICONS.copy + '</button>';
+				if (file.type !== GG.GitFileStatus.Deleted) {
+					if (diffPossible && !isUncommitted) {
+						html += '<button type="button" class="rowAction" data-cdv-act="rev" data-tip="' + revTitle + '" aria-label="' + revTitle + '">' + SVG_ICONS.commit + '</button>';
+					}
+					html += '<button type="button" class="rowAction" data-cdv-act="open" data-tip="' + openTitle + '" aria-label="' + openTitle + '">' + SVG_ICONS.openFile + '</button>';
+				}
+				barElem!.innerHTML = html;
+				barElem!.classList.remove('hidden');
+				placeBar(ev.clientX, true);
+			};
+			filesElem.onmouseleave = () => hideBar();
+			filesElem.onscroll = () => hideBar();
+			const cdvContentElem = document.getElementById('cdvContent');
+			if (cdvContentElem !== null) cdvContentElem.addEventListener('scroll', () => hideBar(), { passive: true });
+			barElem.onclick = (ev: MouseEvent) => {
+				handledEvent(ev);
+				const btn = ev.target instanceof Element ? <HTMLElement | null>ev.target.closest('[data-cdv-act]') : null;
+				const expandedCommit = this.view.expandedCommit;
+				if (btn === null || currentRecord === null || expandedCommit === null || expandedCommit.fileChanges === null) return;
+				const file = getFileOfFileElem(expandedCommit.fileChanges, currentRecord);
+				switch (btn.dataset.cdvAct) {
+					case 'copy':
+						triggerCopyFilePath(file, true);
+						break;
+					case 'rev':
+						triggerViewFileAtRevision(file, currentRecord);
+						break;
+					case 'open':
+						triggerOpenFile(file, currentRecord);
+						break;
+				}
+			};
+		}
 
 		addListenerToClass('fileTreeFileRecord', 'contextmenu', (e: Event) => {
 			handledEvent(e);

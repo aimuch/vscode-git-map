@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.4.3",
+	"version": "2.5.0",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -549,6 +549,7 @@
 							"revert",
 							"drop",
 							"editMessage",
+							"amendCommit",
 							"undoCommit",
 							"fixup",
 							"merge",
@@ -570,6 +571,53 @@
 						"cherrypick"
 					],
 					"description": "%config.commitDetailsView.actions.description%"
+				},
+				"git-map.commitRow.actions": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": [
+							"checkout",
+							"createBranch",
+							"cherrypick",
+							"addTag",
+							"createWorktree",
+							"revert",
+							"drop",
+							"editMessage",
+							"amendCommit",
+							"undoCommit",
+							"fixup",
+							"merge",
+							"rebase",
+							"reset",
+							"bisectBad",
+							"bisectGood",
+							"bisectSkip",
+							"aiReview",
+							"copyHash",
+							"copySubject",
+							"savePatch",
+							"copyPatch"
+						]
+					},
+					"default": [
+						"createBranch",
+						"checkout",
+						"cherrypick",
+						"copyHash"
+					],
+					"description": "%config.commitRow.actions.description%"
+				},
+				"git-map.commitRow.actionsPosition": {
+					"type": "string",
+					"enum": [
+						"Pointer",
+						"Description",
+						"Row"
+					],
+					"default": "Pointer",
+					"description": "%config.commitRow.actionsPosition.description%"
 				},
 				"git-map.commitDetailsView.autoCenter": {
 					"type": "boolean",

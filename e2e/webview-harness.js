@@ -1280,18 +1280,19 @@
 			return 'Copied: ' + copied.data.split('\n').map((h) => h.substring(32)).join(', ') + '; cherry picked: ' + request.commitHashes.map((h) => h.substring(32)).join(', ') + '; merge commit refused';
 		});
 
-		await check('ui-row-actions', '[GitLens] Hovering over a commit shows buttons of its most common actions at the end of its row (which run the actions of its context menu)', async () => {
+		await check('ui-row-actions', '[GitLens] Hovering over a commit shows a pointer-following floating action pill (which runs the actions of its context menu)', async () => {
 			if (document.getElementById('cdv') !== null) {
 				mouse(document.getElementById('cdvClose'), 'click');
 				await waitFor('the Commit Details View to close', () => document.getElementById('cdv') === null);
 			}
 			const row = commitRow(3);
 			mouse(row.querySelector('td.descriptionCol .text'), 'mouseover');
-			const toolbar = await waitFor('the buttons to be shown', () => row.querySelector('td.descriptionCol #rowActions'));
-			const titles = Array.from(toolbar.querySelectorAll('.rowAction')).filter((elem) => elem.style.display !== 'none').map((elem) => elem.title);
-			assert(JSON.stringify(titles) === JSON.stringify(['Create Branch…', 'Checkout…', 'Cherry Pick…', 'Copy Commit Hash to Clipboard', 'More Actions…']), 'Unexpected buttons: ' + JSON.stringify(titles));
-			const toolbarRect = toolbar.getBoundingClientRect(), cellRect = row.querySelector('td.descriptionCol').getBoundingClientRect();
-			assert(Math.abs(toolbarRect.right - cellRect.right) < 1 && toolbarRect.top >= cellRect.top - 1 && toolbarRect.bottom <= cellRect.bottom + 1, 'The buttons aren\'t at the end of the row: ' + JSON.stringify(toolbarRect));
+			const toolbar = await waitFor('the floating action pill to be shown', () => document.getElementById('rowActions'));
+			const labels = Array.from(toolbar.querySelectorAll('.rowAction')).filter((elem) => elem.style.display !== 'none').map((elem) => elem.dataset.tip || elem.getAttribute('aria-label'));
+			assert(JSON.stringify(labels) === JSON.stringify(['Create Branch…', 'Checkout…', 'Cherry Pick…', 'Copy Commit Hash to Clipboard', 'More Actions…']), 'Unexpected buttons: ' + JSON.stringify(labels));
+			assert(row.classList.contains('rowActionsTarget'), 'Hovered row should carry rowActionsTarget class');
+			const toolbarRect = toolbar.getBoundingClientRect(), rowRect = row.getBoundingClientRect();
+			assert(Math.abs((toolbarRect.top + toolbarRect.height / 2) - (rowRect.top + rowRect.height / 2)) <= 3 && toolbarRect.left >= 0 && toolbarRect.right <= window.innerWidth, 'Floating pill is not aligned vertically with the hovered row: ' + JSON.stringify({ toolbarRect, rowRect }));
 			const button = (action) => toolbar.querySelector('.rowAction[data-action="' + action + '"]');
 
 			// Copying the hash doesn't open the Commit Details View (the click isn't handled by the row)
@@ -1315,12 +1316,12 @@
 			key(document.body, 'Escape');
 			await waitFor('the context menu to close', () => document.querySelector('.contextMenu') === null);
 
-			// The buttons follow the mouse, and are hidden when it leaves the commits
+			// The floating pill follows the mouse across rows, and is hidden when it leaves the commits
 			mouse(commitRow(6).querySelector('td.dateCol'), 'mouseover');
-			assert(commitRow(6).querySelector('#rowActions') !== null && row.querySelector('#rowActions') === null, 'The buttons didn\'t move to the commit the mouse is over');
+			assert(commitRow(6).classList.contains('rowActionsTarget') && !row.classList.contains('rowActionsTarget') && document.getElementById('rowActions') !== null, 'The floating pill did not move to the commit the mouse is over');
 			document.getElementById('commitTable').dispatchEvent(new MouseEvent('mouseleave'));
-			assert(document.getElementById('rowActions') === null, 'The buttons weren\'t hidden');
-			return 'Buttons: ' + titles.join(' | ') + '; copied ' + copied.data.substring(32) + ', opened the Create Branch dialog & the context menu';
+			assert(document.getElementById('rowActions') === null && !commitRow(6).classList.contains('rowActionsTarget'), 'The floating pill was not hidden');
+			return 'Buttons: ' + labels.join(' | ') + '; copied ' + copied.data.substring(32) + ', opened the Create Branch dialog & the context menu';
 		});
 
 		await check('ui-undo', '[GitKraken] After an action that can be undone, an Undo button & a notification are shown, which undo it (after confirming)', async () => {

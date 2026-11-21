@@ -4,7 +4,7 @@
  */
 class ViewActions {
 	private readonly view: GitGraphView;
-	private editMessageTarget: (DialogTarget & CommitTarget) | null = null; // The target of the Edit Commit Message dialog (while its message is loaded)
+	private editMessageTarget: DialogTarget | null = null; // The target of the Edit Commit Message / Amend dialog (while its message is loaded)
 	private stashTarget: DialogTarget | null = null; // The target of the Stash dialog (while the files are loaded)
 
 	/**
@@ -261,6 +261,12 @@ class ViewActions {
 					sendMessage({ command: 'loadCommitMessage', repo: this.view.currentRepo, commitHash: hash });
 				}
 			}, {
+				id: 'amendCommit',
+				title: t('Amend Commit') + ELLIPSIS,
+				icon: MENU_ICONS.edit,
+				visible: isHead,
+				onClick: () => this.openAmendCommitDialog(hash, target)
+			}, {
 				id: 'undoCommit',
 				title: t('Undo Commit') + ELLIPSIS,
 				icon: MENU_ICONS.revert,
@@ -403,6 +409,16 @@ class ViewActions {
 				icon: MENU_ICONS.copy,
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('commits', [hash], '', true)
+			},
+			{
+				id: 'compareBranchCommit',
+				title: t('Compare with Branch Commit') + ELLIPSIS,
+				icon: MENU_ICONS.compare,
+				visible: true,
+				onClick: () => {
+					const branchHint = commit.heads.length > 0 ? commit.heads[0] : (commit.remotes.length > 0 ? commit.remotes[0].name : null);
+					this.view.openBranchCommitCompareModal(branchHint, null, hash);
+				}
 			}
 		]];
 	}
@@ -1126,8 +1142,13 @@ class ViewActions {
 		if (selectable) addFileSelectionToDialog(files.length);
 	}
 
+	public openAmendCommitDialog(commitHash: string, target: DialogTarget | null) {
+		this.editMessageTarget = target;
+		sendMessage({ command: 'loadCommitMessage', repo: this.view.currentRepo, commitHash: commitHash, amendMode: true });
+	}
+
 	/**
-	 * Show the dialog to edit the message of a commit, once its message is loaded.
+	 * Show the dialog to edit the message (or amend) a commit, once its message is loaded.
 	 * @param msg The message containing the message of the commit.
 	 */
 	public processLoadCommitMessageResponse(msg: GG.ResponseLoadCommitMessage) {
@@ -1137,7 +1158,65 @@ class ViewActions {
 			dialog.showError(t('Unable to Edit Commit Message'), msg.error, null, null);
 			return;
 		}
-		const isHead = msg.commitHash === this.view.getCommitHead();
+		const isHead = typeof msg.isHead === 'boolean' ? msg.isHead : msg.commitHash === this.view.getCommitHead();
+		if (msg.amendMode && isHead) {
+			const stagedCount = typeof msg.stagedCount === 'number' ? msg.stagedCount : 0;
+			const unstagedCount = typeof msg.unstagedCount === 'number' ? msg.unstagedCount : 0;
+			const statusHint = stagedCount > 0 || unstagedCount > 0
+				? '<br/><i>' + t('Working tree: {0} staged, {1} unstaged.', stagedCount, unstagedCount) + '</i>'
+				: '';
+			const inputs: DialogInput[] = [
+				{ type: DialogInputType.TextArea, name: t('Message'), default: msg.message, placeholder: null },
+				{
+					type: DialogInputType.Checkbox,
+					name: stagedCount > 0 ? t('Include staged changes ({0})', stagedCount) : t('Include staged changes'),
+					value: stagedCount > 0,
+					info: t('When unchecked, only the commit message and metadata are amended (--only).')
+				},
+				{
+					type: DialogInputType.Checkbox,
+					name: unstagedCount > 0 ? t('Stage all uncommitted changes (git add -A, {0})', unstagedCount) : t('Stage all uncommitted changes (git add -A)'),
+					value: false,
+					info: t('Stage all modified, deleted, and untracked files before amending HEAD.')
+				},
+				{
+					type: DialogInputType.Checkbox,
+					name: t('Reset author date to now (--date=now)'),
+					value: false
+				},
+				{
+					type: DialogInputType.Checkbox,
+					name: t('Skip Git hooks (--no-verify)'),
+					value: false
+				}
+			];
+			dialog.showForm(
+				t('Amend HEAD commit <b><i>{0}</i></b> (<code>git commit --amend</code>):', abbrevCommit(msg.commitHash)) +
+				statusHint +
+				(msg.pushedTo !== null ? '<div class="dialogCallout warning">' + SVG_ICONS.alert + '<span>' + t('This commit is already on <b>{0}</b>. Amending it gives it a new hash, so the branch must be force-pushed.', escapeHtml(msg.pushedTo)) + '</span></div>' : ''),
+				inputs,
+				t('Amend Commit'),
+				(values) => {
+					const message = (<string>values[0]).trim();
+					if (message === '') {
+						dialog.showError(t('Unable to Amend Commit'), t('The message can\'t be empty.'), null, null);
+						return;
+					}
+					runAction({
+						command: 'editCommitMessage',
+						repo: this.view.currentRepo,
+						commitHash: msg.commitHash,
+						message: message,
+						includeStaged: <boolean>values[1],
+						stageAll: <boolean>values[2],
+						resetAuthorDate: <boolean>values[3],
+						noVerify: <boolean>values[4]
+					}, t('Amending Commit'));
+				},
+				target
+			);
+			return;
+		}
 		dialog.showForm(t('Edit the message of commit <b><i>{0}</i></b>:', abbrevCommit(msg.commitHash)) +
 			(isHead ? '' : '<br/><i>' + t('The later commits are rebased onto the changed commit (they get new hashes).') + '</i>') +
 			(msg.pushedTo !== null ? '<div class="dialogCallout warning">' + SVG_ICONS.alert + '<span>' + t('This commit is already on <b>{0}</b>. Changing it gives it a new hash, so the branch must be force-pushed.', escapeHtml(msg.pushedTo)) + '</span></div>' : ''), [

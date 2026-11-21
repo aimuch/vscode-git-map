@@ -99,6 +99,7 @@ class GitGraphView {
 	public readonly branchCleanup: BranchCleanup;
 	public readonly commitExplainer: CommitExplainer;
 	public readonly hunkModal: HunkStagingModal;
+	public readonly branchCommitCompareModal: BranchCommitCompareModal;
 	public readonly commandPalette: GraphCommandPalette;
 	private readonly dragDrop: GraphDragDropController;
 	private readonly operationBar: OperationBar;
@@ -149,6 +150,7 @@ class GitGraphView {
 		this.commitExplainer = new CommitExplainer(this);
 		this.hunkModal = new HunkStagingModal(this);
 		this.commandPalette = new GraphCommandPalette(this);
+		this.branchCommitCompareModal = new BranchCommitCompareModal(this);
 		this.inlineCommitBox = new InlineCommitBox(this);
 		this.prPopover = new PullRequestPopover(this);
 		this.dragDrop = new GraphDragDropController(this);
@@ -1112,7 +1114,11 @@ class GitGraphView {
 		}
 	}
 
-	public setCdvConfig(actions: ReadonlyArray<string>, hideUnchangedRegions: boolean, pullRequestStatusEnabled?: boolean) {
+	public setCdvConfig(actions: ReadonlyArray<string>, hideUnchangedRegions: boolean, pullRequestStatusEnabled?: boolean, rowActions?: GG.RowActionsConfig) {
+		if (typeof rowActions !== 'undefined') {
+			(<GG.Writeable<GG.GitGraphViewConfig>>this.config).rowActions = rowActions;
+			this.rowActions.hide();
+		}
 		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = actions;
 		(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).hideUnchangedRegions = hideUnchangedRegions;
 		this.renderCdvActions();
@@ -1519,7 +1525,17 @@ class GitGraphView {
 			const commitElem = findCommitElemWithId(elems, this.getCommitId(expandedCommit.commitHash));
 			const compareWithElem = expandedCommit.compareWithHash !== null ? findCommitElemWithId(elems, this.getCommitId(expandedCommit.compareWithHash)) : null;
 
-			if (commitElem === null || (expandedCommit.compareWithHash !== null && compareWithElem === null)) {
+			if (expandedCommit.compareWithHash !== null && expandedCommit.customCompareLabels) {
+				expandedCommit.index = commitElem !== null ? parseInt(commitElem.dataset.id!) : -1;
+				expandedCommit.commitElem = commitElem;
+				expandedCommit.compareWithElem = compareWithElem;
+				this.saveState();
+				if (!expandedCommit.loading && expandedCommit.fileChanges !== null && expandedCommit.fileTree !== null) {
+					this.showCommitComparison(expandedCommit.commitHash, expandedCommit.compareWithHash, expandedCommit.fileChanges, expandedCommit.fileTree, expandedCommit.codeReview, expandedCommit.lastViewedFile, true);
+				} else {
+					this.requestCommitComparison(expandedCommit.commitHash, expandedCommit.compareWithHash, false);
+				}
+			} else if (commitElem === null || (expandedCommit.compareWithHash !== null && compareWithElem === null)) {
 				this.closeCommitDetails(false);
 				this.saveState();
 			} else {
@@ -1989,7 +2005,7 @@ class GitGraphView {
 	 * Get the top of the area of the view in which commits are visible: below the sticky controls, and the column headers when they're frozen.
 	 * @returns The vertical position (relative to the viewport, as rendered).
 	 */
-	private getVisibleCommitsTop() {
+	public getVisibleCommitsTop() {
 		const colHeaderElem = this.config.graph.freezeColumnHeaders ? document.querySelector('#tableColHeaders th') : null;
 		return Math.max(this.controlsElem.getBoundingClientRect().bottom, colHeaderElem !== null ? colHeaderElem.getBoundingClientRect().bottom : 0);
 	}
@@ -2428,6 +2444,9 @@ class GitGraphView {
 				if (this.commandPalette.isOpen()) {
 					this.commandPalette.close();
 					handledEvent(e);
+				} else if (this.branchCommitCompareModal.isOpen()) {
+					this.branchCommitCompareModal.close();
+					handledEvent(e);
 				} else if (this.prPopover.isOpen()) {
 					this.closePrPopover();
 					handledEvent(e);
@@ -2672,14 +2691,26 @@ class GitGraphView {
 		this.tableElem.addEventListener('mouseover', (e: MouseEvent) => {
 			const commitElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.commit') : null;
 			highlightBranchOfCommit(commitElem !== null && typeof commitElem.dataset.id === 'string' ? parseInt(commitElem.dataset.id) : null);
-			// The buttons of the most common actions on the commit are shown at the end of its row
-			if (commitElem !== null) {
-				this.rowActions.show(commitElem);
+			// Floating pill of the most common actions on the commit (next to the pointer by default)
+			if (commitElem !== null && !e.altKey && !contextMenu.isOpen() && !dialog.isOpen()) {
+				this.rowActions.show(commitElem, e.clientX);
 			} else {
 				this.rowActions.hide();
 			}
 		});
-		this.tableElem.addEventListener('mouseleave', () => {
+		this.tableElem.addEventListener('mousemove', (e: MouseEvent) => {
+			const commitElem = e.target instanceof Element ? <HTMLElement | null>e.target.closest('.commit') : null;
+			if (commitElem === null || e.altKey || contextMenu.isOpen() || dialog.isOpen()) {
+				this.rowActions.hide();
+			} else if (this.getRowActionsConfig().position === 'Pointer' || !this.rowActions.isShownFor(commitElem)) {
+				this.rowActions.show(commitElem, e.clientX);
+			}
+		});
+		this.viewElem.addEventListener('scroll', () => {
+			this.rowActions.hide();
+		}, { passive: true });
+		this.tableElem.addEventListener('mouseleave', (e: MouseEvent) => {
+			if (this.rowActions.contains(e.relatedTarget)) return;
 			highlightBranchOfCommit(null);
 			this.rowActions.hide();
 		});
@@ -2981,7 +3012,8 @@ class GitGraphView {
 
 	public showCommitComparison(commitHash: string, compareWithHash: string, fileChanges: ReadonlyArray<GG.GitFileChange>, fileTree: FileTreeFolder, codeReview: GG.CodeReview | null, lastViewedFile: string | null, refresh: boolean) {
 		const expandedCommit = this.expandedCommit;
-		if (expandedCommit === null || expandedCommit.commitElem === null || expandedCommit.compareWithElem === null || expandedCommit.commitHash !== commitHash || expandedCommit.compareWithHash !== compareWithHash) return;
+		if (expandedCommit === null || expandedCommit.commitHash !== commitHash || expandedCommit.compareWithHash !== compareWithHash) return;
+		if (!expandedCommit.customCompareLabels && (expandedCommit.commitElem === null || expandedCommit.compareWithElem === null)) return;
 
 		if (haveFilesChanged(expandedCommit.fileChanges, fileChanges)) {
 			expandedCommit.fileChanges = fileChanges;
@@ -2992,8 +3024,8 @@ class GitGraphView {
 		if (!refresh && (lastViewedFile !== null || expandedCommit.lastViewedFile === null)) {
 			expandedCommit.lastViewedFile = lastViewedFile;
 		}
-		expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
-		expandedCommit.compareWithElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
+		if (expandedCommit.commitElem !== null) expandedCommit.commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
+		if (expandedCommit.compareWithElem !== null) expandedCommit.compareWithElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
 		expandedCommit.loading = false;
 		this.saveState();
 
@@ -3005,14 +3037,17 @@ class GitGraphView {
 
 	private renderCommitDetailsView(refresh: boolean) {
 		const expandedCommit = this.expandedCommit;
-		if (expandedCommit === null || expandedCommit.commitElem === null) return;
+		if (expandedCommit === null) return;
+		const isCustomCompare = expandedCommit.compareWithHash !== null && !!expandedCommit.customCompareLabels;
+		if (!isCustomCompare && expandedCommit.commitElem === null) return;
 
-		let elem = document.getElementById('cdv'), html = '<div id="cdvContent">', isDocked = this.isCdvDocked(), messageHtml = '';
-		const isRight = isDocked && this.isCdvDockedRight();
+		let elem = document.getElementById('cdv'), html = '<div id="cdvContent">', isDocked = this.isCdvDocked() || isCustomCompare, messageHtml = '';
+		const isRight = isDocked && (this.isCdvDockedRight() || isCustomCompare);
 		const commitOrder = this.getCommitOrder(expandedCommit.commitHash, expandedCommit.compareWithHash === null ? expandedCommit.commitHash : expandedCommit.compareWithHash);
 		const codeReviewPossible = !expandedCommit.loading && commitOrder.to !== UNCOMMITTED;
-		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || this.commits[this.commitLookup[expandedCommit.commitHash]].parents.length > 0);
-		const explainPossible = this.config.explainCommit && expandedCommit.compareWithHash === null && expandedCommit.commitHash !== UNCOMMITTED && this.commits[this.commitLookup[expandedCommit.commitHash]].stash === null;
+		const commitObj = this.commits[this.commitLookup[expandedCommit.commitHash]];
+		const externalDiffPossible = !expandedCommit.loading && (expandedCommit.compareWithHash !== null || (typeof commitObj !== 'undefined' && commitObj.parents.length > 0));
+		const explainPossible = this.config.explainCommit && expandedCommit.compareWithHash === null && expandedCommit.commitHash !== UNCOMMITTED && typeof commitObj !== 'undefined' && commitObj.stash === null;
 		let activeTab: 'files' | 'message' | 'explain' = 'files';
 
 		if (elem === null) {
@@ -3023,11 +3058,11 @@ class GitGraphView {
 			if (isDocked) this.branchCompare.closePanel(); // The panel of a comparison of branches is docked in the same place
 			elem = document.createElement(isDocked ? 'div' : 'tr');
 			elem.id = 'cdv';
-			elem.className = isDocked ? (this.isCdvDockedRight() ? 'docked right' : 'docked') : 'inline';
+			elem.className = isDocked ? (isRight ? 'docked right' : 'docked') : 'inline';
 			this.setCdvHeight(elem, isDocked);
 			if (isDocked) {
 				document.body.appendChild(elem);
-			} else {
+			} else if (expandedCommit.commitElem !== null) {
 				insertAfter(elem, expandedCommit.commitElem);
 			}
 		}
@@ -3083,7 +3118,9 @@ class GitGraphView {
 				}
 			} else {
 				// Commit comparison should be shown
-				html += '<p class="cdvSummaryText">' + t('Displaying all changes from <b>{0}</b> to <b>{1}</b>.', commitOrder.from, (commitOrder.to !== UNCOMMITTED ? commitOrder.to : t('Uncommitted Changes'))) + '</p>' + (isRight ? generateCdvStatsHtml(expandedCommit.fileChanges!) : '');
+				const fromDisplay = expandedCommit.customCompareLabels ? escapeHtml(expandedCommit.customCompareLabels.from) : commitOrder.from;
+				const toDisplay = expandedCommit.customCompareLabels ? escapeHtml(expandedCommit.customCompareLabels.to) : (commitOrder.to !== UNCOMMITTED ? commitOrder.to : t('Uncommitted Changes'));
+				html += '<p class="cdvSummaryText">' + t('Displaying all changes from <b>{0}</b> to <b>{1}</b>.', fromDisplay, toDisplay) + '</p>' + (isRight ? generateCdvStatsHtml(expandedCommit.fileChanges!) : '');
 			}
 			const fileViewHtml = generateFileViewHtml(expandedCommit.fileTree!, expandedCommit.fileChanges!, expandedCommit.lastViewedFile, expandedCommit.contextMenuOpen.fileView, this.cdvFileView.getFileViewType(), commitOrder.to === UNCOMMITTED);
 			activeTab = (this.activeCdvTab === 'explain' && explainPossible) || (this.activeCdvTab === 'message' && messageHtml !== '') ? this.activeCdvTab : 'files';
@@ -3115,7 +3152,7 @@ class GitGraphView {
 		if (!expandedCommit.loading) this.setCdvDivider();
 		if (!isDocked) this.renderGraph();
 
-		if (!refresh) {
+		if (!refresh && expandedCommit.commitElem !== null) {
 			if (isDocked) {
 				const elemTop = this.controlsElem.clientHeight + expandedCommit.commitElem.offsetTop, coveredTop = this.getCoveredTopHeight(), visibleBottom = this.viewElem.clientHeight - this.getCoveredBottomHeight();
 				if (elemTop - 8 < this.viewElem.scrollTop + coveredTop) {
@@ -3266,7 +3303,8 @@ class GitGraphView {
 			'<span class="cdvMuted" title="' + escapeHtml(formatLongDate(commitDetails.committerDate)) + '">' + t('Committed {0}', formatRelativeDate(commitDetails.committerDate)) + ' · ' + formatIsoDateTime(commitDetails.committerDate) + '</span></span></div>' +
 			'<div class="cdvChips"><button type="button" id="cdvCopyHash" class="cdvChip mono" title="' + t('Copy Commit Hash to Clipboard') + '" tabindex="-1">' + SVG_ICONS.copy + escapeHtml(abbrevCommit(commitDetails.hash)) + '</button>' +
 			(remoteUrl !== null ? '<button type="button" id="cdvOpenOnRemote" class="cdvChip" title="' + escapeHtml(remoteUrl) + '" tabindex="-1">' + SVG_ICONS.linkExternal + t('Open on Remote') + '</button>' : '') +
-			'<button type="button" id="cdvCompare" class="cdvChip' + (this.cdvComparePending ? ' active' : '') + '" title="' + t('Click on another commit to compare it with this commit') + '" tabindex="-1">' + SVG_ICONS.compare + (this.cdvComparePending ? t('Click on a commit to compare with') : t('Compare with…')) + '</button></div>' +
+			'<button type="button" id="cdvCompare" class="cdvChip' + (this.cdvComparePending ? ' active' : '') + '" title="' + t('Click on another commit to compare it with this commit') + '" tabindex="-1">' + SVG_ICONS.compare + (this.cdvComparePending ? t('Click on a commit to compare with') : t('Compare with…')) + '</button>' +
+			(commitDetails.hash === this.commitHead ? '<button type="button" id="cdvAmend" class="cdvChip" title="' + escapeHtml(t('Amend HEAD commit (git commit --amend)')) + '" tabindex="-1">' + MENU_ICONS.edit + t('Amend') + ELLIPSIS + '</button>' : '') + '</div>' +
 			'<h2 class="cdvSubject">' + textFormatter.format(subject) + '</h2>' +
 			(body !== '' ? '<div class="cdvBody">' + textFormatter.format(body) + '</div>' : '') +
 			(this.getCdvFileFocus(commitDetails.hash, fileChanges) !== null ? this.generateCdvFileFocusHtml(commitDetails.hash, fileChanges) : (issues.length > 0 ? '<div class="cdvLine"><span class="cdvMuted">' + t('Related Issues') + '</span>' + issues.map((issue) => '<a class="' + CLASS_EXTERNAL_URL + '" href="' + escapeHtml(issue.url) + '" tabindex="-1">' + escapeHtml(issue.label) + '</a>').join('') + '</div>' : '') +
@@ -3531,6 +3569,10 @@ class GitGraphView {
 			compareElem.innerHTML = SVG_ICONS.compare + (this.cdvComparePending ? t('Click on a commit to compare with') : t('Compare with…'));
 			this.syncAxState();
 		});
+		const amendElem = document.getElementById('cdvAmend');
+		if (amendElem !== null) amendElem.addEventListener('click', () => {
+			this.actions.openAmendCommitDialog(expandedCommit.commitHash, null);
+		});
 	}
 
 	public cancelCdvComparePending() {
@@ -3547,6 +3589,7 @@ class GitGraphView {
 	public getActiveOverlay(): string {
 		if (dialog.isOpen()) return 'dialog';
 		if (this.commandPalette && this.commandPalette.isOpen()) return 'command-palette';
+		if (this.branchCommitCompareModal && this.branchCommitCompareModal.isOpen()) return 'branch-commit-compare';
 		if (this.prPopover && this.prPopover.isOpen()) return 'pr-popover';
 		if (contextMenu.isOpen()) return 'context-menu';
 		if (this.isHunkModalOpen()) return 'hunk-modal';
@@ -3675,11 +3718,14 @@ class GitGraphView {
 		if (elem !== null) elem.remove();
 	}
 
-	public openCdvActionsCustomizer() {
+	public openCdvActionsCustomizer(mode: 'cdv' | 'row' = 'cdv') {
 		this.closeCdvActionsCustomizer();
 		closeDialogAndContextMenu();
+		const isRow = mode === 'row';
 		const catalog = getCommitActionCatalog();
-		const configured = this.getConfiguredCdvActions();
+		const defaults: ReadonlyArray<string> = isRow ? ['createBranch', 'checkout', 'cherrypick', 'copyHash'] : DEFAULT_CDV_COMMIT_ACTIONS;
+		const configured = isRow ? this.getRowActionsConfig().actions : this.getConfiguredCdvActions();
+		let position: GG.RowActionsPosition = isRow ? this.getRowActionsConfig().position : 'Pointer';
 		const items: { id: string, title: string, icon: string, conditional: boolean, checked: boolean }[] = [];
 		const added = new Set<string>();
 		configured.forEach((id) => {
@@ -3701,18 +3747,28 @@ class GitGraphView {
 		document.body.appendChild(modal);
 
 		let dragIndex = -1;
+		const modalTitle = isRow ? t('Customize Row Hover Buttons') : t('Customize Commit Action Buttons');
 		const condTitle = escapeHtml(t('Shown only when applicable to the selected commit (e.g. HEAD, linear commits, or active bisect)'));
 		const render = (focusActionId?: string, focusControl?: 'checkbox' | 'up' | 'down') => {
 			const prevList = modal.querySelector<HTMLElement>('.cdvActionsModalList');
 			const savedScrollTop = prevList !== null ? prevList.scrollTop : 0;
 			let orderCounter = 0;
 			const checkedCount = items.filter((item) => item.checked).length;
-			modal.innerHTML = '<div class="cdvActionsModalPanel" role="dialog" aria-modal="true" aria-label="' + escapeHtml(t('Customize Commit Action Buttons')) + '">' +
-				'<div class="aiCommitHeader"><span class="aiCommitTitle">' + MENU_ICONS.settings + '<span>' + t('Customize Commit Action Buttons') + '</span></span>' +
+			const positionHtml = isRow
+				? '<div class="cdvActionsModalPosition"><span class="cdvActionsModalPositionLabel">' + t('Position:') + '</span>' +
+					[['Pointer', t('Next to the Pointer')], ['Description', t('End of the Description Column')], ['Row', t('End of the Row')]].map((option) =>
+						'<span class="cdvActionsModalPositionOption' + (option[0] === position ? ' ' + CLASS_SELECTED : '') + '" data-position="' + option[0] + '" role="radio" aria-checked="' + (option[0] === position ? 'true' : 'false') + '">' + option[1] + '</span>'
+					).join('') + '</div>'
+				: '';
+			modal.innerHTML = '<div class="cdvActionsModalPanel" role="dialog" aria-modal="true" aria-label="' + escapeHtml(modalTitle) + '">' +
+				'<div class="aiCommitHeader"><span class="aiCommitTitle">' + MENU_ICONS.settings + '<span>' + modalTitle + '</span></span>' +
 				'<button type="button" class="aiCommitClose" data-cdv-custom="close" title="' + t('Close') + '" aria-label="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button></div>' +
-				'<div class="cdvActionsModalHint">' + t('Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.') + '</div>' +
+				'<div class="cdvActionsModalHint">' + (isRow
+				? t('Checked actions are buttons on the row the mouse is over; the others are folded into its "More Actions" menu. Drag or use the arrows to adjust their order.')
+				: t('Choose which actions appear in the Commit Details action bar, and drag or use the arrows to adjust their order.')) + '</div>' +
+				positionHtml +
 				'<div class="cdvActionsModalList">' + items.map((item, index) => {
-				const badge = item.checked ? '<span class="cdvActionsOrderBadge' + (orderCounter === 0 ? ' primary' : '') + '">#' + (++orderCounter) + '</span>' : '<span class="cdvActionsOrderBadge empty"></span>';
+				const badge = item.checked ? '<span class="cdvActionsOrderBadge' + (orderCounter === 0 && !isRow ? ' primary' : '') + '">#' + (++orderCounter) + '</span>' : '<span class="cdvActionsOrderBadge empty"></span>';
 				const condBadge = item.conditional ? '<span class="cdvActionsCondBadge" title="' + condTitle + '">' + t('Contextual') + '</span>' : '';
 				return '<div class="cdvActionsModalItem' + (item.checked ? ' checked' : '') + '" draggable="true" data-index="' + index + '" data-action-id="' + escapeHtml(item.id) + '">' +
 						'<span class="rebaseEditorGrip" title="' + t('Drag to reorder') + '">' + REBASE_GRIP_ICON + '</span>' +
@@ -3776,6 +3832,13 @@ class GitGraphView {
 		});
 		modal.addEventListener('click', (e) => {
 			if (!(e.target instanceof Element)) return;
+			const positionElem = <HTMLElement | null>e.target.closest('.cdvActionsModalPositionOption');
+			if (positionElem !== null) {
+				const value = positionElem.dataset.position;
+				position = value === 'Row' || value === 'Description' ? value : 'Pointer';
+				render();
+				return;
+			}
 			const moveElem = <HTMLElement | null>e.target.closest('.rebaseEditorMoveBtn');
 			if (moveElem !== null && !moveElem.classList.contains(CLASS_DISABLED)) {
 				const index = parseInt(moveElem.dataset.index!);
@@ -3791,12 +3854,13 @@ class GitGraphView {
 					break;
 				case 'reset': {
 					items.length = 0;
-					DEFAULT_CDV_COMMIT_ACTIONS.forEach((id) => {
+					position = 'Pointer';
+					defaults.forEach((id) => {
 						const entry = catalog.find((item) => item.id === id);
 						if (typeof entry !== 'undefined') items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: true });
 					});
 					catalog.forEach((entry) => {
-						if (!DEFAULT_CDV_COMMIT_ACTIONS.includes(entry.id)) {
+						if (!defaults.includes(entry.id)) {
 							items.push({ id: entry.id, title: entry.title, icon: entry.icon, conditional: !!entry.conditional, checked: false });
 						}
 					});
@@ -3805,9 +3869,17 @@ class GitGraphView {
 				}
 				case 'save': {
 					const selectedIds = items.filter((item) => item.checked).map((item) => item.id);
-					(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = selectedIds;
-					this.renderCdvActions();
-					sendMessage({ command: 'updateExtensionSetting', key: 'commitDetailsView.actions', value: selectedIds });
+					if (isRow) {
+						const previous = this.getRowActionsConfig();
+						(<GG.Writeable<GG.GitGraphViewConfig>>this.config).rowActions = { actions: selectedIds, position: position };
+						this.rowActions.hide();
+						sendMessage({ command: 'updateExtensionSetting', key: 'commitRow.actions', value: selectedIds });
+						if (position !== previous.position) sendMessage({ command: 'updateExtensionSetting', key: 'commitRow.actionsPosition', value: position });
+					} else {
+						(<GG.Writeable<GG.CommitDetailsViewConfig>>this.config.commitDetailsView).actions = selectedIds;
+						this.renderCdvActions();
+						sendMessage({ command: 'updateExtensionSetting', key: 'commitDetailsView.actions', value: selectedIds });
+					}
 					this.closeCdvActionsCustomizer();
 					break;
 				}
@@ -4000,12 +4072,74 @@ class GitGraphView {
 		return this.expandedCommit !== null && this.expandedCommit.commitHash === commitHash && this.expandedCommit.compareWithHash === compareWithHash;
 	}
 
-	public getCommitOrder(hash1: string, hash2: string) {
-		if (this.commitLookup[hash1] > this.commitLookup[hash2]) {
-			return { from: hash1, to: hash2 };
-		} else {
-			return { from: hash2, to: hash1 };
+	public getRowActionsConfig(): GG.RowActionsConfig {
+		const configured = this.config.rowActions;
+		if (typeof configured !== 'undefined' && Array.isArray(configured.actions)) {
+			const pos: GG.RowActionsPosition = configured.position === 'Description' || configured.position === 'Row' ? configured.position : 'Pointer';
+			return { actions: configured.actions, position: pos };
 		}
+		return { actions: ['createBranch', 'checkout', 'cherrypick', 'copyHash'], position: 'Pointer' };
+	}
+
+	public openBranchCommitCompareModal(initialLeftBranch?: string | null, initialRightBranch?: string | null, initialLeftHash?: string | null) {
+		this.branchCommitCompareModal.open(initialLeftBranch, initialRightBranch, initialLeftHash);
+	}
+
+	public processLoadBranchCommitsResponse(msg: GG.ResponseLoadBranchCommits) {
+		this.branchCommitCompareModal.processLoadBranchCommitsResponse(msg);
+	}
+
+	public compareArbitraryCommits(fromHash: string, toHash: string, fromLabel?: string, toLabel?: string) {
+		if (fromHash === toHash) return;
+		const idxA = this.commitLookup[fromHash], idxB = this.commitLookup[toHash];
+		const elemA = typeof idxA === 'number' ? this.getCommitElem(idxA) : null;
+		const elemB = typeof idxB === 'number' ? this.getCommitElem(idxB) : null;
+		if (elemA !== null && elemB !== null && !fromLabel && !toLabel) {
+			this.loadCommitComparison(elemA, elemB);
+			return;
+		}
+		this.closeCommitDetails(false);
+		this.expandedCommit = {
+			index: typeof idxA === 'number' ? idxA : -1,
+			commitHash: fromHash,
+			commitElem: elemA,
+			compareWithHash: toHash,
+			compareWithElem: elemB,
+			commitDetails: null,
+			fileChanges: null,
+			fileTree: null,
+			avatar: null,
+			codeReview: null,
+			lastViewedFile: null,
+			customCompareLabels: fromLabel && toLabel ? { from: fromLabel, to: toLabel } : null,
+			loading: true,
+			scrollTop: { summary: 0, fileView: 0 },
+			contextMenuOpen: { summary: false, fileView: -1 }
+		};
+		if (elemA !== null) elemA.classList.add(CLASS_COMMIT_DETAILS_OPEN);
+		if (elemB !== null) elemB.classList.add(CLASS_COMMIT_DETAILS_OPEN);
+		this.saveState();
+		this.renderCommitDetailsView(false);
+		sendMessage({
+			command: 'compareCommits',
+			repo: this.currentRepo,
+			commitHash: fromHash,
+			compareWithHash: toHash,
+			fromHash: fromHash,
+			toHash: toHash,
+			refresh: false
+		});
+	}
+
+	public getCommitOrder(hash1: string, hash2: string) {
+		const idx1 = this.commitLookup[hash1], idx2 = this.commitLookup[hash2];
+		if (this.expandedCommit !== null && this.expandedCommit.customCompareLabels && this.expandedCommit.commitHash === hash1 && this.expandedCommit.compareWithHash === hash2) {
+			return { from: hash1, to: hash2 };
+		}
+		if (typeof idx1 === 'number' && typeof idx2 === 'number') {
+			return idx1 > idx2 ? { from: hash1, to: hash2 } : { from: hash2, to: hash1 };
+		}
+		return { from: hash1, to: hash2 };
 	}
 
 	public static closeCdvContextMenuIfOpen(expandedCommit: ExpandedCommit) {
@@ -4064,6 +4198,18 @@ class GitGraphView {
 					shortcut: (/Mac/.test(navigator.platform) ? '\u21E7\u2318' : 'Ctrl+Shift+') + 'K',
 					visible: true,
 					onClick: () => this.commandPalette.open()
+				},
+				{
+					title: t('Compare Commits Across Branches') + ELLIPSIS,
+					icon: MENU_ICONS.compare,
+					visible: this.gitBranches.length > 0,
+					onClick: () => this.openBranchCommitCompareModal()
+				},
+				{
+					title: t('Amend HEAD Commit') + ELLIPSIS,
+					icon: MENU_ICONS.edit,
+					visible: this.commitHead !== null,
+					onClick: () => this.actions.openAmendCommitDialog(this.commitHead!, null)
 				}
 			],
 			[

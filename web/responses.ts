@@ -153,7 +153,10 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 				}
 				break;
 			case 'updateCdvConfig':
-				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions, msg.pullRequestStatusEnabled);
+				gitGraph.setCdvConfig(msg.actions, msg.hideUnchangedRegions, msg.pullRequestStatusEnabled, msg.rowActions);
+				break;
+			case 'loadBranchCommits':
+				gitGraph.processLoadBranchCommitsResponse(msg);
 				break;
 			case 'explainCommit':
 				gitGraph.commitExplainer.processExplainCommitResponse(msg);

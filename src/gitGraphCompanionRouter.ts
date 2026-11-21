@@ -143,6 +143,11 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 		case 'exportGraphSvg':
 			await exportGraphSvgToFile(msg.repo, msg.svg);
 			return true;
+		case 'loadBranchCommits': {
+			const res = await ctx.gitFeatures.getBranchCommits(msg.repo, msg.branch, typeof msg.maxCommits === 'number' ? msg.maxCommits : 100);
+			ctx.sendMessage({ command: 'loadBranchCommits', branch: msg.branch, commits: res.commits, error: res.error });
+			return true;
+		}
 		case 'openHookFile': {
 			const meta = await ctx.gitFeatures.getRepoHooksAndTemplate(msg.repo);
 			if (meta.hooks.length === 0) return true;

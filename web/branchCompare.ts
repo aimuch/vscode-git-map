@@ -61,6 +61,9 @@ class BranchCompare {
 				case 'files':
 					this.setPanelOpen(!this.panelOpen);
 					break;
+				case 'pickCommits':
+					this.view.openBranchCommitCompareModal(this.left, this.right);
+					break;
 				case 'exit':
 					this.exit();
 					break;
@@ -271,6 +274,7 @@ class BranchCompare {
 				segment('right', t('Only in {0}', escapeHtml(this.right)), comparison.rightOnly.length) +
 				segment('both', t('Both'), comparison.leftOnly.length + comparison.rightOnly.length) + '</span>') +
 			'<span class="compareSpacer"></span>' +
+			(comparison !== null ? '<button type="button" class="compareBtn" data-compare="pickCommits">' + SVG_ICONS.compare + t('Pick Commits') + ELLIPSIS + '</button>' : '') +
 			(comparison !== null ? '<button type="button" class="compareBtn' + (this.panelOpen ? ' ' + CLASS_ACTIVE : '') + '" data-compare="files">' + SVG_ICONS.fileList + t('Changed Files') + ' <b>' + this.fileChanges.length + '</b></button>' : '') +
 			'<button type="button" class="compareBtn" data-compare="exit">' + SVG_ICONS.close + t('Exit Comparison') + '</button>';
 	}

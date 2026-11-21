@@ -1525,49 +1525,147 @@ svg.openFolderIcon, svg.closedFolderIcon, svg.fileIcon{
 	box-shadow:inset 3px 0 0 var(--vscode-list-highlightForeground, var(--vscode-focusBorder));
 }
 
-/* The buttons of the most common actions on the commit the mouse is over, at the end of its Description cell. Their background is the
-   row's background (opaque, as they cover the end of the description), fading in over the description. */
+/* The buttons of the most common actions on the commit the mouse is over: a raised glassmorphic pill floating over the table
+   (in #content, so narrow columns never clip it), following the pointer or pinned to the end of the Description column / row. */
 #commitTable td.descriptionCol{
 	position:relative;
 }
-#rowActions{
-	--git-graph-rowActionsTint:var(--vscode-list-hoverBackground, rgba(128,128,128,0.15));
+#rowActions, #cdvFileFloatingBar{
 	position:absolute;
-	top:0;
-	right:0;
-	bottom:0;
-	display:flex;
+	z-index:12;
+	display:inline-flex;
 	align-items:center;
 	gap:1px;
-	padding:0 4px 0 22px;
-	background:linear-gradient(var(--git-graph-rowActionsTint), var(--git-graph-rowActionsTint)), var(--vscode-editor-background);
-	-webkit-mask-image:linear-gradient(to right, transparent, #000 18px);
-	mask-image:linear-gradient(to right, transparent, #000 18px);
+	height:min(24px, calc(var(--git-graph-rowHeight, 26px) - 2px));
+	padding:2px;
+	box-sizing:border-box;
+	border-radius:7px;
+	border:1px solid var(--gm-floating-bar-border, rgba(112, 165, 255, 0.38));
+	background:var(--gm-floating-bar-bg, rgba(32, 37, 46, 0.93));
+	backdrop-filter:blur(10px);
+	-webkit-backdrop-filter:blur(10px);
+	box-shadow:var(--gm-floating-bar-shadow, 0 4px 14px rgba(0, 0, 0, 0.44), 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08));
 }
-#commitTable tr.commit.multiSelected #rowActions{
-	--git-graph-rowActionsTint:var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.25));
+body.vscode-light #rowActions, body.vscode-light #cdvFileFloatingBar{
+	border:1px solid var(--gm-floating-bar-border, rgba(37, 99, 235, 0.34));
+	background:var(--gm-floating-bar-bg, rgba(255, 255, 255, 0.95));
+	box-shadow:var(--gm-floating-bar-shadow, 0 4px 14px rgba(15, 23, 42, 0.14), 0 1px 3px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.85));
 }
-#commitTable tr.commit.commitDetailsOpen #rowActions{
-	--git-graph-rowActionsTint:var(--vscode-list-activeSelectionBackground, var(--vscode-list-inactiveSelectionBackground, rgba(128,128,128,0.25)));
+#rowActions.gliding, #cdvFileFloatingBar.gliding{
+	transition:left 0.08s cubic-bezier(0.2, 0, 0, 1);
+}
+#cdvFileFloatingBar.hidden{
+	display:none !important;
+}
+#cdvFileFloatingBar .rowAction svg{
+	width:13px;
+	height:13px;
+	fill:currentColor;
+}
+.hasFloatingFileBar{
+	position:relative !important;
+}
+.hasFloatingFileBar .fileTreeFileAction{
+	display:none !important;
+}
+.fileTreeFileRecord.rowActionsTarget{
+	background-color:var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+#commitTable tr.commit.rowActionsTarget{
+	background-color:var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
+}
+#commitTable tr.commit.commitDetailsOpen.rowActionsTarget{
+	background-color:var(--vscode-list-activeSelectionBackground, var(--vscode-list-inactiveSelectionBackground, rgba(128, 128, 128, 0.25)));
+}
+.rowActionSep{
+	width:1px;
+	height:12px;
+	margin:0 2px;
+	background-color:color-mix(in srgb, var(--vscode-foreground, #ccc) 18%, transparent);
+	flex-shrink:0;
 }
 .rowAction{
+	position:relative;
 	display:inline-flex;
 	align-items:center;
 	justify-content:center;
 	width:22px;
-	height:20px;
+	height:18px;
 	margin:0;
 	padding:0;
 	border:none;
-	border-radius:4px;
+	border-radius:5px;
 	background-color:transparent;
-	color:var(--vscode-icon-foreground, var(--vscode-foreground));
+	color:color-mix(in srgb, var(--vscode-foreground, #ccc) 90%, transparent);
 	cursor:pointer;
-	opacity:0.8;
+	transition:background-color 0.1s ease, color 0.1s ease, transform 0.08s ease;
+}
+.rowAction svg{
+	width:13px;
+	height:13px;
 }
 .rowAction:hover{
-	background-color:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+	background-color:color-mix(in srgb, var(--vscode-focusBorder, #0078d4) 28%, rgba(255, 255, 255, 0.08));
+	color:#ffffff;
+}
+body.vscode-light .rowAction:hover{
+	background-color:color-mix(in srgb, var(--vscode-focusBorder, #005fb8) 14%, transparent);
+	color:var(--vscode-focusBorder, #005fb8);
+}
+.rowAction:active{
+	transform:scale(0.93);
+}
+.rowAction[data-tip]::after{
+	content:attr(data-tip);
+	position:absolute;
+	bottom:calc(100% + 6px);
+	left:50%;
+	transform:translateX(-50%) translateY(2px);
+	padding:2px 7px;
+	border-radius:5px;
+	font-family:var(--vscode-font-family);
+	font-size:11px;
+	font-weight:500;
+	line-height:16px;
+	white-space:nowrap;
+	color:var(--vscode-menu-foreground, #e5e7eb);
+	background:var(--gm-context-menu-bg, rgba(28, 30, 35, 0.96));
+	border:1px solid var(--gm-context-menu-border, rgba(255, 255, 255, 0.14));
+	box-shadow:0 4px 12px rgba(0, 0, 0, 0.36);
+	pointer-events:none;
+	opacity:0;
+	transition:opacity 0.09s ease, transform 0.09s ease;
+	z-index:30;
+}
+body.vscode-light .rowAction[data-tip]::after{
+	color:var(--vscode-menu-foreground, #1f2328);
+	background:var(--gm-context-menu-bg, rgba(255, 255, 255, 0.97));
+	border:1px solid var(--gm-context-menu-border, rgba(15, 23, 42, 0.12));
+	box-shadow:0 4px 12px rgba(15, 23, 42, 0.16);
+}
+.rowAction[data-tip]:hover::after{
 	opacity:1;
+	transform:translateX(-50%) translateY(0);
+}
+.rowAction[data-tip]:first-child::after{
+	left:0;
+	transform:translateY(2px);
+}
+.rowAction[data-tip]:first-child:hover::after{
+	transform:translateY(0);
+}
+.rowAction[data-tip]:last-child::after{
+	left:auto;
+	right:0;
+	transform:translateY(2px);
+}
+.rowAction[data-tip]:last-child:hover::after{
+	transform:translateY(0);
+}
+#rowActions.tip-below .rowAction[data-tip]::after,
+#cdvFileFloatingBar.tip-below .rowAction[data-tip]::after{
+	bottom:auto;
+	top:calc(100% + 6px);
 }
 
 /* When there are many commits, only the rows near the view are rendered: the other rows are replaced by spacers of the same height, and
@@ -4277,3 +4375,29 @@ tr.commit.dragDropTarget > td{
 .fileTreeFileRecord.lastViewed:hover, .fileTreeFileRecord.lastViewed.contextMenuActive, .fileTreeFileRecord.lastViewed.dialogActive, .comparePanelFile.lastViewed:hover{background-color:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 46%,var(--vscode-list-hoverBackground,rgba(128,128,128,.26)))}
 .fileTreeFileRecord.lastViewed .gitFileName, .comparePanelFile.lastViewed .comparePanelFileName{font-weight:600;color:var(--vscode-list-highlightForeground,var(--vscode-foreground))}
 #cdvLastFileViewed svg, .fileTreeFileRecord:hover #cdvLastFileViewed svg{fill:var(--vscode-list-highlightForeground,var(--vscode-focusBorder,#3794ff));fill-opacity:1}
+.cdvActionsModalPosition{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:10px 16px;font-size:12px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25))}
+.cdvActionsModalPositionLabel{color:var(--vscode-descriptionForeground);margin-right:4px}
+.cdvActionsModalPositionOption{padding:3px 10px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.35));border-radius:5px;color:var(--vscode-descriptionForeground);cursor:pointer}
+.cdvActionsModalPositionOption:hover{color:var(--vscode-foreground)}
+.cdvActionsModalPositionOption.selected{border-color:var(--vscode-focusBorder);background-color:var(--vscode-button-secondaryBackground,rgba(128,128,128,.25));color:var(--vscode-button-secondaryForeground,var(--vscode-foreground))}
+#branchCommitCompareModal{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:24px}
+.bccCard{width:min(880px,94vw);max-height:82vh;display:flex;flex-direction:column;border-radius:10px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.35));background:var(--vscode-editor-background);box-shadow:0 16px 40px rgba(0,0,0,.48);overflow:hidden}
+.bccHeader{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.bccTitle{flex:1 1 auto;display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13.5px}
+.bccCols{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px 14px;flex:1 1 auto;min-height:0;overflow:hidden}
+@media (max-width:700px){.bccCols{grid-template-columns:1fr}}
+.bccCol{display:flex;flex-direction:column;gap:6px;min-height:0}
+.bccLabel{font-size:11.5px;font-weight:600;color:var(--vscode-descriptionForeground)}
+.bccSelect,.bccSearch{height:28px;padding:0 8px;border-radius:5px;border:1px solid var(--vscode-input-border,rgba(128,128,128,.38));background:var(--vscode-input-background);color:var(--vscode-input-foreground,inherit);font:inherit;font-size:12px}
+.bccList{flex:1 1 auto;min-height:220px;max-height:46vh;overflow-y:auto;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));border-radius:6px;display:flex;flex-direction:column}
+.bccCommitRow{width:100%;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto;column-gap:8px;row-gap:2px;padding:6px 9px;border:0;border-bottom:1px solid rgba(128,128,128,.12);background:transparent;color:inherit;text-align:left;cursor:pointer;font:inherit}
+.bccCommitRow:last-child{border-bottom:0}
+.bccCommitRow:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.14))}
+.bccCommitRow.selected{background:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 34%,var(--vscode-list-inactiveSelectionBackground,rgba(128,128,128,.22)));box-shadow:inset 3px 0 0 var(--vscode-list-highlightForeground,var(--vscode-focusBorder,#3794ff))}
+.bccHash{font-family:var(--vscode-editor-font-family);font-size:11px;padding:1px 5px;border-radius:4px;background:rgba(128,128,128,.18);align-self:start}
+.bccSubject{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bccMeta{grid-column:2;font-size:11px;color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bccEmpty{padding:18px;text-align:center;color:var(--vscode-descriptionForeground);font-size:12px}
+.bccFooter{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.25))}
+.bccSummary{flex:1 1 auto;font-size:12px;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bccWarn{color:var(--vscode-editorWarning-foreground,#bf8700);font-family:var(--vscode-font-family)}

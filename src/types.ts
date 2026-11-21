@@ -559,6 +559,7 @@ export interface GitGraphViewConfig {
 	readonly onlyFollowFirstParent: boolean;
 	readonly onRepoLoad: OnRepoLoadConfig;
 	readonly pullRequestStatusEnabled: boolean;
+	readonly rowActions?: RowActionsConfig;
 	readonly workflowMacros?: ReadonlyArray<{ readonly id: string, readonly name: string, readonly steps: ReadonlyArray<string> }>;
 	readonly referenceLabels: ReferenceLabelsConfig;
 	readonly repoDropdownOrder: RepoDropdownOrder;
@@ -1535,7 +1536,7 @@ export interface ResponseMerge extends ResponseWithErrorInfo {
 
 export interface RequestUpdateExtensionSetting extends BaseMessage {
 	readonly command: 'updateExtensionSetting';
-	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'commitDetailsView.actions' | 'diff.hideUnchangedRegions' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'integrations.pullRequestStatus.enabled' | 'language' | 'statusBarItemDisplay';
+	readonly key: 'ai.baseUrl' | 'ai.commitMessage.enabled' | 'ai.explainCommit.enabled' | 'ai.model' | 'ai.provider' | 'commitDetailsView.actions' | 'commitRow.actions' | 'commitRow.actionsPosition' | 'diff.hideUnchangedRegions' | 'graph.colourPreset' | 'graph.density' | 'graph.freezeColumnHeaders' | 'graph.freezeFooter' | 'graph.nodeStyle' | 'graph.style' | 'integrations.pullRequestStatus.enabled' | 'language' | 'statusBarItemDisplay';
 	readonly value: string | boolean | ReadonlyArray<string>;
 }
 export interface ResponseUpdateExtensionSetting extends ResponseWithErrorInfo {
@@ -1873,6 +1874,10 @@ export interface RequestEditCommitMessage extends RepoRequest {
 	readonly command: 'editCommitMessage';
 	readonly commitHash: string;
 	readonly message: string;
+	readonly includeStaged?: boolean;
+	readonly stageAll?: boolean;
+	readonly resetAuthorDate?: boolean;
+	readonly noVerify?: boolean;
 }
 export interface ResponseEditCommitMessage extends ResponseWithErrorInfo {
 	readonly command: 'editCommitMessage';
@@ -1881,12 +1886,17 @@ export interface ResponseEditCommitMessage extends ResponseWithErrorInfo {
 export interface RequestLoadCommitMessage extends RepoRequest {
 	readonly command: 'loadCommitMessage';
 	readonly commitHash: string;
+	readonly amendMode?: boolean;
 }
 export interface ResponseLoadCommitMessage extends ResponseWithErrorInfo {
 	readonly command: 'loadCommitMessage';
 	readonly commitHash: string;
 	readonly message: string;
 	readonly pushedTo: string | null; // A remote branch that contains the commit (NULL if it hasn't been pushed)
+	readonly isHead?: boolean;
+	readonly stagedCount?: number;
+	readonly unstagedCount?: number;
+	readonly amendMode?: boolean;
 }
 
 export interface RequestUndoCommit extends RepoRequest {
@@ -2080,6 +2090,20 @@ export interface RequestFetchAiModels extends BaseMessage {
 export interface ResponseFetchAiModels extends ResponseWithErrorInfo {
 	readonly command: 'fetchAiModels';
 	readonly models: ReadonlyArray<string>;
+}
+
+export type RowActionsPosition = 'Pointer' | 'Description' | 'Row';
+
+export interface RowActionsConfig {
+	readonly actions: ReadonlyArray<string>;
+	readonly position: RowActionsPosition;
+}
+
+export interface BranchCommitSummary {
+	readonly hash: string;
+	readonly subject: string;
+	readonly author: string;
+	readonly date: number;
 }
 
 export interface PullRequestBadgeInfo {
@@ -2298,6 +2322,17 @@ export interface RequestOpenHookFile extends RepoRequest {
 	readonly hookPath?: string;
 }
 
+export interface RequestLoadBranchCommits extends RepoRequest {
+	readonly command: 'loadBranchCommits';
+	readonly branch: string;
+	readonly maxCommits?: number;
+}
+export interface ResponseLoadBranchCommits extends ResponseWithErrorInfo {
+	readonly command: 'loadBranchCommits';
+	readonly branch: string;
+	readonly commits: ReadonlyArray<BranchCommitSummary>;
+}
+
 export interface RequestOpenCompanionFeature extends BaseMessage {
 	readonly command: 'openCompanionFeature';
 	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'aiExplainRegression' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken' | 'preCommitCheck' | 'aiSmartCommitSplit' | 'submoduleManager' | 'branchDashboard' | 'exportChangelog';
@@ -2434,6 +2469,7 @@ export type RequestMessage =
 	| RequestRunWorkflowMacro
 	| RequestExportGraphSvg
 	| RequestOpenHookFile
+	| RequestLoadBranchCommits
 	| RequestOpenCompanionFeature;
 
 export type ResponseMessage =
@@ -2548,13 +2584,15 @@ export type ResponseMessage =
 	| ResponseLoadPullRequestDetails
 	| ResponseLoadCommitExtras
 	| ResponseSetCommitNote
-	| ResponseRunWorkflowMacro;
+	| ResponseRunWorkflowMacro
+	| ResponseLoadBranchCommits;
 
 export interface ResponseUpdateCdvConfig extends BaseMessage {
 	readonly command: 'updateCdvConfig';
 	readonly actions: ReadonlyArray<string>;
 	readonly hideUnchangedRegions: boolean;
 	readonly pullRequestStatusEnabled?: boolean;
+	readonly rowActions?: RowActionsConfig;
 }
 
 

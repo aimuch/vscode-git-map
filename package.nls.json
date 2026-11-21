@@ -455,6 +455,8 @@
 	"config.contextMenuActionsVisibility.uncommittedChanges.applyPatch.title": "Apply Patch...",
 	"config.contextMenuActionsVisibility.uncommittedChanges.generateCommitMessage.title": "Generate Commit Message with AI...",
 	"config.commitDetailsView.actions.description": "Specifies which commit actions appear in the Commit Details View action bar and in what order. You can also customize and reorder them interactively via \"Customize Action Buttons...\" in the Commit Details View's \"...\" menu or in the Git Map Settings panel.",
+	"config.commitRow.actions.description": "Specifies which commit actions appear in the floating row hover toolbar and in what order. You can also customize them via \"Customize Row Hover Buttons...\" in the toolbar's \"...\" menu.",
+	"config.commitRow.actionsPosition.description": "Specifies where the floating commit row hover toolbar appears: next to the mouse pointer (Pointer), at the end of the Description column (Description), or at the end of the row (Row).",
 	"config.diff.hideUnchangedRegions.description": "Only show changed regions (collapse unchanged context lines) when viewing diffs in the Visual Studio Code Diff Editor and in Git Map's inline diff preview.",
 	"command.diff.showChangesOnly.title": "Diff View: Show Changes Only",
 	"command.diff.showFullFile.title": "Diff View: Show Full File",

@@ -134,6 +134,7 @@ function getCommitActionCatalog(): ReadonlyArray<{ readonly id: string, readonly
 		{ id: 'revert', title: t('Revert') + ELLIPSIS, icon: MENU_ICONS.revert },
 		{ id: 'drop', title: t('Drop') + ELLIPSIS, icon: MENU_ICONS.trash, conditional: true },
 		{ id: 'editMessage', title: t('Edit Commit Message') + ELLIPSIS, icon: MENU_ICONS.edit, conditional: true },
+		{ id: 'amendCommit', title: t('Amend Commit') + ELLIPSIS, icon: MENU_ICONS.edit, conditional: true },
 		{ id: 'undoCommit', title: t('Undo Commit') + ELLIPSIS, icon: MENU_ICONS.revert, conditional: true },
 		{ id: 'fixup', title: t('Fix Up Staged Changes into this Commit') + ELLIPSIS, icon: MENU_ICONS.fixup, conditional: true },
 		{ id: 'merge', title: t('Merge into current branch') + ELLIPSIS, icon: MENU_ICONS.merge },

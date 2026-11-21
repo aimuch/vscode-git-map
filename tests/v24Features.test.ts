@@ -281,4 +281,96 @@ describe('v2.4.0 Features & Improvements', () => {
 			expect(escapeCompanionHtml('<a href="x">&\'</a>')).toBe('&lt;a href=&quot;x&quot;&gt;&amp;&#39;&lt;/a&gt;');
 		});
 	});
+
+	describe('v2.5.0: Amend Commit & Cross-Branch Commit Listing', () => {
+		let tmpRepo: string;
+		let features: GitFeatures;
+
+		beforeEach(() => {
+			tmpRepo = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'git-map-v25-'));
+			gitIn(tmpRepo, 'init', '-q', '-b', 'main');
+			features = new GitFeatures({
+				spawnGitProcess: (args: string[], cwd: string, env?: NodeJS.ProcessEnv) =>
+					cp.spawn('git', args, { cwd: cwd, env: Object.assign({}, GIT_ENV, env) }),
+				getGitVersion: () => '2.40.0',
+				getOperationInProgress: () => Promise.resolve(null)
+			});
+		});
+
+		afterEach(() => {
+			fs.rmSync(tmpRepo, { recursive: true, force: true });
+		});
+
+		it('Should amend HEAD message-only (--only), with staged changes, and with stageAll (-A)', async () => {
+			fs.writeFileSync(path.join(tmpRepo, 'base.txt'), 'v1\n');
+			gitIn(tmpRepo, 'add', 'base.txt');
+			gitIn(tmpRepo, 'commit', '-q', '-m', 'initial commit');
+
+			// Stage a new file, then amend message-only: staged file must remain staged and NOT enter HEAD
+			fs.writeFileSync(path.join(tmpRepo, 'staged.txt'), 'staged content\n');
+			gitIn(tmpRepo, 'add', 'staged.txt');
+			const err1 = await features.amendCommit(tmpRepo, 'amended message only', { includeStaged: false, stageAll: false, resetAuthorDate: false, sign: false, noVerify: false });
+			expect(err1).toBeNull();
+			expect(gitIn(tmpRepo, 'log', '-1', '--format=%s')).toBe('amended message only');
+			expect(gitIn(tmpRepo, 'show', '--name-only', '--format=', 'HEAD')).toBe('base.txt');
+			expect(gitIn(tmpRepo, 'diff', '--cached', '--name-only')).toBe('staged.txt');
+
+			// Now amend including staged changes: staged.txt enters HEAD
+			const err2 = await features.amendCommit(tmpRepo, 'amended with staged', { includeStaged: true, stageAll: false, resetAuthorDate: false, sign: false, noVerify: false });
+			expect(err2).toBeNull();
+			expect(gitIn(tmpRepo, 'log', '-1', '--format=%s')).toBe('amended with staged');
+			expect(gitIn(tmpRepo, 'show', '--name-only', '--format=', 'HEAD').split('\n').sort()).toEqual(['base.txt', 'staged.txt']);
+
+			// Create an untracked file and amend with stageAll + resetAuthorDate + noVerify
+			fs.writeFileSync(path.join(tmpRepo, 'untracked.txt'), 'extra\n');
+			const err3 = await features.amendCommit(tmpRepo, 'amended with all', { includeStaged: true, stageAll: true, resetAuthorDate: true, sign: false, noVerify: true });
+			expect(err3).toBeNull();
+			expect(gitIn(tmpRepo, 'log', '-1', '--format=%s')).toBe('amended with all');
+			expect(gitIn(tmpRepo, 'show', '--name-only', '--format=', 'HEAD').split('\n').sort()).toEqual(['base.txt', 'staged.txt', 'untracked.txt']);
+		});
+
+		it('Should list commits for two diverged branches independently via getBranchCommits and companion router', async () => {
+			fs.writeFileSync(path.join(tmpRepo, 'a.txt'), 'base\n');
+			gitIn(tmpRepo, 'add', '-A');
+			gitIn(tmpRepo, 'commit', '-q', '-m', 'base commit');
+			const baseHash = gitIn(tmpRepo, 'rev-parse', 'HEAD');
+
+			gitIn(tmpRepo, 'checkout', '-q', '-b', 'feature/alpha');
+			fs.writeFileSync(path.join(tmpRepo, 'alpha.txt'), 'alpha\n');
+			gitIn(tmpRepo, 'add', '-A');
+			gitIn(tmpRepo, 'commit', '-q', '-m', 'alpha work');
+			const alphaHash = gitIn(tmpRepo, 'rev-parse', 'HEAD');
+
+			gitIn(tmpRepo, 'checkout', '-q', 'main');
+			fs.writeFileSync(path.join(tmpRepo, 'main2.txt'), 'main2\n');
+			gitIn(tmpRepo, 'add', '-A');
+			gitIn(tmpRepo, 'commit', '-q', '-m', 'main progress');
+			const mainHash = gitIn(tmpRepo, 'rev-parse', 'HEAD');
+
+			const mainRes = await features.getBranchCommits(tmpRepo, 'main', 50);
+			expect(mainRes.error).toBeNull();
+			expect(mainRes.commits.map((c) => c.hash)).toEqual([mainHash, baseHash]);
+			expect(mainRes.commits[0].subject).toBe('main progress');
+
+			const alphaRes = await features.getBranchCommits(tmpRepo, 'feature/alpha', 50);
+			expect(alphaRes.error).toBeNull();
+			expect(alphaRes.commits.map((c) => c.hash)).toEqual([alphaHash, baseHash]);
+			expect(alphaRes.commits[0].subject).toBe('alpha work');
+
+			const sent: unknown[] = [];
+			const handled = await handleCompanionMessage(
+				{ command: 'loadBranchCommits', repo: tmpRepo, branch: 'feature/alpha', maxCommits: 20 },
+				{
+					dataSource: {} as never,
+					gitFeatures: features,
+					undoManager: {} as never,
+					signCommits: false,
+					sendMessage: (m) => sent.push(m)
+				}
+			);
+			expect(handled).toBe(true);
+			expect(sent).toHaveLength(1);
+			expect(sent[0]).toMatchObject({ command: 'loadBranchCommits', branch: 'feature/alpha', error: null });
+		});
+	});
 });

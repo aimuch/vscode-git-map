@@ -153,8 +153,57 @@ export class GitFeatures {
 	 * @returns The error, or NULL.
 	 */
 	public async amendMessage(repo: string, message: string, sign: boolean): Promise<GitFeatureError> {
+		return this.amendCommit(repo, message, { includeStaged: false, stageAll: false, resetAuthorDate: false, sign: sign, noVerify: false });
+	}
+
+	/**
+	 * Amend the commit that HEAD refers to (`git commit --amend`), optionally including staged changes,
+	 * staging all working-tree changes (`git add -A`), resetting the author date to now, signing, or skipping hooks.
+	 */
+	public async amendCommit(
+		repo: string,
+		message: string,
+		options: { includeStaged: boolean, stageAll: boolean, resetAuthorDate: boolean, sign: boolean, noVerify?: boolean }
+	): Promise<GitFeatureError> {
 		if (message.trim() === '') return 'The message can\'t be empty.';
-		return this.withMessageFile(message, (file) => this.change(repo, ['commit', '--amend', '--only', '--allow-empty', '--cleanup=strip', '-F', file].concat(sign ? ['-S'] : [])));
+		if (options.stageAll) {
+			const stageErr = await this.stageFiles(repo, null);
+			if (stageErr !== null) return stageErr;
+		}
+		const includeChanges = options.includeStaged || options.stageAll;
+		return this.withMessageFile(message, (file) => {
+			const args = ['commit', '--amend'];
+			if (!includeChanges) args.push('--only');
+			args.push('--allow-empty', '--cleanup=strip', '-F', file);
+			if (options.resetAuthorDate) args.push('--date=now');
+			if (options.sign) args.push('-S');
+			if (options.noVerify) args.push('--no-verify');
+			return this.change(repo, args);
+		});
+	}
+
+	/**
+	 * List recent commits on a specific branch or ref (for cross-branch commit comparison pickers).
+	 */
+	public async getBranchCommits(
+		repo: string,
+		branch: string,
+		maxCommits: number = 100
+	): Promise<{ commits: { hash: string, subject: string, author: string, date: number }[], error: GitFeatureError }> {
+		const trimmed = branch.trim();
+		if (trimmed === '' || trimmed.startsWith('-')) return { commits: [], error: 'Invalid branch name.' };
+		const limit = Math.max(1, Math.min(300, Math.floor(maxCommits)));
+		const res = await this.run(repo, ['-c', 'log.showSignature=false', 'log', '-n', String(limit), '--format=%x1e%H%x1f%s%x1f%an%x1f%ct', trimmed, '--']);
+		if (res.code !== 0) return { commits: [], error: errorOf(res) };
+		const commits: { hash: string, subject: string, author: string, date: number }[] = [];
+		for (const rec of res.stdout.toString().split('\x1e')) {
+			const clean = rec.trim();
+			if (clean === '') continue;
+			const [hash, subject, author, ts] = clean.split('\x1f');
+			if (!hash) continue;
+			commits.push({ hash: hash, subject: subject || '', author: author || '', date: parseInt(ts || '0', 10) || 0 });
+		}
+		return { commits: commits, error: null };
 	}
 
 	/**

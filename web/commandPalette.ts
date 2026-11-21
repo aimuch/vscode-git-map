@@ -37,7 +37,17 @@ class GraphCommandPalette {
 		const repo = this.view.currentRepo;
 
 		// Quick actions & companion tools
+		if (this.view.commitHead !== null) {
+			items.push({
+				kind: 'action',
+				title: t('Amend HEAD Commit') + ELLIPSIS,
+				detail: t('Modify commit message, staged changes, or date of HEAD (git commit --amend)'),
+				badge: 'Git',
+				run: () => this.view.actions.openAmendCommitDialog(this.view.commitHead!, null)
+			});
+		}
 		items.push(
+			{ kind: 'action', title: t('Compare Commits Across Branches') + ELLIPSIS, detail: t('Pick any two commits from two branches and inspect their diff'), badge: 'Diff', run: () => this.view.openBranchCommitCompareModal() },
 			{ kind: 'action', title: t('Pre-Commit Guard Check'), detail: t('Scan changes for secrets, console.log, and FIXME markers'), badge: 'Tool', run: () => sendMessage({ command: 'openCompanionFeature', feature: 'preCommitCheck', repo: repo }) },
 			{ kind: 'action', title: t('AI Smart Commit Splitter'), detail: t('Group working-tree files into atomic commits'), badge: 'AI', run: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiSmartCommitSplit', repo: repo }) },
 			{ kind: 'action', title: t('Conflict Assistant'), detail: t('Inspect and resolve merge or rebase conflict blocks'), badge: 'Tool', run: () => sendMessage({ command: 'openCompanionFeature', feature: 'conflictAssistant', repo: repo }) },

@@ -45,11 +45,13 @@ export const GRAPH_COLOUR_PRESETS: { readonly [name: string]: ReadonlyArray<stri
 export const GRAPH_COLOUR_PRESET_NAMES: ReadonlyArray<string> = ['Default', 'Pastel', 'Vivid', 'High Contrast', 'Colour Blind Safe', 'Tokyo Subway'];
 export const COMMIT_ACTION_IDS: ReadonlyArray<string> = [
 	'checkout', 'createBranch', 'cherrypick', 'addTag', 'createWorktree',
-	'revert', 'drop', 'editMessage', 'undoCommit', 'fixup',
+	'revert', 'drop', 'editMessage', 'amendCommit', 'undoCommit', 'fixup',
 	'merge', 'rebase', 'reset', 'bisectBad', 'bisectGood', 'bisectSkip',
 	'aiReview', 'copyHash', 'copySubject', 'savePatch', 'copyPatch'
 ];
 export const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];
+export const DEFAULT_ROW_COMMIT_ACTIONS: ReadonlyArray<string> = ['createBranch', 'checkout', 'cherrypick', 'copyHash'];
+export const ROW_ACTIONS_POSITIONS: ReadonlyArray<'Pointer' | 'Description' | 'Row'> = ['Pointer', 'Description', 'Row'];
 
 const SETTING_FALLBACK_KEY = 'settingFallbacks';
 let fallbackMemento: vscode.Memento | null = null;
@@ -142,9 +144,27 @@ class Config {
 	 * Get the value of the `git-map.commitDetailsView.actions` Extension Setting.
 	 */
 	get cdvActions(): ReadonlyArray<string> {
-		const fallback = getSettingFallback<ReadonlyArray<string>>('commitDetailsView.actions');
-		const raw = Array.isArray(fallback) ? fallback : this.config.get<unknown>('commitDetailsView.actions');
-		if (!Array.isArray(raw)) return DEFAULT_CDV_COMMIT_ACTIONS;
+		return this.getCommitActionList('commitDetailsView.actions', DEFAULT_CDV_COMMIT_ACTIONS);
+	}
+
+	/**
+	 * Get the buttons shown on the row of the commit the mouse is over (`git-map.commitRow.actions`)
+	 * and where they appear (`git-map.commitRow.actionsPosition`).
+	 */
+	get rowActions(): { readonly actions: ReadonlyArray<string>, readonly position: 'Pointer' | 'Description' | 'Row' } {
+		const fallbackPos = getSettingFallback<string>('commitRow.actionsPosition');
+		const rawPos = typeof fallbackPos === 'string' ? fallbackPos : this.config.get<unknown>('commitRow.actionsPosition', 'Pointer');
+		const position: 'Pointer' | 'Description' | 'Row' = rawPos === 'Description' || rawPos === 'Row' ? rawPos : 'Pointer';
+		return {
+			actions: this.getCommitActionList('commitRow.actions', DEFAULT_ROW_COMMIT_ACTIONS),
+			position: position
+		};
+	}
+
+	private getCommitActionList(key: string, defaults: ReadonlyArray<string>): ReadonlyArray<string> {
+		const fallback = getSettingFallback<ReadonlyArray<string>>(key);
+		const raw = Array.isArray(fallback) ? fallback : this.config.get<unknown>(key);
+		if (!Array.isArray(raw)) return defaults;
 		const seen = new Set<string>(), out: string[] = [];
 		for (let i = 0; i < raw.length; i++) {
 			const item = raw[i];

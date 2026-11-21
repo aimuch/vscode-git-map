@@ -1,5 +1,17 @@
 # Change Log
 
+## 2.5.0 - 2026-11-22
+* **Amend Commit (`git commit --amend`)**:
+    * Added full **Amend Commit…** support on `HEAD` to edit the commit message and optionally include staged changes, stage all uncommitted changes (`git add -A`), reset author date to now (`--date=now`), or skip Git hooks (`--no-verify`), with remote push warnings and `UndoManager` recovery.
+    * Accessible via the `Amend…` action chip in the Commit Details View (for `HEAD`), commit context menu (`Amend Commit…`), Command Palette (`Ctrl/Cmd+Shift+K`), Tools menu, and customizable row/CDV action bars (`amendCommit`).
+* **Compare Specified Commits Across Two Branches**:
+    * Added a two-column **Compare Commits Across Branches** picker modal (`#branchCommitCompareModal`) to select any two local or remote branches, filter their commits by message/hash/author, swap base and target, and open a full Commit Comparison diff even when either commit is outside the current graph filter.
+    * Accessible from the Tools menu, Command Palette, Branch Compare bar (`Pick Commits…`), and commit context menu (`Compare with Branch Commit…`).
+* **Pointer-Following Floating Hover Toolbar & Redesigned Pill UI**:
+    * Upgraded both commit row hover actions (`#rowActions`) and Commit Details Changed Files actions (`#cdvFileFloatingBar`) to a glassmorphic raised floating pill with subtle depth shadows, dark/light theme surface tokens, button separators, and instant CSS micro-tooltips (`data-tip` with automatic `.tip-below` placement).
+    * Row hover actions now follow the pointer horizontally (`Next to the Pointer`, with configurable `End of the Description Column` and `End of the Row` modes via `git-map.commitRow.actionsPosition`) with smooth gliding transitions and an approach zone that keeps the pill stationary as you move toward it to click.
+    * Added `git-map.commitRow.actions` and an in-view **Customize Row Hover Buttons…** dialog to pick, reorder, and position row quick actions.
+
 ## 2.4.3 - 2026-11-21
 * **Security & Reliability Hardening**:
     * Added repository subpath traversal validation (`resolveSafeRepoSubpath`) in `SubmoduleManager` and `ConflictAssistant`.

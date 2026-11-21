@@ -33,6 +33,7 @@ declare global {
 		avatar: string | null;
 		codeReview: GG.CodeReview | null;
 		lastViewedFile: string | null;
+		customCompareLabels?: { from: string, to: string } | null;
 		loading: boolean;
 		scrollTop: {
 			summary: number,

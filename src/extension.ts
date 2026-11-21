@@ -131,6 +131,12 @@ export async function activate(context: vscode.ExtensionContext) {
 			if (event.affectsConfiguration('git-map.commitDetailsView.actions')) {
 				void saveSettingFallback('commitDetailsView.actions', undefined);
 			}
+			if (event.affectsConfiguration('git-map.commitRow.actions')) {
+				void saveSettingFallback('commitRow.actions', undefined);
+			}
+			if (event.affectsConfiguration('git-map.commitRow.actionsPosition')) {
+				void saveSettingFallback('commitRow.actionsPosition', undefined);
+			}
 			if (!isInternalHideUnchangedWrite()) {
 				if (event.affectsConfiguration('git-map.diff.hideUnchangedRegions')) {
 					void saveSettingFallback('diff.hideUnchangedRegions', undefined);
