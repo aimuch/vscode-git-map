@@ -133,6 +133,9 @@ class GitGraphView {
 	private readonly prPopover: PullRequestPopover;
 	private cdvNoteText: string | null = null;
 	private cdvSigDetails: GG.CommitSignatureDetails | null = null;
+	private repoMetadataLoadedFor: string | null = null;
+	private scrollJumpPillElem: HTMLElement | null = null;
+	private scrollJumpMenuOpen: boolean = false;
 
 	constructor(viewElem: HTMLElement, prevState: WebViewState | null) {
 		this.gitRepos = initialState.repos;
@@ -1421,6 +1424,7 @@ class GitGraphView {
 				viewportFrame = null;
 				this.updateRenderedRows();
 				this.updateMinimapViewport();
+				this.updateScrollJumpPill();
 			});
 		});
 		const resizeObserver = new ResizeObserver(() => {
@@ -4155,7 +4159,14 @@ class GitGraphView {
 
 	public toggleGraphSidebar() {
 		this.graphSidebar.toggle();
-		if (this.graphSidebar.isOpen() && this.currentRepo !== '') {
+		if (this.graphSidebar.isOpen()) {
+			this.ensureRepoMetadataLoaded();
+		}
+	}
+
+	public ensureRepoMetadataLoaded() {
+		if (this.currentRepo !== '' && this.repoMetadataLoadedFor !== this.currentRepo) {
+			this.repoMetadataLoadedFor = this.currentRepo;
 			sendMessage({ command: 'loadRepoMetadata', repo: this.currentRepo });
 		}
 	}
@@ -4165,9 +4176,79 @@ class GitGraphView {
 	}
 
 	public updateViewInsets() {
-		const leftInset = this.graphSidebar.isOpen() ? 236 : 0;
+		const leftInset = this.graphSidebar.getWidth();
 		this.viewElem.style.left = leftInset > 0 ? leftInset + 'px' : '';
 		this.renderGraph();
+	}
+
+	private updateScrollJumpPill() {
+		const maxScroll = this.viewElem.scrollHeight - this.viewElem.clientHeight;
+		if (this.commits.length < 16 || maxScroll <= 240 || this.viewElem.scrollTop < 220) {
+			if (this.scrollJumpPillElem !== null) {
+				this.scrollJumpPillElem.classList.remove('visible', 'expanded');
+				this.scrollJumpMenuOpen = false;
+			}
+			return;
+		}
+		if (this.scrollJumpPillElem === null) {
+			const pill = document.createElement('div');
+			pill.id = 'scrollJumpPill';
+			pill.innerHTML =
+				'<div class="sjpMenu" role="menu">' +
+					'<button type="button" class="sjpOpt" data-sjp="top">' + t('Jump to Top (HEAD)') + '</button>' +
+					'<button type="button" class="sjpOpt" data-sjp="7d">' + t('Last 7 Days') + '</button>' +
+					'<button type="button" class="sjpOpt" data-sjp="30d">' + t('Last 30 Days') + '</button>' +
+					'<button type="button" class="sjpOpt" data-sjp="tag">' + t('Latest Tag') + '</button>' +
+					'<button type="button" class="sjpOpt" data-sjp="merge">' + t('Previous Merge') + '</button>' +
+					'<button type="button" class="sjpOpt" data-sjp="bottom">' + t('Jump to Bottom') + '</button>' +
+				'</div>' +
+				'<button type="button" class="sjpTrigger" data-sjp="toggle" title="' + escapeHtml(t('Quick Scroll Navigator')) + '">' +
+					'<span class="sjpDate"></span><span class="sjpPct"></span>' +
+				'</button>';
+			pill.addEventListener('click', (e) => {
+				const btn = e.target instanceof Element ? <HTMLElement | null>e.target.closest('[data-sjp]') : null;
+				if (btn === null) return;
+				const act = btn.dataset.sjp!;
+				if (act === 'toggle') {
+					this.scrollJumpMenuOpen = !this.scrollJumpMenuOpen;
+					pill.classList.toggle('expanded', this.scrollJumpMenuOpen);
+					return;
+				}
+				this.scrollJumpMenuOpen = false;
+				pill.classList.remove('expanded');
+				const nowSec = Math.floor(Date.now() / 1000);
+				if (act === 'top') {
+					this.viewElem.scrollTo({ top: 0, behavior: 'smooth' });
+				} else if (act === 'bottom') {
+					this.viewElem.scrollTo({ top: this.viewElem.scrollHeight, behavior: 'smooth' });
+				} else if (act === '7d' || act === '30d') {
+					const cutoff = nowSec - (act === '7d' ? 7 : 30) * 86400;
+					const target = this.commits.find((c) => c.hash !== UNCOMMITTED && c.date <= cutoff);
+					if (typeof target !== 'undefined') this.scrollToCommit(target.hash, true, true);
+				} else if (act === 'tag') {
+					const tagged = this.commits.find((c) => c.tags.length > 0);
+					if (typeof tagged !== 'undefined') this.scrollToCommit(tagged.hash, true, true);
+				} else if (act === 'merge') {
+					const merged = this.commits.find((c) => c.parents.length >= 2);
+					if (typeof merged !== 'undefined') this.scrollToCommit(merged.hash, true, true);
+				}
+			});
+			document.body.appendChild(pill);
+			this.scrollJumpPillElem = pill;
+		}
+		const pct = Math.max(0, Math.min(100, Math.round((this.viewElem.scrollTop / maxScroll) * 100)));
+		const approxIdx = Math.max(0, Math.min(this.commits.length - 1, Math.floor((pct / 100) * (this.commits.length - 1))));
+		const sample = this.commits[approxIdx];
+		let dateLabel = '';
+		if (sample && sample.date > 0) {
+			const dt = new Date(sample.date * 1000);
+			dateLabel = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0');
+		}
+		const dateEl = this.scrollJumpPillElem.querySelector('.sjpDate');
+		const pctEl = this.scrollJumpPillElem.querySelector('.sjpPct');
+		if (dateEl !== null) dateEl.textContent = dateLabel;
+		if (pctEl !== null) pctEl.textContent = pct + '%';
+		this.scrollJumpPillElem.classList.add('visible');
 	}
 
 	public openReviewSession(scope: GG.ReviewSessionScope = 'uncommitted') {
@@ -4195,11 +4276,19 @@ class GitGraphView {
 	public processLoadRepoMetadataResponse(msg: GG.ResponseLoadRepoMetadata) {
 		if (msg.repo !== this.currentRepo) return;
 		this.graphSidebar.setPinnedBranches(msg.pinnedBranches);
+		if (Array.isArray(msg.savedFilters)) {
+			this.findWidget.setSavedFilters(msg.savedFilters);
+		}
 	}
 
 	public processTogglePinBranchResponse(msg: GG.ResponseTogglePinBranch) {
 		if (msg.repo !== this.currentRepo) return;
 		this.graphSidebar.setPinnedBranches(msg.pinnedBranches);
+	}
+
+	public processSavedFilterPresetsResponse(msg: GG.ResponseSavedFilterPresets) {
+		if (msg.repo !== this.currentRepo) return;
+		this.findWidget.setSavedFilters(msg.savedFilters);
 	}
 
 	public processLoadWorktreeWipResponse(msg: GG.ResponseLoadWorktreeWip) {

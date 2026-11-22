@@ -1144,6 +1144,8 @@ export class GitGraphView extends Disposable {
 			case 'loadBranchCommits':
 			case 'loadRepoMetadata':
 			case 'togglePinBranch':
+			case 'saveFilterPreset':
+			case 'deleteFilterPreset':
 			case 'loadWorktreeWip':
 			case 'loadReviewSession':
 			case 'updateReviewSession':

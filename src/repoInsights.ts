@@ -30,11 +30,19 @@ export interface ContributorStat {
 	readonly activeDays: number;
 }
 
+export interface CoChangeCluster {
+	readonly fileA: string;
+	readonly fileB: string;
+	readonly coCommits: number;
+	readonly couplingPct: number;
+}
+
 export interface RepoInsightsData {
 	readonly totalCommits: number;
 	readonly totalAuthors: number;
 	readonly hotspots: ReadonlyArray<HotspotFile>;
 	readonly knowledgeSilos: ReadonlyArray<HotspotFile>;
+	readonly coChangeClusters?: ReadonlyArray<CoChangeCluster>;
 	readonly contributors: ReadonlyArray<ContributorStat>;
 	readonly heatmap: ReadonlyArray<ReadonlyArray<number>>; // 7 (Sun..Sat) x 24 (0..23)
 	readonly monthlyCommits: ReadonlyArray<{ readonly month: string; readonly count: number }>;
@@ -56,6 +64,7 @@ export function getMonthDateRange(yearMonth: string): { readonly after: string; 
 export function computeRepoInsights(rawLog: string): RepoInsightsData {
 	const fileMap = new Map<string, { commits: number, add: number, del: number, authorCounts: Map<string, number> }>();
 	const authorMap = new Map<string, { email: string, commits: number, add: number, del: number, days: Set<string> }>();
+	const pairCounts = new Map<string, number>();
 	const heatmap: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
 	const monthMap = new Map<string, number>();
 	let totalCommits = 0;
@@ -112,6 +121,15 @@ export function computeRepoInsights(rawLog: string): RepoInsightsData {
 				fStat.authorCounts.set(author, (fStat.authorCounts.get(author) || 0) + 1);
 			}
 		}
+		if (seenFilesInCommit.size >= 2 && seenFilesInCommit.size <= 20) {
+			const sorted = Array.from(seenFilesInCommit).sort();
+			for (let a = 0; a < sorted.length; a++) {
+				for (let b = a + 1; b < sorted.length; b++) {
+					const pairKey = sorted[a] + '\x00' + sorted[b];
+					pairCounts.set(pairKey, (pairCounts.get(pairKey) || 0) + 1);
+				}
+			}
+		}
 	}
 
 	const allFiles: HotspotFile[] = [];
@@ -162,11 +180,29 @@ export function computeRepoInsights(rawLog: string): RepoInsightsData {
 		.slice(-12)
 		.map(([month, count]) => ({ month, count }));
 
+	const coChangeClusters: CoChangeCluster[] = [];
+	pairCounts.forEach((coCommits, key) => {
+		if (coCommits < 2) return;
+		const sep = key.indexOf('\x00');
+		const fileA = key.substring(0, sep), fileB = key.substring(sep + 1);
+		const countA = fileMap.get(fileA)?.commits || coCommits;
+		const countB = fileMap.get(fileB)?.commits || coCommits;
+		const minCommits = Math.max(1, Math.min(countA, countB));
+		coChangeClusters.push({
+			fileA: fileA,
+			fileB: fileB,
+			coCommits: coCommits,
+			couplingPct: Math.min(100, Math.round((coCommits / minCommits) * 100))
+		});
+	});
+	coChangeClusters.sort((a, b) => (b.coCommits - a.coCommits) || (b.couplingPct - a.couplingPct));
+
 	return {
 		totalCommits: totalCommits,
 		totalAuthors: contributors.length,
 		hotspots: hotspots,
 		knowledgeSilos: knowledgeSilos,
+		coChangeClusters: coChangeClusters.slice(0, 12),
 		contributors: contributors.slice(0, 20),
 		heatmap: heatmap,
 		monthlyCommits: monthlyCommits
@@ -293,7 +329,10 @@ function getRepoInsightsHtml(repoName: string, data: RepoInsightsData | null, cs
 		authors: t('Contributors'),
 		hotspots: t('Code Churn Hotspots'),
 		silos: t('Single-Owner / Bus-Factor Files'),
+		coChange: t('Co-Change File Clusters'),
+		coChangePair: t('{0}× together ({1}%)'),
 		heatmap: t('Commit Activity Heatmap (Day × Hour)'),
+		heatmapTip: t('{0} · {1}:00 — {2} commit(s)'),
 		monthly: t('Monthly Commit Trend'),
 		timeMachine: t('Time Machine'),
 		visual: t('Chart'),
@@ -337,8 +376,13 @@ button{font:inherit;color:inherit}
 .riDel{color:var(--vscode-gitDecoration-deletedResourceForeground,#f85149)}
 .riMiniBtn{padding:2px 7px;border-radius:4px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.35));background:transparent;cursor:pointer;font-size:11px;white-space:nowrap}
 .riMiniBtn:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.2))}
-.riHeat{display:grid;grid-template-columns:32px repeat(24,1fr);gap:3px;align-items:center;font-size:10.5px}
-.riCell{height:14px;border-radius:2px;background:rgba(128,128,128,.12)}
+.riHeat{position:relative;display:grid;grid-template-columns:32px repeat(24,1fr);gap:3px;align-items:center;font-size:10.5px}
+.riCell{height:14px;border-radius:3px;background:rgba(128,128,128,.12);transition:transform 120ms cubic-bezier(.22,1,.36,1),box-shadow 120ms ease}
+.riCell:hover{transform:scale(1.35);z-index:2;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.riHeatPopover{position:fixed;z-index:20;pointer-events:none;padding:5px 9px;border-radius:6px;background:var(--vscode-editorHoverWidget-background,var(--vscode-editorWidget-background,#1f1f1f));border:1px solid var(--vscode-editorHoverWidget-border,rgba(128,128,128,.4));box-shadow:0 6px 18px rgba(0,0,0,.32);font-size:11.5px;white-space:nowrap;opacity:0;transition:opacity 100ms ease}
+.riHeatPopover.visible{opacity:1}
+.riClusterBadge{flex:0 0 auto;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:600;background:rgba(55,148,255,.16);color:var(--vscode-textLink-foreground,#3794ff)}
+@media (prefers-reduced-motion:reduce){.riCell,.riHeatPopover{transition:none !important}.riCell:hover{transform:none}}
 .riMonths{display:flex;align-items:flex-end;gap:8px;height:110px;padding-top:12px}
 .riMonthCol{flex:1 1 0;display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--vscode-descriptionForeground);border:0;background:transparent;padding:2px 0;border-radius:4px;cursor:pointer}
 .riMonthCol:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.16));color:var(--vscode-foreground)}
@@ -362,10 +406,10 @@ const RI_SCRIPT = `
 			row.forEach(function (v, h) {
 				var alpha = v === 0 ? 0.08 : (0.2 + 0.8 * (v / maxHeat));
 				var bg = v === 0 ? 'rgba(128,128,128,.1)' : 'color-mix(in srgb, var(--vscode-button-background,#0e7afe) ' + Math.round(alpha * 100) + '%, transparent)';
-				heatHtml += '<span class="riCell" style="background:' + bg + '" title="' + esc(STRINGS.weekdays[d] + ' ' + h + ':00 — ' + v) + '"></span>';
+				heatHtml += '<span class="riCell" style="background:' + bg + '" data-heat-day="' + esc(STRINGS.weekdays[d]) + '" data-heat-hour="' + h + '" data-heat-count="' + v + '"></span>';
 			});
 		});
-		heatHtml += '</div>';
+		heatHtml += '</div><div id="riHeatPop" class="riHeatPopover"></div>';
 
 		var maxMonth = 1;
 		DATA.monthlyCommits.forEach(function (m) { if (m.count > maxMonth) maxMonth = m.count; });
@@ -393,8 +437,24 @@ const RI_SCRIPT = `
 				}).join('') + '</section>' +
 				'<section class="riCard"><h2>' + esc(STRINGS.monthly) + '</h2>' + monthsHtml + '</section>' +
 			'</div>' +
+			(Array.isArray(DATA.coChangeClusters) && DATA.coChangeClusters.length > 0
+				? '<section class="riCard"><h2>' + esc(STRINGS.coChange) + '</h2>' + DATA.coChangeClusters.map(function (cl) {
+					return '<div class="riRow"><span class="riPath" title="' + esc(cl.fileA + ' ↔ ' + cl.fileB) + '">' + esc(cl.fileA) + ' ↔ ' + esc(cl.fileB) + '</span>' +
+						'<span class="riClusterBadge">' + esc(STRINGS.coChangePair.replace('{0}', String(cl.coCommits)).replace('{1}', String(cl.couplingPct))) + '</span></div>';
+				}).join('') + '</section>'
+				: '') +
 			'<section class="riCard"><h2>' + esc(STRINGS.heatmap) + '</h2>' + heatHtml + '</section>';
 	}
+	document.addEventListener('mousemove', function (e) {
+		var pop = document.getElementById('riHeatPop');
+		if (!pop) return;
+		var cell = e.target instanceof Element ? e.target.closest('.riCell') : null;
+		if (!cell) { pop.classList.remove('visible'); return; }
+		pop.textContent = STRINGS.heatmapTip.replace('{0}', cell.dataset.heatDay || '').replace('{1}', cell.dataset.heatHour || '').replace('{2}', cell.dataset.heatCount || '0');
+		pop.style.left = Math.min(window.innerWidth - 180, e.clientX + 12) + 'px';
+		pop.style.top = Math.max(8, e.clientY - 34) + 'px';
+		pop.classList.add('visible');
+	});
 	document.addEventListener('click', function (e) {
 		var t = e.target instanceof Element ? e.target : null;
 		if (!t) return;

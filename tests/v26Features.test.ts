@@ -9,7 +9,9 @@ import { parseWholeFileAiResolutions, parseWholeFileAiResolutionsWithConfidence 
 import { sanitizeAiSearchQuery } from '../src/explainCommit';
 import { GitFeatures } from '../src/gitFeatures';
 import { GitProcessScheduler } from '../src/gitProcessScheduler';
+import { computeGuardRiskScore } from '../src/preCommitGuard';
 import { computeStackedPrMetadata } from '../src/prStatusIntegration';
+import { computeRepoInsights } from '../src/repoInsights';
 import { RepoMetadataStore } from '../src/repoMetadataStore';
 import { PullRequestBadgeInfo } from '../src/types';
 
@@ -115,6 +117,40 @@ describe('v2.6.0 Features & Architecture', () => {
 			const cleared = store.updateReviewSession('/repo/a', 'uncommitted:feat/ui', { clear: true });
 			expect(cleared.viewedFiles).toEqual([]);
 			expect(cleared.comments).toEqual([]);
+
+			const saved1 = store.saveFilterPreset('/repo/a', 'Auth Week', 'after:7d file:auth');
+			expect(saved1).toHaveLength(1);
+			expect(saved1[0]).toMatchObject({ name: 'Auth Week', query: 'after:7d file:auth' });
+			const afterDel = store.deleteFilterPreset('/repo/a', saved1[0].id);
+			expect(afterDel).toEqual([]);
+		});
+	});
+
+	describe('v2.7.0: Explainable Guard Risk Score & Co-Change File Clusters', () => {
+		it('Should compute 0-100 health/risk scores with explicit evidence deductions', () => {
+			const clean = computeGuardRiskScore([], 3, 40);
+			expect(clean.score).toBe(100);
+			expect(clean.grade).toBe('safe');
+			expect(clean.evidence[0].deduction).toBe(0);
+
+			const risky = computeGuardRiskScore([
+				{ severity: 'high', kind: 'secret', file: 'src/cfg.ts', line: 12, message: 'Possible API secret key', snippet: 'sk-123' },
+				{ severity: 'medium', kind: 'debug', file: 'src/app.ts', line: 4, message: 'Debug console.log', snippet: 'console.log(x)' }
+			], 22, 800);
+			expect(risky.score).toBe(32);
+			expect(risky.grade).toBe('high-risk');
+			expect(risky.evidence).toHaveLength(4);
+		});
+
+		it('Should detect co-change file clusters across commits while ignoring single-file commits', () => {
+			const raw = [
+				'\x1eAlice\x1falice@example.com\x1f1700000000\n10\t2\tsrc/a.ts\n5\t1\tsrc/b.ts',
+				'\x1eBob\x1fbob@example.com\x1f1700003600\n3\t1\tsrc/a.ts\n4\t0\tsrc/b.ts',
+				'\x1eAlice\x1falice@example.com\x1f1700007200\n1\t0\tsrc/solo.ts'
+			].join('\n');
+			const data = computeRepoInsights(raw);
+			expect(data.coChangeClusters).toBeDefined();
+			expect(data.coChangeClusters![0]).toEqual({ fileA: 'src/a.ts', fileB: 'src/b.ts', coCommits: 2, couplingPct: 100 });
 		});
 	});
 

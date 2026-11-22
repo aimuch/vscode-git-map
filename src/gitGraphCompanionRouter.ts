@@ -5,7 +5,7 @@ import { generateStashMessage, translateNaturalLanguageToSearchQuery } from './e
 import { exportGraphSvgToFile } from './exportShare';
 import { GitFeatures, buildPartialHunkPatch } from './gitFeatures';
 import { getLanguage, t } from './l10n';
-import { scanRepoWorkingTreeForIssues } from './preCommitGuard';
+import { computeGuardRiskScore, scanRepoWorkingTreeForIssues } from './preCommitGuard';
 import { fetchPullRequestDetails, fetchRepoPullRequestBadges } from './prStatusIntegration';
 import { RepoMetadataStore } from './repoMetadataStore';
 import { RequestMessage, ResponseMessage } from './types';
@@ -152,13 +152,23 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 			return true;
 		}
 		case 'loadRepoMetadata': {
-			const meta = ctx.metadataStore ? ctx.metadataStore.getRepoMetadata(msg.repo) : { pinnedBranches: [], reviewSessions: {} };
-			ctx.sendMessage({ command: 'loadRepoMetadata', repo: msg.repo, pinnedBranches: meta.pinnedBranches });
+			const meta = ctx.metadataStore ? ctx.metadataStore.getRepoMetadata(msg.repo) : { pinnedBranches: [], reviewSessions: {}, savedFilters: [] };
+			ctx.sendMessage({ command: 'loadRepoMetadata', repo: msg.repo, pinnedBranches: meta.pinnedBranches, savedFilters: meta.savedFilters || [] });
 			return true;
 		}
 		case 'togglePinBranch': {
 			const pinned = ctx.metadataStore ? ctx.metadataStore.togglePinnedBranch(msg.repo, msg.branch) : [];
 			ctx.sendMessage({ command: 'togglePinBranch', repo: msg.repo, pinnedBranches: pinned });
+			return true;
+		}
+		case 'saveFilterPreset': {
+			const savedFilters = ctx.metadataStore ? ctx.metadataStore.saveFilterPreset(msg.repo, msg.name, msg.query) : [];
+			ctx.sendMessage({ command: 'savedFilterPresets', repo: msg.repo, savedFilters: savedFilters });
+			return true;
+		}
+		case 'deleteFilterPreset': {
+			const savedFilters = ctx.metadataStore ? ctx.metadataStore.deleteFilterPreset(msg.repo, msg.id) : [];
+			ctx.sendMessage({ command: 'savedFilterPresets', repo: msg.repo, savedFilters: savedFilters });
 			return true;
 		}
 		case 'loadWorktreeWip': {
@@ -175,6 +185,9 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 			const session = ctx.metadataStore
 				? ctx.metadataStore.getReviewSession(msg.repo, data.scopeKey)
 				: { scopeKey: data.scopeKey, viewedFiles: [], comments: [], updatedAt: Date.now() };
+			const totalLines = data.files.reduce((acc, f) => acc + (f.additions || 0) + (f.deletions || 0), 0);
+			const guardIssues = msg.scope === 'uncommitted' ? await scanRepoWorkingTreeForIssues(ctx.dataSource, msg.repo) : [];
+			const riskReport = computeGuardRiskScore(guardIssues, data.files.length, totalLines);
 			ctx.sendMessage({
 				command: 'loadReviewSession',
 				repo: msg.repo,
@@ -187,6 +200,7 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 				commitCount: data.commitCount,
 				files: data.files,
 				session: session,
+				riskReport: riskReport,
 				error: data.error
 			});
 			return true;

@@ -1,5 +1,18 @@
 # Change Log
 
+## 2.7.0 - 2026-11-22
+* **Design System & Workbench Craftsmanship**:
+    * Introduced a unified semantic CSS token layer (`--gm-surface`, `--gm-border`, `--gm-radius-*`, `--gm-ring`, `--gm-shadow-*`), consistent `:focus-visible` keyboard focus rings, sliding active navigation indicators, and global `prefers-reduced-motion` support across Dark & Light VS Code themes.
+    * Upgraded the **Repository Navigator Sidebar** to a **3-state layout** (Hidden / Expanded `236px` / Compact **Icon-Rail `44px`** with live counts, amber WIP badges, and instant hover tips).
+    * Upgraded the **In-Graph Command Palette (`Ctrl/Cmd+Shift+K`)** to a grouped layout (`Quick Actions`, `Review & Quality`, `Tools & Insights`, `Workflow Macros`, `Branches`, `Recent Commits`) with `<kbd>` shortcut chips and keyboard navigation legend.
+* **Micro-Interactions & Visual Analytics**:
+    * Added an expandable floating **Scroll Progress & Quick-Jump Pill** (`#scrollJumpPill`) showing current viewport date and scroll percentage with 1-click jumps (`HEAD`, `Last 7 Days`, `Last 30 Days`, `Latest Tag`, `Previous Merge`, `Bottom`).
+    * Upgraded **Repository Insights** with **Co-Change File Clusters** (detecting frequently co-modified files and coupling percentages) and an interactive hover micro-card on the Day × Hour Activity Heatmap.
+* **Explainable Risk Guard, Saved Filter Presets & Portable Review Blueprints**:
+    * Added a **0–100 Health / Risk Score** with explicit rule-by-rule deduction evidence (`computeGuardRiskScore`) surfaced in both **Pre-Commit Guard** and **Review Session** (`Inspect Evidence` drawer).
+    * Added **Saved Search Filter Presets** (`★ Presets` & `Save` in Find Widget) persisted per repository in non-invasive `workspaceState` alongside built-in quick presets (`Last 7 Days`, `Last 30 Days`, `Bug Fixes`).
+    * Added built-in **Review Checklist Templates** (`Release`, `Security`, `Refactor`) and **Export / Import Portable JSON Blueprint** inside **Review Session**.
+
 ## 2.6.0 - 2026-11-22
 * **Commit Graph Workbench Enhancements**:
     * Added a collapsible left **Repository Navigator Sidebar** (`#graphSidebar`, toggled via `#sidebarToggleBtn` or Command Palette) grouping **Pinned Branches**, **Local Branches**, **Worktrees**, **Stashes**, **Tags**, and **Remotes** with live filtering, non-invasive branch pinning, and inline PR/WIP badges.

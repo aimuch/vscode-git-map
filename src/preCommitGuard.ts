@@ -10,7 +10,7 @@ import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { AsyncRequestSequencer } from './stateMachines';
-import { PreCommitIssue } from './types';
+import { GuardRiskEvidence, GuardRiskReport, PreCommitIssue } from './types';
 import { getUndoManager } from './undoManager';
 import { getNonce, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
@@ -144,6 +144,67 @@ export async function scanRepoWorkingTreeForIssues(dataSource: DataSource, repo:
 	return scanDiffForPreCommitIssues(combined);
 }
 
+/**
+ * Compute an explainable 0-100 change health/safety score with explicit evidence items.
+ * Every point deduction is tied to a concrete, inspectable rule hit rather than an opaque pass/fail.
+ */
+export function computeGuardRiskScore(
+	issues: ReadonlyArray<PreCommitIssue>,
+	fileCount: number = 0,
+	totalChangedLines: number = 0
+): GuardRiskReport {
+	let score = 100;
+	const evidence: GuardRiskEvidence[] = [];
+
+	issues.forEach((iss) => {
+		const deduction = iss.severity === 'high' ? 40 : (iss.severity === 'medium' ? 12 : 5);
+		score -= deduction;
+		evidence.push({
+			severity: iss.severity,
+			label: iss.message,
+			detail: (iss.file !== '' ? iss.file + ':' + iss.line + ' — ' : '') + iss.snippet,
+			deduction: deduction,
+			file: iss.file,
+			line: iss.line
+		});
+	});
+
+	if (fileCount >= 20) {
+		const deduction = fileCount >= 40 ? 15 : 8;
+		score -= deduction;
+		evidence.push({
+			severity: 'medium',
+			label: 'Broad multi-file change footprint',
+			detail: fileCount + ' files modified in scope — consider splitting into atomic commits.',
+			deduction: deduction
+		});
+	}
+
+	if (totalChangedLines >= 600) {
+		const deduction = totalChangedLines >= 1500 ? 15 : 8;
+		score -= deduction;
+		evidence.push({
+			severity: 'medium',
+			label: 'Large diff volume',
+			detail: totalChangedLines + ' changed lines — higher cognitive load during review.',
+			deduction: deduction
+		});
+	}
+
+	if (evidence.length === 0) {
+		evidence.push({
+			severity: 'info',
+			label: 'No secret, debug, or marker risks detected',
+			detail: fileCount > 0 ? (fileCount + ' file(s) scanned cleanly.') : 'Working tree scanned cleanly.',
+			deduction: 0
+		});
+	}
+
+	const clamped = Math.max(0, Math.min(100, score));
+	const grade: GuardRiskReport['grade'] = clamped >= 80 ? 'safe' : (clamped >= 50 ? 'caution' : 'high-risk');
+	return { score: clamped, grade: grade, evidence: evidence };
+}
+
 export class PreCommitAndSplitter extends Disposable {
 	private static instance: PreCommitAndSplitter | null = null;
 
@@ -198,8 +259,9 @@ export class PreCommitAndSplitter extends Disposable {
 			return;
 		}
 		const issues = await scanRepoWorkingTreeForIssues(this.dataSource, repo);
+		const report = computeGuardRiskScore(issues);
 		if (issues.length === 0) {
-			showInformationMessage(t('Pre-Commit Guard: No secrets, debug statements, or warning markers found in "{0}".', getRepoName(repo)));
+			showInformationMessage(t('Pre-Commit Guard ({0}/100): No secrets, debug statements, or warning markers found in "{1}".', String(report.score), getRepoName(repo)));
 			return;
 		}
 		if (typeof vscode.window.showQuickPick === 'function') {
@@ -211,7 +273,7 @@ export class PreCommitAndSplitter extends Disposable {
 					issue: iss
 				})),
 				{
-					title: t('Pre-Commit Guard: {0} potential issue(s) found', String(issues.length)),
+					title: t('Pre-Commit Guard · Health {0}/100 · {1} issue(s)', String(report.score), String(issues.length)),
 					placeHolder: t('Select an issue to jump to the line in the editor'),
 					ignoreFocusOut: true
 				}

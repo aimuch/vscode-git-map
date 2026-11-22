@@ -4518,3 +4518,106 @@ tr.commit.dragDropTarget > td{
 .rsBtn:hover:not(:disabled){background:var(--vscode-button-secondaryHoverBackground,rgba(128,128,128,.28))}
 .rsBtn.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
 .rsBtn:disabled{opacity:.48;cursor:default}
+
+
+/* v2.7.0: Unified Semantic Design Tokens, Motion Safety, Icon-Rail Sidebar, Grouped cmdk, Risk Evidence & Scroll-Jump Pill */
+:root{
+	--gm-surface:var(--vscode-editor-background);
+	--gm-surface-elevated:var(--vscode-sideBar-background,var(--vscode-editorWidget-background,var(--vscode-editor-background)));
+	--gm-surface-muted:rgba(128,128,128,0.10);
+	--gm-border:var(--vscode-panel-border,rgba(128,128,128,0.26));
+	--gm-border-strong:var(--vscode-dropdown-border,rgba(128,128,128,0.42));
+	--gm-radius-sm:4px;
+	--gm-radius-md:6px;
+	--gm-radius-lg:10px;
+	--gm-ring:var(--vscode-focusBorder,#3794ff);
+	--gm-shadow-sm:0 2px 8px rgba(0,0,0,0.24);
+	--gm-shadow-popover:0 10px 28px rgba(0,0,0,0.38);
+	--gm-shadow-modal:0 20px 52px rgba(0,0,0,0.52);
+}
+body.vscode-light{
+	--gm-surface-muted:rgba(15,23,42,0.05);
+	--gm-shadow-sm:0 2px 8px rgba(15,23,42,0.10);
+	--gm-shadow-popover:0 10px 26px rgba(15,23,42,0.16);
+	--gm-shadow-modal:0 18px 44px rgba(15,23,42,0.22);
+}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{
+	outline:2px solid var(--gm-ring);
+	outline-offset:1px;
+}
+
+/* Sidebar 3-State Icon-Rail Mode */
+#graphSidebar{transition:width 160ms cubic-bezier(.22,1,.36,1)}
+#graphSidebar.rail{width:44px}
+.graphSidebarHeaderBtns{display:inline-flex;align-items:center;gap:2px}
+.gsRailStack{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;height:100%;box-sizing:border-box}
+.gsRailBtn{position:relative;display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;border:none;border-radius:var(--gm-radius-md);background:transparent;color:var(--vscode-icon-foreground,inherit);cursor:pointer;transition:background-color 120ms ease,transform 120ms cubic-bezier(.22,1,.36,1)}
+.gsRailBtn:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.16))}
+.gsRailBtn:active{transform:scale(0.94)}
+.gsRailBtn svg{width:15px;height:15px}
+.gsRailBtn[data-tip]::after{content:attr(data-tip);position:absolute;left:calc(100% + 8px);top:50%;transform:translateY(-50%) translateX(-4px);padding:4px 8px;border-radius:var(--gm-radius-sm);background:var(--vscode-editorHoverWidget-background,var(--gm-surface-elevated));border:1px solid var(--gm-border-strong);box-shadow:var(--gm-shadow-sm);color:var(--vscode-foreground);font-size:11.5px;white-space:nowrap;pointer-events:none;opacity:0;transition:opacity 100ms ease,transform 120ms ease;z-index:60}
+.gsRailBtn[data-tip]:hover::after{opacity:1;transform:translateY(-50%) translateX(0)}
+.gsRailBadge{position:absolute;right:2px;top:2px;min-width:13px;height:13px;padding:0 3px;border-radius:999px;background:rgba(128,128,128,.35);color:var(--vscode-foreground);font-size:9px;font-weight:700;line-height:13px;text-align:center}
+.gsRailBadge.warn{background:var(--vscode-editorWarning-foreground,#d29922);color:#111}
+.gsRailSep{width:22px;height:1px;background:var(--gm-border);margin:2px 0}
+.gsRailSpacer{flex:1 1 auto}
+
+/* cmdk-style Grouped Command Palette */
+.gcpInputWrap{display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--gm-border)}
+.gcpSearchIcon{display:inline-flex;opacity:.65}
+.gcpSearchIcon svg{width:14px;height:14px}
+.gcpInputWrap .gcpInput{border-bottom:0 !important;padding-left:0 !important}
+.gcpGroupHeader{padding:7px 12px 3px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--vscode-descriptionForeground);user-select:none}
+.gcpKbd{display:inline-flex;align-items:center;padding:1px 5px;border-radius:var(--gm-radius-sm);border:1px solid var(--gm-border-strong);background:var(--gm-surface-muted);font-family:var(--vscode-editor-font-family);font-size:10.5px;color:var(--vscode-descriptionForeground);flex:0 0 auto}
+.gcpFooter{display:flex;align-items:center;gap:14px;padding:6px 12px;border-top:1px solid var(--gm-border);background:var(--gm-surface-elevated);font-size:11px;color:var(--vscode-descriptionForeground)}
+.gcpFooter span{display:inline-flex;align-items:center;gap:4px}
+
+/* Saved Filter Presets in Find Results Bar */
+.findPresetBtn{display:inline-flex;align-items:center;gap:3px;height:20px;padding:0 7px;margin-left:4px;border-radius:var(--gm-radius-sm);border:1px solid var(--gm-border);background:var(--gm-surface-muted);color:var(--vscode-foreground);font-size:11px;cursor:pointer;user-select:none}
+.findPresetBtn:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.22));border-color:var(--gm-border-strong)}
+
+/* Review Session Risk Score Gauge, Explainable Evidence & Portable Templates */
+.rsRiskBar{display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:var(--gm-radius-md);border:1px solid var(--gm-border);font-size:12px}
+.rsRiskBar.grade-safe{background:rgba(45,164,78,.12);border-color:rgba(45,164,78,.35)}
+.rsRiskBar.grade-caution{background:rgba(210,153,34,.14);border-color:rgba(210,153,34,.4)}
+.rsRiskBar.grade-high-risk{background:rgba(248,81,73,.14);border-color:rgba(248,81,73,.42)}
+.rsRiskScore{font-weight:700;font-family:var(--vscode-editor-font-family);padding:1px 7px;border-radius:999px;background:rgba(128,128,128,.18)}
+.rsRiskBar.grade-safe .rsRiskScore{color:var(--vscode-testing-iconPassed,#2da44e)}
+.rsRiskBar.grade-caution .rsRiskScore{color:var(--vscode-editorWarning-foreground,#d29922)}
+.rsRiskBar.grade-high-risk .rsRiskScore{color:var(--vscode-errorForeground,#f85149)}
+.rsRiskSummary{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--vscode-descriptionForeground)}
+.rsLinkBtn{border:none;background:transparent;color:var(--vscode-textLink-foreground,#3794ff);cursor:pointer;font-size:11.5px;padding:0 4px}
+.rsLinkBtn:hover{text-decoration:underline}
+.rsEvidenceList{display:flex;flex-direction:column;gap:4px;max-height:110px;overflow-y:auto;padding:6px 8px;border-radius:var(--gm-radius-md);border:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11.5px}
+.rsEvidenceItem{display:flex;align-items:baseline;gap:6px}
+.rsEvScore{font-family:var(--vscode-editor-font-family);font-weight:700;min-width:26px;text-align:right}
+.rsEvidenceItem.sev-high .rsEvScore{color:var(--vscode-errorForeground,#f85149)}
+.rsEvidenceItem.sev-medium .rsEvScore{color:var(--vscode-editorWarning-foreground,#d29922)}
+.rsEvidenceItem.sev-info .rsEvScore{color:var(--vscode-testing-iconPassed,#2da44e)}
+.rsEvDetail{color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rsNotesHeader{display:flex;align-items:center;justify-content:space-between;gap:6px;flex-wrap:wrap}
+.rsTemplateBar{display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap}
+.rsTinyBtn{height:20px;padding:0 6px;border-radius:var(--gm-radius-sm);border:1px solid var(--gm-border);background:transparent;color:var(--vscode-descriptionForeground);font-size:10.5px;cursor:pointer}
+.rsTinyBtn:hover{background:var(--gm-surface-muted);color:var(--vscode-foreground)}
+.rsProgressBar{transition:width 260ms cubic-bezier(.22,1,.36,1)}
+.rsFileCheck{transition:transform 140ms cubic-bezier(.22,1,.36,1)}
+.rsFileCheck:checked{transform:scale(1.1)}
+
+/* Expandable Floating Scroll Progress & Quick-Jump Pill */
+#scrollJumpPill{position:fixed;right:20px;bottom:34px;z-index:24;display:flex;flex-direction:column;align-items:flex-end;gap:6px;pointer-events:none;opacity:0;transform:translateY(8px);transition:opacity 160ms ease,transform 180ms cubic-bezier(.22,1,.36,1)}
+#scrollJumpPill.visible{opacity:1;transform:translateY(0);pointer-events:auto}
+.sjpTrigger{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px;border-radius:999px;border:1px solid var(--gm-border-strong);background:color-mix(in srgb,var(--gm-surface-elevated) 88%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:var(--gm-shadow-popover);color:var(--vscode-foreground);font-size:11.5px;font-family:var(--vscode-editor-font-family);cursor:pointer;transition:transform 120ms ease,border-color 120ms ease}
+.sjpTrigger:hover{border-color:var(--gm-ring);transform:translateY(-1px)}
+.sjpPct{font-weight:700;color:var(--vscode-textLink-foreground,#3794ff)}
+.sjpMenu{display:none;flex-direction:column;min-width:154px;padding:4px;border-radius:var(--gm-radius-lg);border:1px solid var(--gm-border-strong);background:var(--gm-surface-elevated);box-shadow:var(--gm-shadow-popover)}
+#scrollJumpPill.expanded .sjpMenu{display:flex}
+.sjpOpt{border:none;border-radius:var(--gm-radius-sm);background:transparent;color:var(--vscode-foreground);text-align:left;padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
+.sjpOpt:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.16))}
+
+/* Settings Sliding Active Indicator Accent */
+.settingsNavItem{position:relative;transition:background-color 140ms ease,color 140ms ease}
+.settingsNavItem.active::before{content:'';position:absolute;left:2px;top:6px;bottom:6px;width:3px;border-radius:999px;background:var(--gm-ring)}
+
+@media (prefers-reduced-motion:reduce){
+	#graphSidebar,.gsRailBtn,.gsRailBtn[data-tip]::after,.rsProgressBar,.rsFileCheck,#scrollJumpPill,.sjpTrigger,.settingsNavItem{transition:none !important;animation:none !important}
+}

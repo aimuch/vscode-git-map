@@ -49,6 +49,7 @@ class FindWidget {
 	private position: number = -1;
 	private visible: boolean = false;
 	private mode: FindMode = FindMode.Highlight;
+	private savedFilters: ReadonlyArray<GG.SavedFilterPreset> = [];
 
 	/* The commits matched by the file: & change: operators, which are searched for by the extension */
 	private searchId: number = 0;
@@ -100,6 +101,8 @@ class FindWidget {
 				{ operator: 'after:', short: '>:', description: t('The commit is on or after this date (the date shown in the Date column): YYYY-MM-DD, YYYY-MM, YYYY, today, yesterday, or a number of days, weeks, months or years ago (e.g. 7d, 2w, 3m, 1y)') },
 				{ operator: 'before:', short: '<:', description: t('The commit is before this date (the date shown in the Date column): YYYY-MM-DD, YYYY-MM, YYYY, today, yesterday, or a number of days, weeks, months or years ago (e.g. 7d, 2w, 3m, 1y)') }
 			].map((button) => '<span class="findOperator" data-operator="' + button.operator + '" title="' + button.description + '">' + button.operator + '<span>' + button.short + '</span></span>').join('') +
+			'<span id="findPresetsBtn" class="findPresetBtn" title="' + escapeHtml(t('Saved & Built-in Search Filter Presets')) + '">★ ' + t('Presets') + '</span>' +
+			'<span id="findSavePresetBtn" class="findPresetBtn" title="' + escapeHtml(t('Save Current Search as Preset')) + '">' + t('Save') + '</span>' +
 			'<span id="findClear">' + t('Clear Search') + '</span>';
 		controlsElem.insertBefore(this.resultsElem, document.getElementById('minimap'));
 
@@ -167,6 +170,16 @@ class FindWidget {
 		const findAiBtn = document.getElementById('findAiBtn');
 		if (findAiBtn !== null) {
 			findAiBtn.addEventListener('click', () => this.openAiSearchDialog());
+		}
+
+		const presetsBtn = document.getElementById('findPresetsBtn');
+		if (presetsBtn !== null) {
+			presetsBtn.addEventListener('click', (e) => this.openPresetsMenu(presetsBtn, e));
+		}
+
+		const savePresetBtn = document.getElementById('findSavePresetBtn');
+		if (savePresetBtn !== null) {
+			savePresetBtn.addEventListener('click', () => this.openSavePresetDialog());
 		}
 
 		this.countElem = document.getElementById('findCount')!;
@@ -765,6 +778,68 @@ class FindWidget {
 		);
 	}
 
+	public setSavedFilters(filters: ReadonlyArray<GG.SavedFilterPreset>) {
+		this.savedFilters = filters;
+	}
+
+	private applyQueryString(query: string) {
+		const trimmed = query.trim();
+		if (trimmed === '') return;
+		const tokens = trimmed.match(/(?:[^\s"]+|"[^"]*")+/g) || [trimmed];
+		this.chips = tokens.filter((tok) => tok.trim() !== '');
+		this.inputElem.value = '';
+		this.show(false);
+		this.renderChips();
+		this.textChanged();
+	}
+
+	private openSavePresetDialog() {
+		const currentQuery = this.chips.concat(this.inputElem.value.trim() !== '' ? [this.inputElem.value.trim()] : []).join(' ').trim();
+		if (currentQuery === '') {
+			dialog.showError(t('Save Search Preset'), t('Enter at least one search term or operator before saving a preset.'), null, null);
+			return;
+		}
+		dialog.showForm(
+			t('Save search filter <code>{0}</code> as a reusable preset for this repository:', escapeHtml(currentQuery)),
+			[{ type: DialogInputType.Text, name: t('Preset Name'), default: '', placeholder: t('e.g. Auth changes this week') }],
+			t('Save Preset'),
+			(values) => {
+				const name = (<string>values[0]).trim();
+				if (name === '') return;
+				sendMessage({ command: 'saveFilterPreset', repo: this.view.currentRepo, name: name, query: currentQuery });
+			},
+			null
+		);
+	}
+
+	private openPresetsMenu(btnElem: HTMLElement, e: MouseEvent) {
+		handledEvent(e);
+		this.view.ensureRepoMetadataLoaded();
+		const target: RepoTarget = { type: TargetType.Repo };
+		const builtIns: ContextMenuAction[] = [
+			{ title: t('Last 7 Days') + ' (after:7d)', icon: SVG_ICONS.search, visible: true, onClick: () => this.applyQueryString('after:7d') },
+			{ title: t('Last 30 Days') + ' (after:30d)', icon: SVG_ICONS.search, visible: true, onClick: () => this.applyQueryString('after:30d') },
+			{ title: t('Bug Fixes') + ' (message:fix)', icon: SVG_ICONS.search, visible: true, onClick: () => this.applyQueryString('message:fix') }
+		];
+		const userGroup: ContextMenuAction[] = this.savedFilters.map((preset) => ({
+			title: preset.name + '  —  ' + preset.query,
+			icon: MENU_ICONS.tag,
+			visible: true,
+			onClick: () => this.applyQueryString(preset.query)
+		}));
+		const manageGroup: ContextMenuAction[] = this.savedFilters.map((preset) => ({
+			title: t('Delete Preset "{0}"', preset.name),
+			icon: MENU_ICONS.trash,
+			visible: true,
+			onClick: () => sendMessage({ command: 'deleteFilterPreset', repo: this.view.currentRepo, id: preset.id })
+		}));
+		const groups: ContextMenuAction[][] = [builtIns];
+		if (userGroup.length > 0) groups.push(userGroup);
+		if (manageGroup.length > 0) groups.push(manageGroup);
+		const bounds = btnElem.getBoundingClientRect();
+		contextMenu.show(groups, false, target, new MouseEvent('contextmenu', { clientX: Math.round(bounds.left), clientY: Math.round(bounds.bottom + 4) }), this.view.viewElem);
+	}
+
 	public processAiSearchResponse(msg: GG.ResponseAiSearchCommits) {
 		const aiBtn = document.getElementById('findAiBtn');
 		if (aiBtn !== null) aiBtn.classList.remove('loading');
@@ -777,13 +852,7 @@ class FindWidget {
 			dialog.showError(t('AI Search'), t('Could not translate that request into search operators.'), null, null);
 			return;
 		}
-		// Split translated query into operator chips, respecting double-quoted values
-		const tokens = translated.match(/(?:[^\s"]+|"[^"]*")+/g) || [translated];
-		this.chips = tokens.filter((tok) => tok.trim() !== '');
-		this.inputElem.value = '';
-		this.show(false);
-		this.renderChips();
-		this.textChanged();
+		this.applyQueryString(translated);
 	}
 
 	/**

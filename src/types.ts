@@ -2364,9 +2364,31 @@ export interface ReviewSessionState {
 	readonly updatedAt: number;
 }
 
+export interface SavedFilterPreset {
+	readonly id: string;
+	readonly name: string;
+	readonly query: string;
+}
+
+export interface GuardRiskEvidence {
+	readonly severity: 'high' | 'medium' | 'low' | 'info';
+	readonly label: string;
+	readonly detail: string;
+	readonly deduction: number;
+	readonly file?: string;
+	readonly line?: number;
+}
+
+export interface GuardRiskReport {
+	readonly score: number; // 0 (critical) .. 100 (clean)
+	readonly grade: 'safe' | 'caution' | 'high-risk';
+	readonly evidence: ReadonlyArray<GuardRiskEvidence>;
+}
+
 export interface RepoLocalMetadata {
 	readonly pinnedBranches: ReadonlyArray<string>;
 	readonly reviewSessions: { readonly [scopeKey: string]: ReviewSessionState };
+	readonly savedFilters?: ReadonlyArray<SavedFilterPreset>;
 }
 
 export interface RequestLoadRepoMetadata extends RepoRequest {
@@ -2376,6 +2398,22 @@ export interface ResponseLoadRepoMetadata extends BaseMessage {
 	readonly command: 'loadRepoMetadata';
 	readonly repo: string;
 	readonly pinnedBranches: ReadonlyArray<string>;
+	readonly savedFilters?: ReadonlyArray<SavedFilterPreset>;
+}
+
+export interface RequestSaveFilterPreset extends RepoRequest {
+	readonly command: 'saveFilterPreset';
+	readonly name: string;
+	readonly query: string;
+}
+export interface RequestDeleteFilterPreset extends RepoRequest {
+	readonly command: 'deleteFilterPreset';
+	readonly id: string;
+}
+export interface ResponseSavedFilterPresets extends BaseMessage {
+	readonly command: 'savedFilterPresets';
+	readonly repo: string;
+	readonly savedFilters: ReadonlyArray<SavedFilterPreset>;
 }
 
 export interface RequestTogglePinBranch extends RepoRequest {
@@ -2414,6 +2452,7 @@ export interface ResponseLoadReviewSession extends ResponseWithErrorInfo {
 	readonly commitCount: number;
 	readonly files: ReadonlyArray<GitFileChange>;
 	readonly session: ReviewSessionState;
+	readonly riskReport?: GuardRiskReport;
 }
 
 export interface RequestUpdateReviewSession extends RepoRequest {
@@ -2607,6 +2646,8 @@ export type RequestMessage =
 	| RequestLoadBranchCommits
 	| RequestLoadRepoMetadata
 	| RequestTogglePinBranch
+	| RequestSaveFilterPreset
+	| RequestDeleteFilterPreset
 	| RequestLoadWorktreeWip
 	| RequestLoadReviewSession
 	| RequestUpdateReviewSession
@@ -2732,6 +2773,7 @@ export type ResponseMessage =
 	| ResponseLoadBranchCommits
 	| ResponseLoadRepoMetadata
 	| ResponseTogglePinBranch
+	| ResponseSavedFilterPresets
 	| ResponseLoadWorktreeWip
 	| ResponseLoadReviewSession
 	| ResponseUpdateReviewSession

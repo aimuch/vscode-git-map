@@ -15,6 +15,7 @@ class ReviewSessionModal {
 	private selectedFile: string | null = null;
 	private worktreeTarget: GG.GitWorktree | null = null;
 	private worktreeFiles: ReadonlyArray<GG.WorkingTreeStatusItem> = [];
+	private evidenceExpanded: boolean = false;
 	private elem: HTMLElement | null = null;
 
 	constructor(view: GitGraphView) {
@@ -118,6 +119,24 @@ class ReviewSessionModal {
 			}
 			if (target.closest('[data-rs="copyForAgent"]') !== null && this.reviewData !== null) {
 				this.copyReviewForAgent();
+				return;
+			}
+			if (target.closest('[data-rs="toggleEvidence"]') !== null) {
+				this.evidenceExpanded = !this.evidenceExpanded;
+				this.render();
+				return;
+			}
+			const tplBtn = target.closest<HTMLElement>('[data-rs-template]');
+			if (tplBtn !== null && this.reviewData !== null) {
+				this.applyChecklistTemplate(tplBtn.dataset.rsTemplate!);
+				return;
+			}
+			if (target.closest('[data-rs="exportBlueprint"]') !== null && this.reviewData !== null) {
+				this.exportBlueprintJson();
+				return;
+			}
+			if (target.closest('[data-rs="importBlueprint"]') !== null && this.reviewData !== null) {
+				this.openImportBlueprintDialog();
 				return;
 			}
 			const toggleCheck = target.closest<HTMLInputElement>('[data-rs-viewed]');
@@ -252,6 +271,94 @@ class ReviewSessionModal {
 		sendMessage({ command: 'copyToClipboard', type: t('Review Session Notes'), data: lines.join('\n') });
 	}
 
+	private applyChecklistTemplate(templateId: string) {
+		if (this.reviewData === null) return;
+		const templates: { [id: string]: ReadonlyArray<{ severity: 'blocker' | 'suggestion' | 'note', text: string }> } = {
+			release: [
+				{ severity: 'blocker', text: t('[Release] Verify version bump, CHANGELOG entry, and migration safety') },
+				{ severity: 'suggestion', text: t('[Release] Confirm unit & E2E tests cover all newly added edge cases') },
+				{ severity: 'note', text: t('[Release] Double-check i18n/localization strings and fallback copy') }
+			],
+			security: [
+				{ severity: 'blocker', text: t('[Security] Check for path traversal, shell injection, and unsanitized HTML') },
+				{ severity: 'blocker', text: t('[Security] Confirm no secrets, API keys, or debug logs were introduced') },
+				{ severity: 'suggestion', text: t('[Security] Validate input bounds and error handling on external payloads') }
+			],
+			refactor: [
+				{ severity: 'suggestion', text: t('[Refactor] Ensure zero unintended behavior changes in public contracts') },
+				{ severity: 'note', text: t('[Refactor] Verify hot paths avoid redundant DOM thrashing or git spawns') }
+			]
+		};
+		const picked = templates[templateId];
+		if (!picked) return;
+		const fp = this.selectedFile || (this.reviewData.files[0] ? this.reviewData.files[0].newFilePath : 'scope');
+		const existingTexts = new Set(this.reviewData.session.comments.map((c) => c.text));
+		const additions: GG.ReviewSessionComment[] = picked
+			.filter((item) => !existingTexts.has(item.text))
+			.map((item, idx) => ({
+				id: Date.now().toString(36) + '-' + idx + '-' + Math.random().toString(36).slice(2, 5),
+				filePath: fp,
+				severity: item.severity,
+				text: item.text,
+				createdAt: Date.now()
+			}));
+		if (additions.length === 0) return;
+		sendMessage({
+			command: 'updateReviewSession',
+			repo: this.view.currentRepo,
+			scopeKey: this.reviewData.scopeKey,
+			comments: this.reviewData.session.comments.concat(additions)
+		});
+	}
+
+	private exportBlueprintJson() {
+		if (this.reviewData === null) return;
+		const blueprint = {
+			schema: 'git-map.review-blueprint.v1',
+			scope: this.reviewData.scope,
+			notes: this.reviewData.session.comments.map((c) => ({ filePath: c.filePath, severity: c.severity, text: c.text }))
+		};
+		sendMessage({ command: 'copyToClipboard', type: t('Review Blueprint JSON'), data: JSON.stringify(blueprint, null, 2) });
+	}
+
+	private openImportBlueprintDialog() {
+		if (this.reviewData === null) return;
+		const scopeKey = this.reviewData.scopeKey;
+		const existing = this.reviewData.session.comments;
+		dialog.showForm(
+			t('Paste a portable Review Blueprint JSON to import checklist items into this session:'),
+			[{ type: DialogInputType.TextArea, name: t('Blueprint JSON'), default: '', placeholder: '{"notes":[{"severity":"blocker","text":"..."}]}' }],
+			t('Import Notes'),
+			(values) => {
+				try {
+					const parsed = JSON.parse(String(values[0] || ''));
+					const rawNotes = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.notes) ? parsed.notes : []);
+					const imported: GG.ReviewSessionComment[] = [];
+					for (let i = 0; i < rawNotes.length; i++) {
+						const n = rawNotes[i];
+						if (!n || typeof n.text !== 'string' || n.text.trim() === '') continue;
+						const sev = n.severity === 'blocker' || n.severity === 'note' ? n.severity : 'suggestion';
+						imported.push({
+							id: Date.now().toString(36) + '-imp-' + i,
+							filePath: typeof n.filePath === 'string' && n.filePath.trim() !== '' ? n.filePath.trim() : (this.selectedFile || 'scope'),
+							severity: sev,
+							text: n.text.trim().slice(0, 400),
+							createdAt: Date.now()
+						});
+					}
+					if (imported.length === 0) {
+						dialog.showError(t('Import Review Blueprint'), t('No valid checklist notes were found in the pasted JSON.'), null, null);
+						return;
+					}
+					sendMessage({ command: 'updateReviewSession', repo: this.view.currentRepo, scopeKey: scopeKey, comments: existing.concat(imported) });
+				} catch (_) {
+					dialog.showError(t('Import Review Blueprint'), t('Invalid JSON format.'), null, null);
+				}
+			},
+			null
+		);
+	}
+
 	private render() {
 		if (this.elem === null) return;
 		if (this.mode === 'worktreeWip') {
@@ -306,7 +413,22 @@ class ReviewSessionModal {
 					'</div>'
 				).join('');
 
+			const risk = d.riskReport;
+			const riskHtml = risk
+				? '<div class="rsRiskBar grade-' + escapeHtml(risk.grade) + '">' +
+					'<span class="rsRiskScore">' + t('Health {0}/100', String(risk.score)) + '</span>' +
+					'<span class="rsRiskSummary">' + escapeHtml(risk.evidence[0] ? risk.evidence[0].label : '') + (risk.evidence.length > 1 ? ' (+' + (risk.evidence.length - 1) + ')' : '') + '</span>' +
+					'<button type="button" class="rsLinkBtn" data-rs="toggleEvidence">' + (this.evidenceExpanded ? t('Hide Evidence') : t('Inspect Evidence')) + '</button>' +
+				'</div>' +
+				(this.evidenceExpanded
+					? '<div class="rsEvidenceList">' + risk.evidence.map((ev) =>
+						'<div class="rsEvidenceItem sev-' + escapeHtml(ev.severity) + '"><span class="rsEvScore">' + (ev.deduction > 0 ? '−' + ev.deduction : '✓') + '</span><b>' + escapeHtml(ev.label) + '</b><span class="rsEvDetail">' + escapeHtml(ev.detail) + '</span></div>'
+					).join('') + '</div>'
+					: '')
+				: '';
+
 			bodyHtml =
+				riskHtml +
 				'<div class="rsProgressRow">' +
 					'<span class="rsRangeLabel">' + escapeHtml(d.baseLabel + ' → ' + d.headLabel) + (d.commitCount > 0 ? ' · ' + d.commitCount + ' ' + t('commits') : '') + '</span>' +
 					'<div class="rsProgressBarWrap"><div class="rsProgressBar" style="width:' + pct + '%"></div></div>' +
@@ -316,7 +438,16 @@ class ReviewSessionModal {
 				'<div class="rsGrid">' +
 					'<div class="rsFileList">' + filesHtml + '</div>' +
 					'<div class="rsNotesPane">' +
-						'<div class="rsNotesHeader">' + t('Review Notes') + (this.selectedFile ? ' · <code>' + escapeHtml(this.selectedFile) + '</code>' : '') + '</div>' +
+						'<div class="rsNotesHeader">' +
+							'<span>' + t('Review Notes') + (this.selectedFile ? ' · <code>' + escapeHtml(this.selectedFile) + '</code>' : '') + '</span>' +
+							'<span class="rsTemplateBar">' +
+								'<button type="button" class="rsTinyBtn" data-rs-template="release" title="' + escapeHtml(t('Insert Release Readiness checklist')) + '">' + t('Release') + '</button>' +
+								'<button type="button" class="rsTinyBtn" data-rs-template="security" title="' + escapeHtml(t('Insert Security Audit checklist')) + '">' + t('Security') + '</button>' +
+								'<button type="button" class="rsTinyBtn" data-rs-template="refactor" title="' + escapeHtml(t('Insert Refactor / Perf checklist')) + '">' + t('Refactor') + '</button>' +
+								'<button type="button" class="rsTinyBtn" data-rs="exportBlueprint" title="' + escapeHtml(t('Copy portable Review Blueprint JSON')) + '">' + t('Export') + '</button>' +
+								'<button type="button" class="rsTinyBtn" data-rs="importBlueprint" title="' + escapeHtml(t('Import portable Review Blueprint JSON')) + '">' + t('Import') + '</button>' +
+							'</span>' +
+						'</div>' +
 						'<div class="rsNotesList">' + commentsHtml + '</div>' +
 						'<div class="rsComposer">' +
 							'<select id="rsCommentSeverity" class="rsSeveritySelect"><option value="blocker">' + t('Blocker') + '</option><option value="suggestion" selected>' + t('Suggestion') + '</option><option value="note">' + t('Note') + '</option></select>' +

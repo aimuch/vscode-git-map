@@ -6,7 +6,7 @@
 class GraphSidebar {
 	private readonly view: GitGraphView;
 	private readonly elem: HTMLElement;
-	private open: boolean = false;
+	private mode: 'closed' | 'expanded' | 'rail' = 'closed';
 	private filterText: string = '';
 	private pinnedBranches: Set<string> = new Set();
 	private readonly collapsedSections: Set<string> = new Set(['remotes', 'tags']);
@@ -31,7 +31,31 @@ class GraphSidebar {
 
 			const closeBtn = target.closest('[data-sidebar-action="close"]');
 			if (closeBtn !== null) {
-				this.setOpen(false);
+				this.setMode('closed');
+				return;
+			}
+
+			const railBtn = target.closest('[data-sidebar-action="rail"]');
+			if (railBtn !== null) {
+				this.setMode(this.mode === 'rail' ? 'expanded' : 'rail');
+				return;
+			}
+
+			const railJump = target.closest<HTMLElement>('[data-sidebar-rail-jump]');
+			if (railJump !== null) {
+				const sec = railJump.dataset.sidebarRailJump!;
+				if (sec === 'review') {
+					this.view.openReviewSession('uncommitted');
+					return;
+				}
+				if (sec === 'palette') {
+					this.view.commandPalette.open();
+					return;
+				}
+				this.collapsedSections.delete(sec);
+				this.setMode('expanded');
+				const hdr = this.elem.querySelector<HTMLElement>('[data-sidebar-section="' + sec + '"]');
+				if (hdr !== null) hdr.scrollIntoView({ behavior: 'smooth', block: 'start' });
 				return;
 			}
 
@@ -177,29 +201,39 @@ class GraphSidebar {
 	}
 
 	public isOpen() {
-		return this.open;
+		return this.mode !== 'closed';
+	}
+
+	public getWidth(): number {
+		return this.mode === 'expanded' ? 236 : (this.mode === 'rail' ? 44 : 0);
 	}
 
 	public toggle() {
-		this.setOpen(!this.open);
+		this.setMode(this.mode === 'closed' ? 'expanded' : (this.mode === 'expanded' ? 'rail' : 'closed'));
 	}
 
-	public setOpen(open: boolean) {
-		if (this.open === open) return;
-		this.open = open;
-		alterClass(this.elem, CLASS_ACTIVE, this.open);
-		alterClass(document.body, 'graphSidebarOpen', this.open);
+	public setMode(mode: 'closed' | 'expanded' | 'rail') {
+		if (this.mode === mode) return;
+		this.mode = mode;
+		alterClass(this.elem, CLASS_ACTIVE, this.mode !== 'closed');
+		alterClass(this.elem, 'rail', this.mode === 'rail');
+		alterClass(document.body, 'graphSidebarOpen', this.mode !== 'closed');
 		const btn = document.getElementById('sidebarToggleBtn');
-		if (btn !== null) alterClass(btn, CLASS_ACTIVE, this.open);
-		if (this.open) {
+		if (btn !== null) alterClass(btn, CLASS_ACTIVE, this.mode !== 'closed');
+		if (this.mode !== 'closed') {
 			this.render();
 		}
 		this.view.updateViewInsets();
 	}
 
+	public setOpen(open: boolean) {
+		this.setMode(open ? 'expanded' : 'closed');
+	}
+
 	public setPinnedBranches(branches: ReadonlyArray<string>) {
 		this.pinnedBranches = new Set(branches);
-		if (this.open) this.renderSections();
+		if (this.mode === 'expanded') this.renderSections();
+		else if (this.mode === 'rail') this.render();
 	}
 
 	public getPinnedBranches(): ReadonlyArray<string> {
@@ -207,14 +241,45 @@ class GraphSidebar {
 	}
 
 	public refresh() {
-		if (this.open) this.renderSections();
+		if (this.mode === 'expanded') this.renderSections();
+		else if (this.mode === 'rail') this.render();
 	}
 
 	public render() {
+		if (this.mode === 'rail') {
+			const localCount = this.view.getAllBranchNames().filter((b) => !b.startsWith('remotes/')).length;
+			const wtList = this.view.worktreeList.getWorktrees();
+			const totalWip = wtList.reduce((acc, w) => acc + (typeof w.dirtyCount === 'number' ? w.dirtyCount : 0), 0);
+			const stashCount = this.view.getStashes().length;
+			const tagCount = this.view.getAllTagNames().length;
+			const railBtn = (jump: string, tip: string, icon: string, badge: string, warn: boolean = false) =>
+				'<button type="button" class="gsRailBtn' + (warn ? ' hasWarn' : '') + '" data-sidebar-rail-jump="' + jump + '" data-tip="' + escapeHtml(tip) + '" aria-label="' + escapeHtml(tip) + '">' +
+					icon +
+					(badge !== '' ? '<span class="gsRailBadge' + (warn ? ' warn' : '') + '">' + badge + '</span>' : '') +
+				'</button>';
+			this.elem.innerHTML =
+				'<div class="gsRailStack">' +
+					'<button type="button" class="gsRailBtn" data-sidebar-action="rail" data-tip="' + escapeHtml(t('Expand Sidebar')) + '" aria-label="' + escapeHtml(t('Expand Sidebar')) + '">»</button>' +
+					'<div class="gsRailSep"></div>' +
+					railBtn('local', t('Branches') + ' (' + localCount + ')', MENU_ICONS.branch, localCount > 0 ? String(localCount) : '') +
+					railBtn('worktrees', t('Worktrees') + (totalWip > 0 ? ' · WIP ' + totalWip : ''), MENU_ICONS.worktree, totalWip > 0 ? String(totalWip) : (wtList.length > 1 ? String(wtList.length) : ''), totalWip > 0) +
+					railBtn('stashes', t('Stashes') + ' (' + stashCount + ')', MENU_ICONS.stash, stashCount > 0 ? String(stashCount) : '') +
+					railBtn('tags', t('Tags') + ' (' + tagCount + ')', MENU_ICONS.tag, tagCount > 0 ? String(tagCount) : '') +
+					'<div class="gsRailSep"></div>' +
+					railBtn('review', t('Review Session'), MENU_ICONS.eye, '') +
+					railBtn('palette', t('Command Palette (Jump to Branch / Commit / Tool)'), SVG_ICONS.search, '') +
+					'<span class="gsRailSpacer"></span>' +
+					'<button type="button" class="gsRailBtn" data-sidebar-action="close" data-tip="' + escapeHtml(t('Hide Sidebar')) + '" aria-label="' + escapeHtml(t('Hide Sidebar')) + '">' + SVG_ICONS.close + '</button>' +
+				'</div>';
+			return;
+		}
 		this.elem.innerHTML =
 			'<div class="graphSidebarHeader">' +
 				'<span class="graphSidebarTitle">' + MENU_ICONS.branch + '<span>' + t('Navigator') + '</span></span>' +
-				'<button type="button" class="graphSidebarCloseBtn" data-sidebar-action="close" title="' + t('Close') + '">' + SVG_ICONS.close + '</button>' +
+				'<span class="graphSidebarHeaderBtns">' +
+					'<button type="button" class="graphSidebarCloseBtn" data-sidebar-action="rail" title="' + escapeHtml(t('Collapse to Icon Rail')) + '">«</button>' +
+					'<button type="button" class="graphSidebarCloseBtn" data-sidebar-action="close" title="' + t('Close') + '">' + SVG_ICONS.close + '</button>' +
+				'</span>' +
 			'</div>' +
 			'<div class="graphSidebarSearchWrap">' +
 				'<input id="graphSidebarFilter" class="graphSidebarSearch" type="text" value="' + escapeHtml(this.filterText) + '" placeholder="' + escapeHtml(t('Filter branches, tags, stashes…')) + '"/>' +

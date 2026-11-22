@@ -410,6 +410,9 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'togglePinBranch':
 				gitGraph.processTogglePinBranchResponse(msg);
 				break;
+			case 'savedFilterPresets':
+				gitGraph.processSavedFilterPresetsResponse(msg);
+				break;
 			case 'loadWorktreeWip':
 				gitGraph.processLoadWorktreeWipResponse(msg);
 				break;
