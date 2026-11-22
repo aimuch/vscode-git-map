@@ -1,5 +1,24 @@
 # Change Log
 
+## 2.6.0 - 2026-11-22
+* **Commit Graph Workbench Enhancements**:
+    * Added a collapsible left **Repository Navigator Sidebar** (`#graphSidebar`, toggled via `#sidebarToggleBtn` or Command Palette) grouping **Pinned Branches**, **Local Branches**, **Worktrees**, **Stashes**, **Tags**, and **Remotes** with live filtering, non-invasive branch pinning, and inline PR/WIP badges.
+    * Added **Multi-File Selection & Batch Actions** in Commit Details View Changed Files (`Shift+Click` / `Ctrl/Cmd+Click`), displaying a sticky bulk action bar for **Open Diffs**, **Stage / Unstage / Discard** (for uncommitted changes), **Restore Selected Files** (for historical commits), and **Copy Paths**.
+* **Multi-Worktree Parallel Development & WIP Visibility**:
+    * `DataSource.getWorktrees` now collects real-time uncommitted counts across all non-prunable worktrees and surfaces clickable `WIP N` badges on branch labels in the graph, the Worktrees popover, and the Navigator Sidebar.
+    * Added an inline **Worktree WIP Inspector** so you can inspect and open diffs of any worktree's modified files directly inside the current Git Map window without switching VS Code windows.
+* **Interactive Review Sessions, Stacked PRs & Merge Queue**:
+    * Added an interactive **Review Session** modal (`#reviewSessionModal`) with three scope presets (**Uncommitted**, **Unpushed**, **Current Branch vs Base**), persistent viewed-file progress, **Next Unviewed (`Alt+N`)** diff navigation, severity-tagged file notes (`Blocker` / `Suggestion` / `Note`), one-click **AI Review Scope**, and **Copy for Coding Agent**.
+    * Added automatic **Stacked PR** chain detection (`Stack X/Y`, clickable parent/child branch jumps in the PR Popover) and **GitHub Merge Queue** status badges (`MQ`).
+* **AI Workflow Extensions**:
+    * Added **AI Natural Language Search** (`#findAiBtn` in Find Widget & Command Palette) to translate natural-language queries into transparent, editable Git Map search operator chips (`author:`, `file:`, `change:`, `after:`, `before:`).
+    * Added **AI Name** inside the Stash dialog to generate concise semantic stash descriptions from working-tree diffs.
+    * Added **Confidence Badges (`HIGH` / `MEDIUM` / `LOW`) & Risk Rationale** to Conflict Assistant's whole-file AI merge suggestions.
+* **Architecture, Settings UI & Performance**:
+    * Added a bounded FIFO **Git Process Concurrency Scheduler** (`GitProcessScheduler`, configurable via `git-map.advanced.maxConcurrentGitProcesses`, default `8`) across `DataSource` to eliminate process storms and `.git/index.lock` contention on large repositories.
+    * Upgraded the Settings drawer to a **two-pane searchable layout** with a sticky live search bar and left category navigation rail.
+    * Added non-invasive local metadata storage (`RepoMetadataStore` in `workspaceState`, never modifying `.git/config`) and a **Copy Repository Context for Coding Agent** command (`git-map.exportContextForAgent`).
+
 ## 2.5.0 - 2026-11-22
 * **Amend Commit (`git commit --amend`)**:
     * Added full **Amend Commit…** support on `HEAD` to edit the commit message and optionally include staged changes, stage all uncommitted changes (`git add -A`), reset author date to now (`--date=now`), or skip Git hooks (`--no-verify`), with remote push warnings and `UndoManager` recovery.

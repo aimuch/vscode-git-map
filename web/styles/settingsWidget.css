@@ -5,7 +5,7 @@
 	top:0;
 	right:0;
 	bottom:0;
-	width:min(640px, calc(100vw - 40px));
+	width:min(760px, calc(100vw - 40px));
 	z-index:31;
 	box-sizing:border-box;
 	background-color:var(--vscode-sideBar-background, var(--vscode-editorWidget-background));
@@ -75,6 +75,112 @@
 	width:16px !important;
 	height:16px !important;
 	opacity:0.8;
+}
+
+#settingsSearchBar{
+	display:flex;
+	align-items:center;
+	gap:8px;
+	padding:8px 16px;
+	border-bottom:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	background:var(--vscode-sideBarSectionHeader-background, rgba(128,128,128,0.06));
+}
+.settingsSearchIcon{
+	display:inline-flex;
+	align-items:center;
+	opacity:0.7;
+}
+.settingsSearchIcon svg{
+	width:14px;
+	height:14px;
+}
+#settingsSearchInput{
+	flex:1 1 auto;
+	height:26px;
+	padding:0 8px;
+	border-radius:6px;
+	border:1px solid var(--vscode-input-border, rgba(128,128,128,0.35));
+	background:var(--vscode-input-background, var(--vscode-editor-background));
+	color:var(--vscode-input-foreground, var(--vscode-foreground));
+	font:inherit;
+	font-size:12.5px;
+	outline:none;
+}
+#settingsSearchInput:focus{
+	border-color:var(--vscode-focusBorder);
+}
+#settingsSearchClear{
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:24px;
+	height:24px;
+	border:none;
+	border-radius:4px;
+	background:transparent;
+	color:inherit;
+	cursor:pointer;
+	opacity:0.75;
+}
+#settingsSearchClear:hover{
+	background:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+	opacity:1;
+}
+#settingsSearchClear.hidden{
+	display:none;
+}
+#settingsBody{
+	display:flex;
+	flex:1 1 auto;
+	min-height:0;
+	overflow:hidden;
+}
+#settingsNavRail{
+	flex:0 0 168px;
+	display:flex;
+	flex-direction:column;
+	gap:2px;
+	padding:12px 8px;
+	border-right:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
+	overflow-y:auto;
+	background:rgba(128,128,128,0.03);
+}
+.settingsNavItem{
+	display:flex;
+	align-items:center;
+	gap:7px;
+	width:100%;
+	padding:7px 10px;
+	border:none;
+	border-radius:6px;
+	background:transparent;
+	color:var(--vscode-descriptionForeground);
+	font:inherit;
+	font-size:12px;
+	font-weight:500;
+	text-align:left;
+	cursor:pointer;
+	white-space:nowrap;
+	overflow:hidden;
+	text-overflow:ellipsis;
+}
+.settingsNavItem:hover{
+	background:var(--vscode-list-hoverBackground, rgba(128,128,128,0.12));
+	color:var(--vscode-foreground);
+}
+.settingsNavItem.active{
+	background:var(--vscode-list-activeSelectionBackground, rgba(0,122,204,0.18));
+	color:var(--vscode-list-activeSelectionForeground, var(--vscode-foreground));
+	font-weight:600;
+}
+@media (max-width:620px){
+	#settingsNavRail{ display:none; }
+}
+.settingsEmptySearch{
+	padding:24px 12px;
+	text-align:center;
+	color:var(--vscode-descriptionForeground);
+	font-size:12.5px;
 }
 
 #settingsContent{

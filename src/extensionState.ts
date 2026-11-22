@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as vscode from 'vscode';
 import { Avatar, AvatarCache } from './avatarManager';
 import { getConfig } from './config';
+import { RepoMetadataStore } from './repoMetadataStore';
 import { BooleanOverride, CodeReview, ErrorInfo, FileViewType, GitGraphViewGlobalState, GitGraphViewWorkspaceState, GitRepoSet, GitRepoState, RepoCommitOrdering } from './types';
 import { GitExecutable, getPathFromStr } from './utils';
 import { Disposable } from './utils/disposable';
@@ -68,6 +69,7 @@ export class ExtensionState extends Disposable {
 	private readonly workspaceState: vscode.Memento;
 	private readonly globalStoragePath: string;
 	private avatarStorageAvailable: boolean = false;
+	public readonly metadataStore: RepoMetadataStore;
 
 	/**
 	 * Creates the Git Map Extension State.
@@ -78,6 +80,7 @@ export class ExtensionState extends Disposable {
 		super();
 		this.globalState = context.globalState;
 		this.workspaceState = context.workspaceState;
+		this.metadataStore = new RepoMetadataStore(context.workspaceState);
 
 		this.globalStoragePath = getPathFromStr(context.globalStorageUri.fsPath);
 		fs.stat(this.globalStoragePath + AVATAR_STORAGE_FOLDER, (err) => {

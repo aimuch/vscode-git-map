@@ -298,6 +298,10 @@ export interface GitWorktree {
 	readonly isCurrent: boolean; // Is it the worktree shown in the Git Map View
 	readonly locked: boolean;
 	readonly prunable: boolean; // Its directory no longer exists
+	readonly dirtyCount?: number; // Total uncommitted files in this worktree
+	readonly stagedCount?: number;
+	readonly unstagedCount?: number;
+	readonly untrackedCount?: number;
 }
 
 export interface GitStash {
@@ -2113,6 +2117,11 @@ export interface PullRequestBadgeInfo {
 	readonly state: 'open' | 'draft';
 	readonly ciStatus: 'success' | 'failure' | 'pending' | 'unknown';
 	readonly baseBranch: string;
+	readonly mergeQueueState?: 'queued' | 'merging' | 'awaiting_checks' | null;
+	readonly stackDepth?: number;
+	readonly stackSize?: number;
+	readonly stackParentBranch?: string | null;
+	readonly stackChildBranches?: ReadonlyArray<string>;
 }
 
 export interface WorkingTreeStatusItem {
@@ -2159,6 +2168,11 @@ export interface PullRequestDetailsInfo {
 	readonly ciStatus: 'success' | 'failure' | 'pending' | 'unknown';
 	readonly checks: ReadonlyArray<{ readonly name: string, readonly status: string }>;
 	readonly reviewSummary: string;
+	readonly mergeQueueState?: 'queued' | 'merging' | 'awaiting_checks' | null;
+	readonly stackDepth?: number;
+	readonly stackSize?: number;
+	readonly stackParentBranch?: string | null;
+	readonly stackChildBranches?: ReadonlyArray<string>;
 }
 
 export interface WorkflowMacroConfig {
@@ -2333,6 +2347,127 @@ export interface ResponseLoadBranchCommits extends ResponseWithErrorInfo {
 	readonly commits: ReadonlyArray<BranchCommitSummary>;
 }
 
+export type ReviewSessionScope = 'uncommitted' | 'unpushed' | 'branch';
+
+export interface ReviewSessionComment {
+	readonly id: string;
+	readonly filePath: string;
+	readonly severity: 'blocker' | 'suggestion' | 'note';
+	readonly text: string;
+	readonly createdAt: number;
+}
+
+export interface ReviewSessionState {
+	readonly scopeKey: string;
+	readonly viewedFiles: ReadonlyArray<string>;
+	readonly comments: ReadonlyArray<ReviewSessionComment>;
+	readonly updatedAt: number;
+}
+
+export interface RepoLocalMetadata {
+	readonly pinnedBranches: ReadonlyArray<string>;
+	readonly reviewSessions: { readonly [scopeKey: string]: ReviewSessionState };
+}
+
+export interface RequestLoadRepoMetadata extends RepoRequest {
+	readonly command: 'loadRepoMetadata';
+}
+export interface ResponseLoadRepoMetadata extends BaseMessage {
+	readonly command: 'loadRepoMetadata';
+	readonly repo: string;
+	readonly pinnedBranches: ReadonlyArray<string>;
+}
+
+export interface RequestTogglePinBranch extends RepoRequest {
+	readonly command: 'togglePinBranch';
+	readonly branch: string;
+}
+export interface ResponseTogglePinBranch extends BaseMessage {
+	readonly command: 'togglePinBranch';
+	readonly repo: string;
+	readonly pinnedBranches: ReadonlyArray<string>;
+}
+
+export interface RequestLoadWorktreeWip extends BaseMessage {
+	readonly command: 'loadWorktreeWip';
+	readonly worktreePath: string;
+}
+export interface ResponseLoadWorktreeWip extends ResponseWithErrorInfo {
+	readonly command: 'loadWorktreeWip';
+	readonly worktreePath: string;
+	readonly files: ReadonlyArray<WorkingTreeStatusItem>;
+}
+
+export interface RequestLoadReviewSession extends RepoRequest {
+	readonly command: 'loadReviewSession';
+	readonly scope: ReviewSessionScope;
+}
+export interface ResponseLoadReviewSession extends ResponseWithErrorInfo {
+	readonly command: 'loadReviewSession';
+	readonly repo: string;
+	readonly scope: ReviewSessionScope;
+	readonly scopeKey: string;
+	readonly baseLabel: string;
+	readonly headLabel: string;
+	readonly fromHash: string;
+	readonly toHash: string;
+	readonly commitCount: number;
+	readonly files: ReadonlyArray<GitFileChange>;
+	readonly session: ReviewSessionState;
+}
+
+export interface RequestUpdateReviewSession extends RepoRequest {
+	readonly command: 'updateReviewSession';
+	readonly scopeKey: string;
+	readonly viewedFiles?: ReadonlyArray<string>;
+	readonly comments?: ReadonlyArray<ReviewSessionComment>;
+	readonly clear?: boolean;
+}
+export interface ResponseUpdateReviewSession extends BaseMessage {
+	readonly command: 'updateReviewSession';
+	readonly repo: string;
+	readonly session: ReviewSessionState;
+}
+
+export interface RequestAiSearchCommits extends RepoRequest {
+	readonly command: 'aiSearchCommits';
+	readonly naturalQuery: string;
+	readonly authors: ReadonlyArray<string>;
+	readonly branches: ReadonlyArray<string>;
+	readonly modelId?: string | null;
+}
+export interface ResponseAiSearchCommits extends ResponseWithErrorInfo {
+	readonly command: 'aiSearchCommits';
+	readonly naturalQuery: string;
+	readonly query: string;
+	readonly model: string;
+}
+
+export interface RequestGenerateStashMessage extends RepoRequest {
+	readonly command: 'generateStashMessage';
+	readonly modelId?: string | null;
+}
+export interface ResponseGenerateStashMessage extends ResponseWithErrorInfo {
+	readonly command: 'generateStashMessage';
+	readonly message: string;
+	readonly model: string;
+}
+
+export interface RequestRestoreFilesFromCommit extends RepoRequest {
+	readonly command: 'restoreFilesFromCommit';
+	readonly commitHash: string;
+	readonly filePaths: ReadonlyArray<string>;
+}
+export interface ResponseRestoreFilesFromCommit extends ResponseWithErrorInfo {
+	readonly command: 'restoreFilesFromCommit';
+	readonly restoredCount: number;
+}
+
+export interface RequestExportAgentContext extends RepoRequest {
+	readonly command: 'exportAgentContext';
+	readonly selectedCommitHash?: string | null;
+}
+
 export interface RequestOpenCompanionFeature extends BaseMessage {
 	readonly command: 'openCompanionFeature';
 	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'aiExplainRegression' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken' | 'preCommitCheck' | 'aiSmartCommitSplit' | 'submoduleManager' | 'branchDashboard' | 'exportChangelog';
@@ -2470,6 +2605,15 @@ export type RequestMessage =
 	| RequestExportGraphSvg
 	| RequestOpenHookFile
 	| RequestLoadBranchCommits
+	| RequestLoadRepoMetadata
+	| RequestTogglePinBranch
+	| RequestLoadWorktreeWip
+	| RequestLoadReviewSession
+	| RequestUpdateReviewSession
+	| RequestAiSearchCommits
+	| RequestGenerateStashMessage
+	| RequestRestoreFilesFromCommit
+	| RequestExportAgentContext
 	| RequestOpenCompanionFeature;
 
 export type ResponseMessage =
@@ -2585,7 +2729,15 @@ export type ResponseMessage =
 	| ResponseLoadCommitExtras
 	| ResponseSetCommitNote
 	| ResponseRunWorkflowMacro
-	| ResponseLoadBranchCommits;
+	| ResponseLoadBranchCommits
+	| ResponseLoadRepoMetadata
+	| ResponseTogglePinBranch
+	| ResponseLoadWorktreeWip
+	| ResponseLoadReviewSession
+	| ResponseUpdateReviewSession
+	| ResponseAiSearchCommits
+	| ResponseGenerateStashMessage
+	| ResponseRestoreFilesFromCommit;
 
 export interface ResponseUpdateCdvConfig extends BaseMessage {
 	readonly command: 'updateCdvConfig';

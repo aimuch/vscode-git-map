@@ -1140,6 +1140,39 @@ class ViewActions {
 			runAction({ command: 'pushStash', repo: this.view.currentRepo, message: <string>values[0], includeUntracked: <boolean>values[index], paths: paths, onlyStaged: onlyStaged }, t('Stashing uncommitted changes'));
 		}, target);
 		if (selectable) addFileSelectionToDialog(files.length);
+		const msgInput = <HTMLInputElement | null>document.getElementById('dialogInput0');
+		if (msgInput !== null && msgInput.parentElement !== null) {
+			const aiBtn = document.createElement('button');
+			aiBtn.type = 'button';
+			aiBtn.id = 'stashAiMsgBtn';
+			aiBtn.className = 'dialogInlineAiBtn';
+			aiBtn.textContent = '✨ ' + t('AI Name');
+			aiBtn.title = t('Generate a descriptive stash message with AI');
+			aiBtn.addEventListener('click', () => {
+				aiBtn.disabled = true;
+				aiBtn.textContent = t('Generating…');
+				sendMessage({ command: 'generateStashMessage', repo: this.view.currentRepo });
+			});
+			msgInput.parentElement.appendChild(aiBtn);
+		}
+	}
+
+	public processGenerateStashMessageResponse(msg: GG.ResponseGenerateStashMessage) {
+		const aiBtn = <HTMLButtonElement | null>document.getElementById('stashAiMsgBtn');
+		const msgInput = <HTMLInputElement | null>document.getElementById('dialogInput0');
+		if (aiBtn !== null) {
+			aiBtn.disabled = false;
+			aiBtn.textContent = '✨ ' + t('AI Name');
+		}
+		if (msg.error !== null) {
+			if (aiBtn !== null) aiBtn.title = msg.error;
+			return;
+		}
+		if (msgInput !== null && msg.message.trim() !== '') {
+			msgInput.value = msg.message.trim();
+			msgInput.dispatchEvent(new Event('input', { bubbles: true }));
+			msgInput.focus();
+		}
 	}
 
 	public openAmendCommitDialog(commitHash: string, target: DialogTarget | null) {

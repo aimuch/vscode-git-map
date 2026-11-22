@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GitProcessRunner, runGit } from './historyRewrite';
-import { GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileTimelineCommit, GitPatchInfo, GitStashableFile } from './types';
+import { GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileChange, GitFileStatus, GitFileTimelineCommit, GitPatchInfo, GitStashableFile, ReviewSessionScope } from './types';
 
 const FIELD = '\x1f';
 const RECORD = '\x1e';
@@ -997,6 +997,247 @@ export class GitFeatures {
 			return { summary: 'Completed: ' + executed.join(' → '), error: null };
 		}
 		return { summary: '', error: 'Unknown workflow macro: ' + macroId };
+	}
+
+	/**
+	 * Load changed files and commit range metadata for an interactive Review Session preset
+	 * (`uncommitted`, `unpushed`, or `branch` vs default branch).
+	 */
+	public async getReviewSessionScopeFiles(
+		repo: string,
+		scope: ReviewSessionScope
+	): Promise<{
+		scopeKey: string,
+		baseLabel: string,
+		headLabel: string,
+		fromHash: string,
+		toHash: string,
+		commitCount: number,
+		files: GitFileChange[],
+		error: GitFeatureError
+	}> {
+		const headRes = await this.run(repo, ['rev-parse', 'HEAD']);
+		const headHash = headRes.code === 0 ? headRes.stdout.toString().trim() : EMPTY_TREE_HASH;
+		const branchRes = await this.run(repo, ['symbolic-ref', '-q', '--short', 'HEAD']);
+		const headBranch = branchRes.code === 0 ? branchRes.stdout.toString().trim() : headHash.substring(0, 8);
+
+		if (scope === 'uncommitted') {
+			const statusRes = await this.getWorkingTreeStatus(repo);
+			const statusItems = statusRes.files;
+			const numstatMap: { [p: string]: { add: number | null, del: number | null } } = {};
+			const nsRes = await this.run(repo, ['-c', 'core.quotepath=false', 'diff', '--numstat', 'HEAD', '--']);
+			if (nsRes.code === 0) {
+				splitLines(nsRes.stdout).forEach((line) => {
+					const parts = line.split('\t');
+					if (parts.length >= 3) {
+						const add = parts[0] === '-' ? null : parseInt(parts[0], 10);
+						const del = parts[1] === '-' ? null : parseInt(parts[1], 10);
+						numstatMap[parts[parts.length - 1]] = { add: add, del: del };
+					}
+				});
+			}
+			const files: GitFileChange[] = statusItems.map((item) => {
+				const st: GitFileStatus = item.untracked
+					? GitFileStatus.Untracked
+					: item.indexStatus === 'A'
+						? GitFileStatus.Added
+						: (item.indexStatus === 'D' || item.workTreeStatus === 'D')
+							? GitFileStatus.Deleted
+							: item.indexStatus === 'R'
+								? GitFileStatus.Renamed
+								: GitFileStatus.Modified;
+				const stats = numstatMap[item.path];
+				return {
+					oldFilePath: item.oldPath || item.path,
+					newFilePath: item.path,
+					type: st,
+					additions: stats ? stats.add : null,
+					deletions: stats ? stats.del : null
+				};
+			});
+			return {
+				scopeKey: 'uncommitted:' + headBranch,
+				baseLabel: 'HEAD (' + headBranch + ')',
+				headLabel: 'Working Tree',
+				fromHash: headHash,
+				toHash: '*',
+				commitCount: 0,
+				files: files,
+				error: null
+			};
+		}
+
+		let fromHash = '';
+		let baseLabel = '';
+		if (scope === 'unpushed') {
+			const upRef = await this.run(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}']);
+			const upHashRes = await this.run(repo, ['rev-parse', '--verify', '@{u}']);
+			if (upRef.code !== 0 || upHashRes.code !== 0) {
+				return {
+					scopeKey: 'unpushed:' + headBranch,
+					baseLabel: '',
+					headLabel: headBranch,
+					fromHash: '',
+					toHash: headHash,
+					commitCount: 0,
+					files: [],
+					error: 'No upstream tracking branch is configured for "' + headBranch + '".'
+				};
+			}
+			baseLabel = upRef.stdout.toString().trim();
+			fromHash = upHashRes.stdout.toString().trim();
+		} else {
+			// scope === 'branch': compare merge-base(defaultBranch, HEAD) .. HEAD
+			let defaultBranch = '';
+			const originHead = await this.run(repo, ['symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD']);
+			if (originHead.code === 0) {
+				defaultBranch = originHead.stdout.toString().trim().replace(/^origin\//, '');
+			}
+			const candidates = [defaultBranch, 'main', 'master', 'develop'].filter((c) => c !== '');
+			let baseRef = '';
+			for (const c of candidates) {
+				if (c === headBranch) continue;
+				const checkLocal = await this.run(repo, ['rev-parse', '--verify', '--quiet', 'refs/heads/' + c]);
+				if (checkLocal.code === 0) { baseRef = c; break; }
+				const checkRemote = await this.run(repo, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/' + c]);
+				if (checkRemote.code === 0) { baseRef = 'origin/' + c; break; }
+			}
+			if (baseRef === '') {
+				return {
+					scopeKey: 'branch:' + headBranch,
+					baseLabel: '',
+					headLabel: headBranch,
+					fromHash: '',
+					toHash: headHash,
+					commitCount: 0,
+					files: [],
+					error: 'No base branch (main / master / develop) found to compare "' + headBranch + '" against.'
+				};
+			}
+			baseLabel = baseRef;
+			const mb = await this.run(repo, ['merge-base', baseRef, headHash]);
+			if (mb.code === 0 && mb.stdout.toString().trim() !== '') {
+				fromHash = mb.stdout.toString().trim();
+			} else {
+				const refHash = await this.run(repo, ['rev-parse', '--verify', baseRef]);
+				fromHash = refHash.code === 0 ? refHash.stdout.toString().trim() : EMPTY_TREE_HASH;
+			}
+		}
+
+		const countRes = await this.run(repo, ['rev-list', '--count', fromHash + '..' + headHash]);
+		const commitCount = countRes.code === 0 ? parseInt(countRes.stdout.toString().trim(), 10) || 0 : 0;
+		const [nameStatusRes, numstatRes] = await Promise.all([
+			this.run(repo, ['-c', 'core.quotepath=false', 'diff', '--name-status', '-M', fromHash, headHash, '--']),
+			this.run(repo, ['-c', 'core.quotepath=false', 'diff', '--numstat', '-M', fromHash, headHash, '--'])
+		]);
+		const numMap: { [p: string]: { add: number | null, del: number | null } } = {};
+		if (numstatRes.code === 0) {
+			splitLines(numstatRes.stdout).forEach((line) => {
+				const parts = line.split('\t');
+				if (parts.length >= 3) {
+					const add = parts[0] === '-' ? null : parseInt(parts[0], 10);
+					const del = parts[1] === '-' ? null : parseInt(parts[1], 10);
+					numMap[parts[parts.length - 1]] = { add: add, del: del };
+				}
+			});
+		}
+		const files: GitFileChange[] = [];
+		if (nameStatusRes.code === 0) {
+			splitLines(nameStatusRes.stdout).forEach((line) => {
+				const parts = line.split('\t');
+				if (parts.length < 2) return;
+				const code = parts[0][0];
+				const oldPath = parts[1];
+				const newPath = parts.length >= 3 ? parts[2] : parts[1];
+				const type: GitFileStatus = code === 'A'
+					? GitFileStatus.Added
+					: code === 'D'
+						? GitFileStatus.Deleted
+						: code === 'R'
+							? GitFileStatus.Renamed
+							: GitFileStatus.Modified;
+				const stats = numMap[newPath];
+				files.push({
+					oldFilePath: oldPath,
+					newFilePath: newPath,
+					type: type,
+					additions: stats ? stats.add : null,
+					deletions: stats ? stats.del : null
+				});
+			});
+		}
+		return {
+			scopeKey: scope + ':' + headBranch + ':' + fromHash.substring(0, 8),
+			baseLabel: baseLabel,
+			headLabel: headBranch,
+			fromHash: fromHash,
+			toHash: headHash,
+			commitCount: commitCount,
+			files: files,
+			error: null
+		};
+	}
+
+	/**
+	 * Build a structured Markdown snapshot of repository state for external coding agents.
+	 */
+	public async buildAgentContextMarkdown(repo: string, selectedCommitHash?: string | null): Promise<string> {
+		const [branchRes, statusRes, logRes, wtRes] = await Promise.all([
+			this.run(repo, ['symbolic-ref', '-q', '--short', 'HEAD']),
+			this.getWorkingTreeStatus(repo),
+			this.run(repo, ['-c', 'log.showSignature=false', 'log', '-n', '5', '--format=%h %s (%an, %ar)']),
+			this.run(repo, ['worktree', 'list', '--porcelain'])
+		]);
+		const statusItems = statusRes.files;
+		const branch = branchRes.code === 0 ? branchRes.stdout.toString().trim() : '(detached HEAD)';
+		const lines: string[] = [
+			'# Repository Context: `' + path.basename(repo) + '`',
+			'- **Path**: `' + repo + '`',
+			'- **Branch**: `' + branch + '`'
+		];
+		const upRes = await this.run(repo, ['rev-list', '--left-right', '--count', '@{u}...HEAD']);
+		if (upRes.code === 0) {
+			const [behind, ahead] = upRes.stdout.toString().trim().split(/\s+/);
+			lines.push('- **Upstream Sync**: ahead `' + (ahead || '0') + '`, behind `' + (behind || '0') + '`');
+		}
+		const staged = statusItems.filter((f) => f.staged);
+		const unstaged = statusItems.filter((f) => f.unstaged);
+		const untracked = statusItems.filter((f) => f.untracked);
+		const conflicted = statusItems.filter((f) => f.conflicted);
+		lines.push('- **Working Tree**: ' + staged.length + ' staged, ' + unstaged.length + ' unstaged, ' + untracked.length + ' untracked' + (conflicted.length > 0 ? ', **' + conflicted.length + ' conflicted**' : ''));
+
+		if (statusItems.length > 0) {
+			lines.push('', '## Changed Files');
+			statusItems.slice(0, 40).forEach((f) => {
+				const tag = f.conflicted ? 'CONFLICT' : (f.staged && f.unstaged ? 'SM' : f.staged ? 'S' : f.untracked ? 'U' : 'M');
+				lines.push('- `[' + tag + ']` `' + f.path + '`');
+			});
+		}
+		if (logRes.code === 0) {
+			const commits = splitLines(logRes.stdout);
+			if (commits.length > 0) {
+				lines.push('', '## Recent Commits');
+				commits.forEach((c) => lines.push('- ' + c));
+			}
+		}
+		if (wtRes.code === 0) {
+			const wtLines = wtRes.stdout.toString().split(/\r?\n\r?\n/).filter((b) => b.trim() !== '');
+			if (wtLines.length > 1) {
+				lines.push('', '## Worktrees (' + wtLines.length + ')');
+				wtLines.forEach((blk) => {
+					const wp = (blk.match(/^worktree (.+)$/m) || [])[1] || '';
+					const wb = ((blk.match(/^branch (.+)$/m) || [])[1] || '(detached)').replace(/^refs\/heads\//, '');
+					if (wp !== '') lines.push('- `' + wb + '` → `' + wp + '`');
+				});
+			}
+		}
+		if (typeof selectedCommitHash === 'string' && HASH_REGEXP.test(selectedCommitHash)) {
+			const showRes = await this.run(repo, ['-c', 'log.showSignature=false', 'show', '--stat', '--format=fuller', selectedCommitHash]);
+			if (showRes.code === 0) {
+				lines.push('', '## Selected Commit (`' + selectedCommitHash.substring(0, 8) + '`)', '```', showRes.stdout.toString().trim().slice(0, 4000), '```');
+			}
+		}
+		return lines.join('\n');
 	}
 
 	/**

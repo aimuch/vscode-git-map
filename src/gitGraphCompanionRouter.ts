@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
+import { generateStashMessage, translateNaturalLanguageToSearchQuery } from './explainCommit';
 import { exportGraphSvgToFile } from './exportShare';
 import { GitFeatures, buildPartialHunkPatch } from './gitFeatures';
-import { t } from './l10n';
+import { getLanguage, t } from './l10n';
 import { scanRepoWorkingTreeForIssues } from './preCommitGuard';
 import { fetchPullRequestDetails, fetchRepoPullRequestBadges } from './prStatusIntegration';
+import { RepoMetadataStore } from './repoMetadataStore';
 import { RequestMessage, ResponseMessage } from './types';
 import { UndoManager } from './undoManager';
 
@@ -14,6 +16,7 @@ export interface CompanionRouterContext {
 	readonly gitFeatures: GitFeatures;
 	readonly undoManager: UndoManager;
 	readonly signCommits: boolean;
+	readonly metadataStore?: RepoMetadataStore;
 	readonly sendMessage: (msg: ResponseMessage) => void;
 }
 
@@ -146,6 +149,123 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 		case 'loadBranchCommits': {
 			const res = await ctx.gitFeatures.getBranchCommits(msg.repo, msg.branch, typeof msg.maxCommits === 'number' ? msg.maxCommits : 100);
 			ctx.sendMessage({ command: 'loadBranchCommits', branch: msg.branch, commits: res.commits, error: res.error });
+			return true;
+		}
+		case 'loadRepoMetadata': {
+			const meta = ctx.metadataStore ? ctx.metadataStore.getRepoMetadata(msg.repo) : { pinnedBranches: [], reviewSessions: {} };
+			ctx.sendMessage({ command: 'loadRepoMetadata', repo: msg.repo, pinnedBranches: meta.pinnedBranches });
+			return true;
+		}
+		case 'togglePinBranch': {
+			const pinned = ctx.metadataStore ? ctx.metadataStore.togglePinnedBranch(msg.repo, msg.branch) : [];
+			ctx.sendMessage({ command: 'togglePinBranch', repo: msg.repo, pinnedBranches: pinned });
+			return true;
+		}
+		case 'loadWorktreeWip': {
+			try {
+				const res = await ctx.gitFeatures.getWorkingTreeStatus(msg.worktreePath);
+				ctx.sendMessage({ command: 'loadWorktreeWip', worktreePath: msg.worktreePath, files: res.files, error: res.error });
+			} catch (err) {
+				ctx.sendMessage({ command: 'loadWorktreeWip', worktreePath: msg.worktreePath, files: [], error: err instanceof Error ? err.message : String(err) });
+			}
+			return true;
+		}
+		case 'loadReviewSession': {
+			const data = await ctx.gitFeatures.getReviewSessionScopeFiles(msg.repo, msg.scope);
+			const session = ctx.metadataStore
+				? ctx.metadataStore.getReviewSession(msg.repo, data.scopeKey)
+				: { scopeKey: data.scopeKey, viewedFiles: [], comments: [], updatedAt: Date.now() };
+			ctx.sendMessage({
+				command: 'loadReviewSession',
+				repo: msg.repo,
+				scope: msg.scope,
+				scopeKey: data.scopeKey,
+				baseLabel: data.baseLabel,
+				headLabel: data.headLabel,
+				fromHash: data.fromHash,
+				toHash: data.toHash,
+				commitCount: data.commitCount,
+				files: data.files,
+				session: session,
+				error: data.error
+			});
+			return true;
+		}
+		case 'updateReviewSession': {
+			const session = ctx.metadataStore
+				? ctx.metadataStore.updateReviewSession(msg.repo, msg.scopeKey, {
+					viewedFiles: msg.viewedFiles,
+					comments: msg.comments,
+					clear: msg.clear
+				})
+				: { scopeKey: msg.scopeKey, viewedFiles: msg.viewedFiles || [], comments: msg.comments || [], updatedAt: Date.now() };
+			ctx.sendMessage({ command: 'updateReviewSession', repo: msg.repo, session: session });
+			return true;
+		}
+		case 'aiSearchCommits': {
+			const cts = new vscode.CancellationTokenSource();
+			try {
+				const res = await translateNaturalLanguageToSearchQuery(
+					msg.naturalQuery,
+					msg.authors || [],
+					msg.branches || [],
+					typeof msg.modelId === 'string' ? msg.modelId : null,
+					cts.token
+				);
+				ctx.sendMessage({
+					command: 'aiSearchCommits',
+					naturalQuery: msg.naturalQuery,
+					query: res.query,
+					model: res.model || '',
+					error: res.error
+				});
+			} finally {
+				cts.dispose();
+			}
+			return true;
+		}
+		case 'generateStashMessage': {
+			const cts = new vscode.CancellationTokenSource();
+			try {
+				const diff = await ctx.gitFeatures.getChangesForCommitMessage(msg.repo);
+				if (diff.error !== null) {
+					ctx.sendMessage({ command: 'generateStashMessage', message: '', model: '', error: diff.error });
+					return true;
+				}
+				if (diff.scope === 'none' || diff.text.trim() === '') {
+					ctx.sendMessage({ command: 'generateStashMessage', message: '', model: '', error: t('No uncommitted changes to summarize.') });
+					return true;
+				}
+				const res = await generateStashMessage(
+					diff.text,
+					typeof msg.modelId === 'string' ? msg.modelId : null,
+					getLanguage(),
+					cts.token
+				);
+				ctx.sendMessage({
+					command: 'generateStashMessage',
+					message: res.message,
+					model: res.model || '',
+					error: res.error
+				});
+			} finally {
+				cts.dispose();
+			}
+			return true;
+		}
+		case 'restoreFilesFromCommit': {
+			const err = await ctx.dataSource.restoreFilesFromCommit(msg.repo, msg.commitHash, msg.filePaths);
+			ctx.sendMessage({
+				command: 'restoreFilesFromCommit',
+				restoredCount: err === null ? msg.filePaths.length : 0,
+				error: err
+			});
+			return true;
+		}
+		case 'exportAgentContext': {
+			const md = await ctx.gitFeatures.buildAgentContextMarkdown(msg.repo, msg.selectedCommitHash);
+			await vscode.env.clipboard.writeText(md);
+			vscode.window.setStatusBarMessage(t('Copied repository context for coding agent to clipboard.'), 4000);
 			return true;
 		}
 		case 'openHookFile': {

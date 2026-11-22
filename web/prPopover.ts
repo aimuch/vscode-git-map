@@ -42,7 +42,12 @@ class PullRequestPopover {
 			headBranch: branch,
 			ciStatus: typeof cached !== 'undefined' ? cached.ciStatus : 'unknown',
 			checks: [],
-			reviewSummary: ''
+			reviewSummary: '',
+			mergeQueueState: typeof cached !== 'undefined' ? cached.mergeQueueState : null,
+			stackDepth: typeof cached !== 'undefined' ? cached.stackDepth : undefined,
+			stackSize: typeof cached !== 'undefined' ? cached.stackSize : undefined,
+			stackParentBranch: typeof cached !== 'undefined' ? cached.stackParentBranch : undefined,
+			stackChildBranches: typeof cached !== 'undefined' ? cached.stackChildBranches : undefined
 		}, true);
 		pop.addEventListener('click', (e) => {
 			if (!(e.target instanceof Element)) return;
@@ -62,6 +67,12 @@ class PullRequestPopover {
 				const base = act.dataset.prBase || 'main';
 				sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'range', fromRef: base, toRef: branch, label: 'PR #' + prNumber + ' (' + base + ' → ' + branch + ')' });
 				this.close();
+			} else if (cmd === 'jumpStackBranch') {
+				const targetBranch = act.dataset.prBranch || '';
+				if (targetBranch !== '') {
+					this.view.focusBranchOrRef(targetBranch, false);
+					this.close();
+				}
 			}
 		});
 		document.body.appendChild(pop);
@@ -80,11 +91,29 @@ class PullRequestPopover {
 		const checksHtml = d.checks.length > 0
 			? '<div class="prPopChecks">' + d.checks.slice(0, 6).map((c) => '<span class="prPopCheck">' + escapeHtml(c.name) + ': ' + escapeHtml(c.status) + '</span>').join('') + '</div>'
 			: '';
+		const mqHtml = d.mergeQueueState
+			? '<span class="gitRefPrBadge prMergeQueueBadge">' + escapeHtml(d.mergeQueueState === 'merging' ? t('Merge Queue: Merging') : (d.mergeQueueState === 'awaiting_checks' ? t('Merge Queue: Checks') : t('In Merge Queue'))) + '</span>'
+			: '';
+		let stackHtml = '';
+		if (typeof d.stackDepth === 'number' && typeof d.stackSize === 'number' && d.stackSize > 1) {
+			const links: string[] = [];
+			if (d.stackParentBranch) {
+				links.push('<button type="button" class="prStackLink" data-pr-act="jumpStackBranch" data-pr-branch="' + escapeHtml(d.stackParentBranch) + '">↑ ' + escapeHtml(d.stackParentBranch) + '</button>');
+			}
+			if (Array.isArray(d.stackChildBranches) && d.stackChildBranches.length > 0) {
+				d.stackChildBranches.slice(0, 3).forEach((child) => {
+					links.push('<button type="button" class="prStackLink" data-pr-act="jumpStackBranch" data-pr-branch="' + escapeHtml(child) + '">↓ ' + escapeHtml(child) + '</button>');
+				});
+			}
+			stackHtml = '<div class="prPopStack"><span class="prStackTag">' + t('Stacked PR {0}/{1}', String(d.stackDepth), String(d.stackSize)) + '</span>' + links.join('') + '</div>';
+		}
 		return '<div class="prPopHdr"><b>#' + d.number + ' ' + escapeHtml(d.title) + '</b><button type="button" class="aiCommitClose" data-pr-act="close">' + SVG_ICONS.close + '</button></div>' +
 			'<div class="prPopMeta"><span class="gitRefPrBadge ci-' + d.ciStatus + '">' + escapeHtml(d.state.toUpperCase() + ' · CI: ' + d.ciStatus) + '</span>' +
+			mqHtml +
 			(d.baseBranch !== '' ? '<span>' + escapeHtml(d.headBranch + ' → ' + d.baseBranch) + '</span>' : '') +
 			(d.author !== '' ? '<span>@' + escapeHtml(d.author) + '</span>' : '') +
 			(d.reviewSummary !== '' ? '<span>' + escapeHtml(d.reviewSummary) + '</span>' : '') + '</div>' +
+			stackHtml +
 			(loading ? '<div class="prPopBody">' + t('Loading ...') + '</div>' : (d.body !== '' ? '<div class="prPopBody">' + escapeHtml(d.body) + '</div>' : '')) +
 			checksHtml +
 			'<div class="prPopBtns">' +

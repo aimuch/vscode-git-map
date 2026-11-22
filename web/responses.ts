@@ -404,6 +404,30 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'viewFileAtRevision':
 				finishOrDisplayError(msg.error, t('Unable to View File at Revision'));
 				break;
+			case 'loadRepoMetadata':
+				gitGraph.processLoadRepoMetadataResponse(msg);
+				break;
+			case 'togglePinBranch':
+				gitGraph.processTogglePinBranchResponse(msg);
+				break;
+			case 'loadWorktreeWip':
+				gitGraph.processLoadWorktreeWipResponse(msg);
+				break;
+			case 'loadReviewSession':
+				gitGraph.processLoadReviewSessionResponse(msg);
+				break;
+			case 'updateReviewSession':
+				gitGraph.processUpdateReviewSessionResponse(msg);
+				break;
+			case 'aiSearchCommits':
+				gitGraph.processAiSearchCommitsResponse(msg);
+				break;
+			case 'generateStashMessage':
+				gitGraph.actions.processGenerateStashMessageResponse(msg);
+				break;
+			case 'restoreFilesFromCommit':
+				refreshOrDisplayError(msg.error, t('Unable to Restore Selected Files'));
+				break;
 			case 'viewScm':
 				finishOrDisplayError(msg.error, t('Unable to open the Source Control View'));
 				break;

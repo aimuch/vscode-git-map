@@ -36,8 +36,13 @@ class WorktreeList {
 		this.worktrees = msg.error === null ? msg.worktrees : [];
 		this.renderButton();
 		this.renderList();
+		this.view.refreshSidebar();
 		// The labels of the branches that are checked out in other worktrees are marked
 		if (changed) this.view.renderBranchesInWorktrees();
+	}
+
+	public getWorktrees(): ReadonlyArray<GG.GitWorktree> {
+		return this.worktrees;
 	}
 
 	/**
@@ -108,6 +113,8 @@ class WorktreeList {
 			this.closeList();
 			if (actionElem !== null && actionElem.dataset.action === 'open') {
 				runAction({ command: 'openWorktree', path: worktree.path }, t('Opening Worktree'));
+			} else if (actionElem !== null && actionElem.dataset.action === 'inspectWip') {
+				this.view.openWorktreeWipInspector(worktree);
 			} else if (actionElem !== null && actionElem.dataset.action === 'remove') {
 				this.removeWorktreeAction(worktree);
 			} else if (worktree.head !== null && typeof this.view.commitLookup[worktree.head] === 'number') {
@@ -127,15 +134,19 @@ class WorktreeList {
 		listElem.innerHTML = '<div class="stashListHeader"><b>' + MENU_ICONS.worktree + t('Worktrees') + ' · ' + this.worktrees.length + '</b><span>' + t('Click on a worktree to go to the commit checked out in it') + '</span></div>' +
 			'<div class="stashListItems">' + this.worktrees.map((worktree, index) => {
 			const canRemove = !worktree.isMain && !worktree.isCurrent;
+			const dirtyCount = typeof worktree.dirtyCount === 'number' ? worktree.dirtyCount : 0;
 			return '<div class="stashListItem worktreeListItem" data-index="' + index + '"><span class="stashListSelector">' + escapeHtml(worktree.branch !== null ? worktree.branch : (worktree.head !== null ? abbrevCommit(worktree.head) : '')) + '</span>' +
 					'<span class="stashListMessage" title="' + escapeHtml(worktree.path) + '">' + escapeHtml(name(worktree)) + '</span>' +
-					'<span class="stashListActions"><button type="button" class="stashListAction primary' + (worktree.isCurrent || worktree.prunable ? ' ' + CLASS_DISABLED : '') + '" data-action="open" tabindex="-1">' + MENU_ICONS.external + t('Open in New Window') + '</button>' +
+					'<span class="stashListActions">' +
+					(dirtyCount > 0 && !worktree.prunable ? '<button type="button" class="stashListAction" data-action="inspectWip" tabindex="-1" title="' + escapeHtml(t('Inspect uncommitted changes in this worktree')) + '">WIP ' + dirtyCount + '</button>' : '') +
+					'<button type="button" class="stashListAction primary' + (worktree.isCurrent || worktree.prunable ? ' ' + CLASS_DISABLED : '') + '" data-action="open" tabindex="-1">' + MENU_ICONS.external + t('Open in New Window') + '</button>' +
 					'<button type="button" class="stashListAction danger' + (canRemove ? '' : ' ' + CLASS_DISABLED) + '" data-action="remove" tabindex="-1" title="' + (canRemove ? '' : worktree.isMain ? t('The main worktree can\'t be removed') : t('The worktree shown in the Git Map View can\'t be removed')) + '">' + MENU_ICONS.trash + t('Remove') + ELLIPSIS + '</button></span>' +
 					'<span class="stashListMeta"><span class="worktreeListPath" title="' + escapeHtml(worktree.path) + '"><bdi>' + escapeHtml(worktree.path) + '</bdi></span>' +
 					(worktree.branch === null ? '<span>' + t('Detached HEAD') + '</span>' : '') +
 					(worktree.isCurrent ? '<span class="worktreeListBadge">' + t('Current') + '</span>' : '') +
 					(worktree.isMain ? '<span class="worktreeListBadge">' + t('Main') + '</span>' : '') +
 					(worktree.locked ? '<span class="worktreeListBadge">' + t('Locked') + '</span>' : '') +
+					(dirtyCount > 0 ? '<span class="worktreeListBadge worktreeWipBadge">' + t('{0} uncommitted', String(dirtyCount)) + '</span>' : '') +
 					(worktree.prunable ? '<span class="stashListNotLoaded">' + t('The folder no longer exists') + '</span>' : '') +
 					'</span></div>';
 		}).join('') + '</div>' +

@@ -47,6 +47,12 @@ class GraphCommandPalette {
 			});
 		}
 		items.push(
+			{ kind: 'action', title: t('Toggle Repository Navigator Sidebar'), detail: t('Show or hide the left sidebar for branches, tags, stashes, and worktrees'), badge: 'View', run: () => this.view.toggleGraphSidebar() },
+			{ kind: 'action', title: t('Review Session: Uncommitted Changes'), detail: t('Interactive checklist & notes for uncommitted working-tree changes'), badge: 'Review', run: () => this.view.openReviewSession('uncommitted') },
+			{ kind: 'action', title: t('Review Session: Unpushed Commits'), detail: t('Review commits ahead of upstream tracking branch'), badge: 'Review', run: () => this.view.openReviewSession('unpushed') },
+			{ kind: 'action', title: t('Review Session: Current Branch vs Base'), detail: t('Review all changes on the current branch since diverging from base'), badge: 'Review', run: () => this.view.openReviewSession('branch') },
+			{ kind: 'action', title: t('AI Natural Language Search') + ELLIPSIS, detail: t('Translate natural language into structured Git Map search chips'), badge: 'AI', run: () => this.view.openAiSearch() },
+			{ kind: 'action', title: t('Copy Repository Context for Coding Agent'), detail: t('Copy branch, upstream, working tree, worktrees & commit summary as Markdown'), badge: 'Agent', run: () => this.view.exportAgentContext() },
 			{ kind: 'action', title: t('Compare Commits Across Branches') + ELLIPSIS, detail: t('Pick any two commits from two branches and inspect their diff'), badge: 'Diff', run: () => this.view.openBranchCommitCompareModal() },
 			{ kind: 'action', title: t('Pre-Commit Guard Check'), detail: t('Scan changes for secrets, console.log, and FIXME markers'), badge: 'Tool', run: () => sendMessage({ command: 'openCompanionFeature', feature: 'preCommitCheck', repo: repo }) },
 			{ kind: 'action', title: t('AI Smart Commit Splitter'), detail: t('Group working-tree files into atomic commits'), badge: 'AI', run: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiSmartCommitSplit', repo: repo }) },

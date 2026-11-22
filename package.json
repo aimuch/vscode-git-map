@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.5.0",
+	"version": "2.6.0",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -424,12 +424,25 @@
 				"command": "git-map.exportChangelog",
 				"title": "%command.exportChangelog.title%",
 				"icon": "$(markdown)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.exportContextForAgent",
+				"title": "%command.exportContextForAgent.title%",
+				"icon": "$(copy)"
 			}
 		],
 		"configuration": {
 			"type": "object",
 			"title": "Git Map",
 			"properties": {
+				"git-map.advanced.maxConcurrentGitProcesses": {
+					"type": "number",
+					"default": 8,
+					"minimum": 1,
+					"maximum": 32,
+					"description": "%config.advanced.maxConcurrentGitProcesses.description%"
+				},
 				"git-map.workflowMacros": {
 					"type": "array",
 					"default": [],

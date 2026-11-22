@@ -476,8 +476,10 @@
 	"command.submoduleManager.title": "子模块管理器 (Submodule)",
 	"command.branchDashboard.title": "分支生命周期看板",
 	"command.exportChangelog.title": "导出更新日志 / 周报 Markdown...",
+	"command.exportContextForAgent.title": "复制仓库上下文供 Coding Agent 使用",
 	"view.compactGraph.containerTitle": "Git Map",
 	"view.compactGraph.name": "紧凑提交图",
+	"config.advanced.maxConcurrentGitProcesses.description": "Git Map 允许同时运行的最大 Git 子进程数（1-32）。调低该值可减少大型仓库或多 Worktree 场景下的 CPU 抖动与 index.lock 竞争。",
 	"config.workflowMacros.description": "自定义 Git 工作流宏（每项包含 `id`、`name` 与一组安全 Git 子命令 `steps`，例如 `[\"fetch --all --prune\", \"rebase origin/main\"]`）。",
 	"config.integrations.pullRequestStatus.enabled.description": "在分支图的本地分支标签旁显示关联的 GitHub、GitLab、Gitea / Forgejo / Codeberg、Bitbucket 与 Azure DevOps 拉取请求（PR / MR）编号与 CI 状态徽章。"
 }

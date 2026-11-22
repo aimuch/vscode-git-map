@@ -4401,3 +4401,120 @@ tr.commit.dragDropTarget > td{
 .bccFooter{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.25))}
 .bccSummary{flex:1 1 auto;font-size:12px;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .bccWarn{color:var(--vscode-editorWarning-foreground,#bf8700);font-family:var(--vscode-font-family)}
+
+
+/* v2.6.0: Collapsible Graph Navigator Sidebar */
+#sidebarToggleBtn{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--vscode-icon-foreground,inherit);cursor:pointer;flex:0 0 auto}
+#sidebarToggleBtn:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.18))}
+#sidebarToggleBtn.active{background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.24));border-color:var(--vscode-focusBorder,rgba(55,148,255,.5))}
+#graphSidebar{position:fixed;top:0;left:0;bottom:0;width:236px;z-index:26;display:none;flex-direction:column;background:var(--vscode-sideBar-background,var(--vscode-editor-background));border-right:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));color:var(--vscode-foreground);font-size:12.5px;box-sizing:border-box}
+#graphSidebar.active{display:flex}
+.graphSidebarHeader{display:flex;align-items:center;justify-content:space-between;padding:8px 10px 8px 12px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.22));font-weight:600}
+.graphSidebarTitle{display:inline-flex;align-items:center;gap:6px}
+.graphSidebarCloseBtn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border:none;border-radius:4px;background:transparent;color:inherit;cursor:pointer;opacity:.75}
+.graphSidebarCloseBtn:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.2));opacity:1}
+.graphSidebarSearchWrap{padding:8px 10px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.18))}
+.graphSidebarSearch{width:100%;height:26px;padding:0 8px;box-sizing:border-box;border-radius:5px;border:1px solid var(--vscode-input-border,rgba(128,128,128,.35));background:var(--vscode-input-background,var(--vscode-editor-background));color:inherit;font:inherit;font-size:12px;outline:none}
+.graphSidebarSearch:focus{border-color:var(--vscode-focusBorder)}
+.graphSidebarBody{flex:1 1 auto;overflow-y:auto;padding:6px 0 16px}
+.gsSection{margin-bottom:4px}
+.gsSectionHeader{display:flex;align-items:center;gap:6px;padding:5px 10px;cursor:pointer;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--vscode-descriptionForeground);user-select:none}
+.gsSectionHeader:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.1));color:var(--vscode-foreground)}
+.gsSectionCount{margin-left:auto;padding:0 5px;border-radius:999px;background:rgba(128,128,128,.18);font-size:10.5px;font-weight:600}
+.gsSectionList{display:flex;flex-direction:column}
+.gsItem{display:flex;align-items:center;gap:6px;padding:4px 8px 4px 16px;cursor:pointer;min-height:24px;box-sizing:border-box}
+.gsItem:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.14))}
+.gsItem.head{font-weight:600}
+.gsItem.head .gsItemIcon{color:var(--vscode-testing-iconPassed,#2da44e)}
+.gsItemIcon{flex:0 0 auto;font-size:11px;opacity:.78;width:13px;text-align:center}
+.gsItemLabel{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gsBadge{flex:0 0 auto;font-size:10.5px;padding:0 5px;border-radius:4px;background:rgba(128,128,128,.16);color:var(--vscode-descriptionForeground);font-family:var(--vscode-editor-font-family)}
+.gsBadgePr{background:rgba(55,148,255,.16);color:var(--vscode-textLink-foreground,#3794ff)}
+.gsBadgeWip{background:rgba(210,153,34,.2);color:var(--vscode-editorWarning-foreground,#d29922);font-weight:600}
+.gsBadgeWarn{background:rgba(248,81,73,.18);color:var(--vscode-errorForeground,#f85149)}
+.gsPinBtn,.gsMiniBtn{flex:0 0 auto;border:none;background:transparent;color:var(--vscode-descriptionForeground);cursor:pointer;padding:0 3px;font-size:12px;opacity:.45;border-radius:3px}
+.gsItem:hover .gsPinBtn,.gsItem:hover .gsMiniBtn,.gsPinBtn.pinned{opacity:1}
+.gsPinBtn.pinned{color:var(--vscode-editorWarning-foreground,#e3b341)}
+.gsEmpty{padding:4px 18px;font-size:11.5px;color:var(--vscode-descriptionForeground);opacity:.75}
+
+/* v2.6.0: CDV Multi-File Selection & Bulk Action Bar */
+.fileTreeFileRecord.cdvFileMultiSelected{background:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 28%,transparent) !important;box-shadow:inset 3px 0 0 var(--vscode-focusBorder,#3794ff)}
+.cdvFileBulkBar{position:sticky;top:0;z-index:8;display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 10px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.3));background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.cdvBulkCount{font-size:12px;font-weight:600;margin-right:4px}
+
+/* v2.6.0: Worktree WIP Badge & Stacked PR / Merge Queue Badges */
+.gitRefWipBadge{display:inline-flex;align-items:center;margin-left:5px;padding:0 5px;border-radius:4px;font-size:10px;font-weight:700;background:rgba(210,153,34,.22);color:var(--vscode-editorWarning-foreground,#d29922);border:1px solid rgba(210,153,34,.45);cursor:pointer;line-height:15px}
+.gitRefWipBadge:hover{background:rgba(210,153,34,.35)}
+.worktreeWipBadge{background:rgba(210,153,34,.2) !important;color:var(--vscode-editorWarning-foreground,#d29922) !important}
+.gitRefPrBadge.inQueue{box-shadow:0 0 0 1px rgba(137,87,229,.65)}
+.prMergeQueueBadge{background:rgba(137,87,229,.22) !important;color:#a371f7 !important;border:1px solid rgba(137,87,229,.45)}
+.prPopStack{display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 0 2px;font-size:11.5px}
+.prStackTag{font-weight:600;color:var(--vscode-descriptionForeground)}
+.prStackLink{border:1px solid var(--vscode-panel-border,rgba(128,128,128,.35));border-radius:4px;padding:1px 6px;background:rgba(128,128,128,.12);color:var(--vscode-textLink-foreground,#3794ff);cursor:pointer;font-size:11px;font-family:var(--vscode-editor-font-family)}
+.prStackLink:hover{background:rgba(55,148,255,.18)}
+
+/* v2.6.0: AI Search & Inline Dialog AI Button */
+#findAiBtn{font-size:12px;padding:0 4px}
+#findAiBtn.loading{opacity:.5;pointer-events:none}
+.dialogInlineAiBtn{margin-left:6px;height:24px;padding:0 8px;border-radius:5px;border:1px solid var(--vscode-button-border,rgba(128,128,128,.35));background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.18));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer;font-size:11.5px;white-space:nowrap}
+.dialogInlineAiBtn:hover{background:var(--vscode-button-secondaryHoverBackground,rgba(128,128,128,.28))}
+
+/* v2.6.0: Interactive Review Session & Worktree WIP Modal */
+.reviewSessionOverlay{position:fixed;inset:0;z-index:122;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:24px}
+.rsPanel{width:min(920px,95vw);max-height:84vh;display:flex;flex-direction:column;border-radius:10px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.35));background:var(--vscode-editor-background);box-shadow:0 18px 44px rgba(0,0,0,.5);overflow:hidden}
+.rsPanelCompact{width:min(640px,92vw)}
+.rsHeader{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));background:var(--vscode-sideBar-background,var(--vscode-editor-background))}
+.rsTitle{display:inline-flex;align-items:center;gap:6px;font-weight:600;font-size:13.5px}
+.rsScopes{display:inline-flex;gap:4px;margin-left:8px}
+.rsScopePill{height:24px;padding:0 10px;border-radius:999px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.35));background:transparent;color:var(--vscode-descriptionForeground);cursor:pointer;font-size:11.5px;font-weight:500}
+.rsScopePill:hover{color:var(--vscode-foreground);background:rgba(128,128,128,.12)}
+.rsScopePill.active{background:var(--vscode-button-background);color:var(--vscode-button-foreground);border-color:transparent;font-weight:600}
+.rsCloseBtn{margin-left:auto;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;border-radius:5px;background:transparent;color:inherit;cursor:pointer;opacity:.8}
+.rsCloseBtn:hover{background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.2));opacity:1}
+.rsWtPathBar{padding:6px 14px;font-size:11.5px;color:var(--vscode-descriptionForeground);border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.18));background:rgba(128,128,128,.05)}
+.rsBody{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;overflow:hidden;padding:12px 14px;gap:10px}
+.rsProgressRow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.rsRangeLabel{font-family:var(--vscode-editor-font-family);font-size:12px;color:var(--vscode-descriptionForeground)}
+.rsProgressBarWrap{flex:1 1 120px;height:6px;border-radius:999px;background:rgba(128,128,128,.22);overflow:hidden}
+.rsProgressBar{height:100%;background:var(--vscode-testing-iconPassed,#2da44e);transition:width .18s ease}
+.rsProgressText{font-size:12px;font-weight:600}
+.rsGrid{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:1.15fr 1fr;gap:12px;overflow:hidden}
+@media (max-width:740px){.rsGrid{grid-template-columns:1fr}}
+.rsFileList{overflow-y:auto;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));border-radius:6px;max-height:48vh}
+.rsWtFileList{max-height:54vh}
+.rsFileItem{display:flex;align-items:center;gap:7px;padding:6px 10px;border-bottom:1px solid rgba(128,128,128,.12);cursor:pointer;font-size:12px}
+.rsFileItem:last-child{border-bottom:0}
+.rsFileItem:hover{background:var(--vscode-list-hoverBackground,rgba(128,128,128,.14))}
+.rsFileItem.selected{background:color-mix(in srgb,var(--vscode-list-activeSelectionBackground,var(--vscode-focusBorder,#3794ff)) 28%,transparent)}
+.rsFileItem.viewed .rsFilePath{opacity:.65;text-decoration:line-through}
+.rsFileCheck{cursor:pointer}
+.rsFileType{width:18px;text-align:center;font-family:var(--vscode-editor-font-family);font-weight:700;font-size:11px;flex:0 0 auto}
+.rsFilePath{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--vscode-editor-font-family)}
+.rsFileStats{flex:0 0 auto;font-family:var(--vscode-editor-font-family);font-size:11px}
+.rsFileStats .add{color:var(--vscode-gitDecoration-addedResourceForeground,#2da44e)}
+.rsFileStats .del{color:var(--vscode-gitDecoration-deletedResourceForeground,#f85149)}
+.rsCommentBadge{flex:0 0 auto;padding:0 6px;border-radius:999px;font-size:10.5px;background:rgba(55,148,255,.22);color:var(--vscode-textLink-foreground,#3794ff);font-weight:600}
+.rsNotesPane{display:flex;flex-direction:column;gap:8px;min-height:0;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));border-radius:6px;padding:8px 10px;max-height:48vh}
+.rsNotesHeader{font-size:12px;font-weight:600;color:var(--vscode-descriptionForeground)}
+.rsNotesList{flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.rsNoComments{font-size:12px;color:var(--vscode-descriptionForeground);padding:10px 4px}
+.rsCommentCard{padding:7px 9px;border-radius:6px;border:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));background:rgba(128,128,128,.06);font-size:12px}
+.rsCommentCard.sev-blocker{border-left:3px solid var(--vscode-errorForeground,#f85149)}
+.rsCommentCard.sev-suggestion{border-left:3px solid var(--vscode-editorWarning-foreground,#d29922)}
+.rsCommentCard.sev-note{border-left:3px solid var(--vscode-focusBorder,#3794ff)}
+.rsCommentMeta{display:flex;align-items:center;gap:6px;margin-bottom:4px;font-size:11px}
+.rsSevBadge{font-weight:700;font-size:10px}
+.rsCommentFile{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground)}
+.rsDelComment{border:none;background:transparent;color:inherit;cursor:pointer;opacity:.65;padding:0 2px}
+.rsDelComment:hover{opacity:1}
+.rsCommentText{white-space:pre-wrap;word-break:break-word}
+.rsComposer{display:flex;flex-direction:column;gap:6px;padding-top:6px;border-top:1px solid rgba(128,128,128,.18)}
+.rsSeveritySelect,.rsCommentInput{border-radius:5px;border:1px solid var(--vscode-input-border,rgba(128,128,128,.35));background:var(--vscode-input-background);color:var(--vscode-input-foreground,inherit);font:inherit;font-size:12px;padding:4px 8px}
+.rsEmpty{padding:28px 14px;text-align:center;color:var(--vscode-descriptionForeground);font-size:12.5px}
+.rsError{color:var(--vscode-errorForeground,#f85149)}
+.rsFooter{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--vscode-panel-border,rgba(128,128,128,.25))}
+.rsFooterSpacer{flex:1 1 auto}
+.rsBtn{height:26px;padding:0 10px;border-radius:6px;border:1px solid var(--vscode-dropdown-border,rgba(128,128,128,.38));background:var(--vscode-button-secondaryBackground,rgba(128,128,128,.16));color:var(--vscode-button-secondaryForeground,inherit);cursor:pointer;font-size:12px}
+.rsBtn:hover:not(:disabled){background:var(--vscode-button-secondaryHoverBackground,rgba(128,128,128,.28))}
+.rsBtn.primary{border-color:transparent;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-weight:600}
+.rsBtn:disabled{opacity:.48;cursor:default}

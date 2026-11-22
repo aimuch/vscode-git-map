@@ -81,6 +81,7 @@ class FindWidget {
 		this.widgetElem.innerHTML = '<span id="findBtn" title="' + t('Find') + '">' + SVG_ICONS.search + '</span><span id="findChips"></span>' +
 			'<input id="findInput" type="text" placeholder="' + t('Search commits') + ELLIPSIS + '" title="' + t('Search operators: author: (or @:), message: (or =:), commit: (or #:), file: (or ?:), change: (or ~:), after: (or >:), before: (or <:). Enclose a value containing spaces in double quotes. Press Enter to add the condition as a chip.') + '" tabindex="-1"/>' +
 			'<span id="findCaseSensitive" class="findModifier" title="' + t('Match Case') + '">Aa</span><span id="findRegex" class="findModifier" title="' + t('Use Regular Expression') + '">.*</span>' +
+			'<span id="findAiBtn" class="findModifier" title="' + t('AI Natural Language Search') + '">✨</span>' +
 			'<span id="findClose" title="' + t('Clear Search (Escape)') + '">' + SVG_ICONS.close + '</span>';
 		controlsElem.insertBefore(this.widgetElem, document.getElementById('scrollToHeadBtn'));
 
@@ -162,6 +163,11 @@ class FindWidget {
 			alterClass(this.regexElem, CLASS_ACTIVE, workspaceState.findIsRegex);
 			this.update(true);
 		});
+
+		const findAiBtn = document.getElementById('findAiBtn');
+		if (findAiBtn !== null) {
+			findAiBtn.addEventListener('click', () => this.openAiSearchDialog());
+		}
 
 		this.countElem = document.getElementById('findCount')!;
 		this.positionElem = document.getElementById('findPosition')!;
@@ -728,6 +734,57 @@ class FindWidget {
 
 
 	/* Rendering */
+
+	public openAiSearchDialog() {
+		this.show(false);
+		dialog.showForm(
+			t('Describe the commits you want to find in natural language. AI translates it into transparent Git Map search chips (<code>author:</code>, <code>file:</code>, <code>change:</code>, <code>after:</code>, <code>before:</code>):'),
+			[{
+				type: DialogInputType.Text,
+				name: t('Natural Language Query'),
+				default: this.inputElem.value.trim(),
+				placeholder: t('e.g. commits by Andy modifying auth timeout last month')
+			}],
+			t('Translate & Search'),
+			(values) => {
+				const query = (<string>values[0]).trim();
+				if (query === '') return;
+				const authors = this.view.getKnownAuthors();
+				const branches = this.view.getAllBranchNames().filter((b) => !b.startsWith('remotes/'));
+				const aiBtn = document.getElementById('findAiBtn');
+				if (aiBtn !== null) aiBtn.classList.add('loading');
+				sendMessage({
+					command: 'aiSearchCommits',
+					repo: this.view.currentRepo,
+					naturalQuery: query,
+					authors: authors,
+					branches: branches
+				});
+			},
+			null
+		);
+	}
+
+	public processAiSearchResponse(msg: GG.ResponseAiSearchCommits) {
+		const aiBtn = document.getElementById('findAiBtn');
+		if (aiBtn !== null) aiBtn.classList.remove('loading');
+		if (msg.error !== null) {
+			dialog.showError(t('AI Search Unavailable'), msg.error, null, null);
+			return;
+		}
+		const translated = msg.query.trim();
+		if (translated === '') {
+			dialog.showError(t('AI Search'), t('Could not translate that request into search operators.'), null, null);
+			return;
+		}
+		// Split translated query into operator chips, respecting double-quoted values
+		const tokens = translated.match(/(?:[^\s"]+|"[^"]*")+/g) || [translated];
+		this.chips = tokens.filter((tok) => tok.trim() !== '');
+		this.inputElem.value = '';
+		this.show(false);
+		this.renderChips();
+		this.textChanged();
+	}
 
 	/**
 	 * Render the chips of the conditions that have been added to the search box.

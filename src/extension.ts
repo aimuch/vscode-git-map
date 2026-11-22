@@ -27,6 +27,7 @@ import { BranchDashboard } from './branchDashboard';
 import { CompactPanelView } from './compactPanelView';
 import { ConflictAssistant } from './conflictAssistant';
 import { exportChangelogCommand } from './exportShare';
+import { GitFeatures } from './gitFeatures';
 import { PreCommitAndSplitter } from './preCommitGuard';
 import { checkoutPullRequestCommand, clearHostingTokenCommand, setHostingSecretStorage, setHostingTokenCommand } from './prStatusIntegration';
 import { SubmoduleManager } from './submoduleManager';
@@ -83,6 +84,7 @@ export async function activate(context: vscode.ExtensionContext) {
 	gitStateWatcher.onDidDelete(notifyGitStateChanged);
 
 	const dataSource = new DataSource(gitExecutable, onDidChangeConfiguration, onDidChangeGitExecutable, logger);
+	dataSource.setMaxConcurrentGitProcesses(getConfig().maxConcurrentGitProcesses);
 	const avatarManager = new AvatarManager(dataSource, extensionState, logger);
 	const repoManager = new RepoManager(dataSource, extensionState, onDidChangeConfiguration, logger);
 	const statusBarItem = new StatusBarItem(repoManager.getNumRepos(), repoManager.onDidChangeRepos, onDidChangeConfiguration, logger);
@@ -124,6 +126,20 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('git-map.clearHostingToken', () => clearHostingTokenCommand()),
 		vscode.commands.registerCommand('git-map.checkoutPullRequest', (arg?: unknown) => checkoutPullRequestCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.exportChangelog', (arg?: unknown) => exportChangelogCommand(dataSource, repoManager, extensionState, arg)),
+		vscode.commands.registerCommand('git-map.exportContextForAgent', async (arg?: unknown) => {
+			const explicitRepo = typeof arg === 'object' && arg !== null && typeof (arg as { repo?: unknown }).repo === 'string'
+				? (arg as { repo: string }).repo
+				: null;
+			const repo = explicitRepo || extensionState.getLastActiveRepo() || Object.keys(repoManager.getRepos())[0] || null;
+			if (repo === null) {
+				showErrorMessage(t('No Git repositories were found in the current workspace.'));
+				return;
+			}
+			const gf = new GitFeatures(dataSource);
+			const md = await gf.buildAgentContextMarkdown(repo);
+			await vscode.env.clipboard.writeText(md);
+			showInformationMessage(t('Copied repository context for coding agent to clipboard.'));
+		}),
 		vscode.commands.registerCommand('git-map.diff.showChangesOnly', () => applyDiffViewMode(true)),
 		vscode.commands.registerCommand('git-map.diff.showFullFile', () => applyDiffViewMode(false)),
 		vscode.workspace.registerTextDocumentContentProvider(DiffDocProvider.scheme, diffDocProvider),

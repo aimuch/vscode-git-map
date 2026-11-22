@@ -100,6 +100,8 @@ class GitGraphView {
 	public readonly commitExplainer: CommitExplainer;
 	public readonly hunkModal: HunkStagingModal;
 	public readonly branchCommitCompareModal: BranchCommitCompareModal;
+	public readonly graphSidebar: GraphSidebar;
+	public readonly reviewSessionModal: ReviewSessionModal;
 	public readonly commandPalette: GraphCommandPalette;
 	private readonly dragDrop: GraphDragDropController;
 	private readonly operationBar: OperationBar;
@@ -151,6 +153,8 @@ class GitGraphView {
 		this.hunkModal = new HunkStagingModal(this);
 		this.commandPalette = new GraphCommandPalette(this);
 		this.branchCommitCompareModal = new BranchCommitCompareModal(this);
+		this.graphSidebar = new GraphSidebar(this);
+		this.reviewSessionModal = new ReviewSessionModal(this);
 		this.inlineCommitBox = new InlineCommitBox(this);
 		this.prPopover = new PullRequestPopover(this);
 		this.dragDrop = new GraphDragDropController(this);
@@ -166,6 +170,15 @@ class GitGraphView {
 		};
 
 		this.controlsElem = document.getElementById('controls')!;
+		const sidebarToggleBtn = document.createElement('button');
+		sidebarToggleBtn.type = 'button';
+		sidebarToggleBtn.id = 'sidebarToggleBtn';
+		sidebarToggleBtn.className = 'toolbarBtn';
+		sidebarToggleBtn.title = t('Toggle Repository Navigator Sidebar');
+		sidebarToggleBtn.setAttribute('aria-label', t('Toggle Repository Navigator Sidebar'));
+		sidebarToggleBtn.innerHTML = '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>';
+		sidebarToggleBtn.addEventListener('click', () => this.toggleGraphSidebar());
+		this.controlsElem.insertBefore(sidebarToggleBtn, this.controlsElem.firstChild);
 		this.tableElem = document.getElementById('commitTable')!;
 		this.footerElem = document.getElementById('footer')!;
 		this.scrollShadowElem = <HTMLInputElement>document.getElementById('scrollShadow')!;
@@ -457,7 +470,11 @@ class GitGraphView {
 			if (remotes.length > 0 && this.currentRepo !== '' && this.config.pullRequestStatusEnabled) {
 				sendMessage({ command: 'loadPullRequestBadges', repo: this.currentRepo });
 			}
+			if (this.graphSidebar.isOpen() && this.currentRepo !== '') {
+				sendMessage({ command: 'loadRepoMetadata', repo: this.currentRepo });
+			}
 		}
+		this.graphSidebar.refresh();
 
 		if (!isRepo || (!this.currentRepoRefreshState.hard && arraysStrictlyEqual(this.gitBranches, branchOptions) && this.gitBranchHead === branchHead && arraysStrictlyEqual(this.gitRemotes, remotes))) {
 			this.saveState();
@@ -1783,8 +1800,12 @@ class GitGraphView {
 					: '<span class="gitRefHeadRemote" data-remote="' + remoteName + '" data-fullref="' + remoteFullRef + '">' + remoteName + '</span>';
 			}
 			const prBadge = this.pullRequestBadges[branchLabels.heads[j].name];
+			const prStackSuffix = prBadge && typeof prBadge.stackDepth === 'number' && typeof prBadge.stackSize === 'number' && prBadge.stackSize > 1
+				? (' · ' + prBadge.stackDepth + '/' + prBadge.stackSize)
+				: '';
+			const prMqSuffix = prBadge && prBadge.mergeQueueState ? ' MQ' : '';
 			const prBadgeHtml = typeof prBadge !== 'undefined'
-				? '<span class="gitRefPrBadge ci-' + prBadge.ciStatus + '" data-pr-url="' + escapeHtml(prBadge.url) + '" data-pr-branch="' + refName + '" data-pr-num="' + prBadge.number + '" title="' + escapeHtml('#' + prBadge.number + ' ' + prBadge.title + ' (CI: ' + prBadge.ciStatus + ')') + '">#' + prBadge.number + (prBadge.ciStatus === 'success' ? ' &#10003;' : prBadge.ciStatus === 'failure' ? ' &#10005;' : prBadge.ciStatus === 'pending' ? ' &#9679;' : '') + '</span>'
+				? '<span class="gitRefPrBadge ci-' + prBadge.ciStatus + (prBadge.mergeQueueState ? ' inQueue' : '') + '" data-pr-url="' + escapeHtml(prBadge.url) + '" data-pr-branch="' + refName + '" data-pr-num="' + prBadge.number + '" title="' + escapeHtml('#' + prBadge.number + ' ' + prBadge.title + ' (CI: ' + prBadge.ciStatus + ')' + (prStackSuffix !== '' ? ' [Stack ' + prBadge.stackDepth + '/' + prBadge.stackSize + ']' : '') + (prMqSuffix !== '' ? ' [Merge Queue]' : '')) + '">#' + prBadge.number + (prBadge.ciStatus === 'success' ? ' &#10003;' : prBadge.ciStatus === 'failure' ? ' &#10005;' : prBadge.ciStatus === 'pending' ? ' &#9679;' : '') + prStackSuffix + prMqSuffix + '</span>'
 				: '';
 			refHtml += generateTrackingHtml(this.gitUpstreams[branchLabels.heads[j].name]) + prBadgeHtml + '</span>';
 			refBranches = refActive ? refHtml + refBranches : refBranches + refHtml;
@@ -1849,15 +1870,30 @@ class GitGraphView {
 		this.tableElem.querySelectorAll<HTMLElement>('.gitRef.head').forEach((refElem) => {
 			const worktree = this.worktreeList.getOtherWorktreeOfBranch(unescapeHtml(refElem.dataset.name!));
 			const markerElem = refElem.querySelector('.gitRefWorktree');
+			const wipElem = refElem.querySelector('.gitRefWipBadge');
 			alterClass(refElem, 'inWorktree', worktree !== null);
 			if (worktree !== null) {
-				refElem.title = t('Checked out in the worktree {0}', worktree.path);
+				const dirtyCount = typeof worktree.dirtyCount === 'number' ? worktree.dirtyCount : 0;
+				refElem.title = dirtyCount > 0
+					? t('Checked out in the worktree {0} ({1} uncommitted)', worktree.path, String(dirtyCount))
+					: t('Checked out in the worktree {0}', worktree.path);
 				if (markerElem === null) {
 					const nameElem = refElem.querySelector('.gitRefName');
 					if (nameElem !== null) nameElem.insertAdjacentHTML('afterend', '<span class="gitRefWorktree">' + WORKTREE_ICON + '</span>');
 				}
-			} else if (markerElem !== null) {
-				markerElem.remove();
+				if (dirtyCount > 0) {
+					if (wipElem !== null) {
+						wipElem.textContent = 'WIP ' + dirtyCount;
+						(<HTMLElement>wipElem).dataset.wtPath = worktree.path;
+					} else {
+						refElem.insertAdjacentHTML('beforeend', '<span class="gitRefWipBadge" data-wt-path="' + escapeHtml(worktree.path) + '" title="' + escapeHtml(t('Inspect uncommitted changes in this worktree')) + '">WIP ' + dirtyCount + '</span>');
+					}
+				} else if (wipElem !== null) {
+					wipElem.remove();
+				}
+			} else {
+				if (markerElem !== null) markerElem.remove();
+				if (wipElem !== null) wipElem.remove();
 				refElem.removeAttribute('title');
 			}
 		});
@@ -2447,6 +2483,9 @@ class GitGraphView {
 				} else if (this.branchCommitCompareModal.isOpen()) {
 					this.branchCommitCompareModal.close();
 					handledEvent(e);
+				} else if (this.reviewSessionModal.isOpen()) {
+					this.reviewSessionModal.close();
+					handledEvent(e);
 				} else if (this.prPopover.isOpen()) {
 					this.closePrPopover();
 					handledEvent(e);
@@ -2629,6 +2668,14 @@ class GitGraphView {
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
 
+			if ((eventElem = eventTarget.closest('.gitRefWipBadge')) !== null) {
+				handledEvent(e);
+				const wtPath = typeof eventElem.dataset.wtPath === 'string' ? eventElem.dataset.wtPath : '';
+				const wt = this.worktreeList.getWorktrees().find((w) => w.path === wtPath);
+				if (typeof wt !== 'undefined') this.openWorktreeWipInspector(wt);
+				return;
+			}
+
 			if ((eventElem = eventTarget.closest('.gitRefPrBadge')) !== null) {
 				handledEvent(e);
 				const branch = typeof eventElem.dataset.prBranch === 'string' ? unescapeHtml(eventElem.dataset.prBranch) : '';
@@ -2720,6 +2767,14 @@ class GitGraphView {
 			const eventTarget = <Element>e.target;
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
+
+			if ((eventElem = eventTarget.closest('.gitRefWipBadge')) !== null) {
+				handledEvent(e);
+				const wtPath = typeof eventElem.dataset.wtPath === 'string' ? eventElem.dataset.wtPath : '';
+				const wt = this.worktreeList.getWorktrees().find((w) => w.path === wtPath);
+				if (typeof wt !== 'undefined') this.openWorktreeWipInspector(wt);
+				return;
+			}
 
 			if ((eventElem = eventTarget.closest('.gitRefPrBadge')) !== null) {
 				handledEvent(e);
@@ -3135,6 +3190,7 @@ class GitGraphView {
 				: !expandedCommit.loading && expandedCommit.fileChanges !== null && this.getCdvFileFocus(expandedCommit.commitHash, expandedCommit.fileChanges) !== null ? t('Changes to this File in the Commit') : t('Commit Details');
 			html = '<div id="cdvHeader"><span class="cdvHeaderTitle">' + title + '</span>' +
 				(!expandedCommit.loading ? '<div id="cdvHideUnchanged" class="cdvDiffModePill">' + MENU_ICONS.foldDiff + '<span class="cdvDiffModeLabel">' + t('Changes Only') + '</span></div>' : '') +
+				(!expandedCommit.loading ? '<div id="cdvReviewSession" class="cdvControlBtn" title="' + escapeHtml(t('Review Session (Uncommitted / Unpushed / Branch)')) + '">' + MENU_ICONS.eye + '</div>' : '') +
 				(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
 				(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
 				(expandedCommit.compareWithHash === null ? '<div id="cdvPrev" class="cdvControlBtn" title="' + t('Previous Commit') + '">' + SVG_ICONS.arrowUp + '</div><div id="cdvNext" class="cdvControlBtn" title="' + t('Next Commit') + '">' + SVG_ICONS.arrowDown + '</div>' : '') +
@@ -3212,6 +3268,13 @@ class GitGraphView {
 			if (hideUnchangedBtn !== null) {
 				hideUnchangedBtn.addEventListener('click', () => {
 					this.setHideUnchangedRegions(!this.isHideUnchangedRegions(), true);
+				});
+			}
+
+			const reviewSessionBtn = document.getElementById('cdvReviewSession');
+			if (reviewSessionBtn !== null) {
+				reviewSessionBtn.addEventListener('click', () => {
+					this.openReviewSession(expandedCommit.commitHash === UNCOMMITTED ? 'uncommitted' : 'branch');
 				});
 			}
 
@@ -3590,6 +3653,7 @@ class GitGraphView {
 		if (dialog.isOpen()) return 'dialog';
 		if (this.commandPalette && this.commandPalette.isOpen()) return 'command-palette';
 		if (this.branchCommitCompareModal && this.branchCommitCompareModal.isOpen()) return 'branch-commit-compare';
+		if (this.reviewSessionModal && this.reviewSessionModal.isOpen()) return 'review-session';
 		if (this.prPopover && this.prPopover.isOpen()) return 'pr-popover';
 		if (contextMenu.isOpen()) return 'context-menu';
 		if (this.isHunkModalOpen()) return 'hunk-modal';
@@ -4089,6 +4153,130 @@ class GitGraphView {
 		this.branchCommitCompareModal.processLoadBranchCommitsResponse(msg);
 	}
 
+	public toggleGraphSidebar() {
+		this.graphSidebar.toggle();
+		if (this.graphSidebar.isOpen() && this.currentRepo !== '') {
+			sendMessage({ command: 'loadRepoMetadata', repo: this.currentRepo });
+		}
+	}
+
+	public refreshSidebar() {
+		this.graphSidebar.refresh();
+	}
+
+	public updateViewInsets() {
+		const leftInset = this.graphSidebar.isOpen() ? 236 : 0;
+		this.viewElem.style.left = leftInset > 0 ? leftInset + 'px' : '';
+		this.renderGraph();
+	}
+
+	public openReviewSession(scope: GG.ReviewSessionScope = 'uncommitted') {
+		this.reviewSessionModal.openReview(scope);
+		this.syncAxState();
+	}
+
+	public openWorktreeWipInspector(wt: GG.GitWorktree) {
+		this.reviewSessionModal.openWorktreeWip(wt);
+		this.syncAxState();
+	}
+
+	public openAiSearch() {
+		this.findWidget.openAiSearchDialog();
+	}
+
+	public exportAgentContext() {
+		sendMessage({
+			command: 'exportAgentContext',
+			repo: this.currentRepo,
+			selectedCommitHash: this.expandedCommit !== null && this.expandedCommit.commitHash !== UNCOMMITTED ? this.expandedCommit.commitHash : null
+		});
+	}
+
+	public processLoadRepoMetadataResponse(msg: GG.ResponseLoadRepoMetadata) {
+		if (msg.repo !== this.currentRepo) return;
+		this.graphSidebar.setPinnedBranches(msg.pinnedBranches);
+	}
+
+	public processTogglePinBranchResponse(msg: GG.ResponseTogglePinBranch) {
+		if (msg.repo !== this.currentRepo) return;
+		this.graphSidebar.setPinnedBranches(msg.pinnedBranches);
+	}
+
+	public processLoadWorktreeWipResponse(msg: GG.ResponseLoadWorktreeWip) {
+		this.reviewSessionModal.processLoadWorktreeWipResponse(msg);
+	}
+
+	public processLoadReviewSessionResponse(msg: GG.ResponseLoadReviewSession) {
+		this.reviewSessionModal.processLoadReviewSessionResponse(msg);
+	}
+
+	public processUpdateReviewSessionResponse(msg: GG.ResponseUpdateReviewSession) {
+		this.reviewSessionModal.processUpdateReviewSessionResponse(msg);
+	}
+
+	public processAiSearchCommitsResponse(msg: GG.ResponseAiSearchCommits) {
+		this.findWidget.processAiSearchResponse(msg);
+	}
+
+	public getAllBranchNames(): ReadonlyArray<string> {
+		return this.gitBranches;
+	}
+
+	public getAllTagNames(): ReadonlyArray<string> {
+		return this.gitTags;
+	}
+
+	public getStashes(): ReadonlyArray<GG.GitStash> {
+		return this.gitStashes;
+	}
+
+	public getUpstreams(): GG.GitBranchUpstreams {
+		return this.gitUpstreams;
+	}
+
+	public getPullRequestBadges(): { [branch: string]: GG.PullRequestBadgeInfo } {
+		return this.pullRequestBadges;
+	}
+
+	public getKnownAuthors(): string[] {
+		const set = new Set<string>();
+		this.commits.forEach((c) => {
+			if (c.hash !== UNCOMMITTED && c.author !== '') set.add(c.author);
+		});
+		return Array.from(set);
+	}
+
+	public scrollToCommitHash(hash: string, openDetails: boolean = false) {
+		if (typeof this.commitLookup[hash] === 'number') {
+			this.scrollToCommit(hash, true, true);
+			if (openDetails) {
+				const elem = this.getCommitElem(this.commitLookup[hash]);
+				if (elem !== null) this.loadCommitDetails(elem);
+			}
+		}
+	}
+
+	public focusBranchOrRef(branch: string, isRemote: boolean) {
+		const clean = isRemote ? branch.replace(/^remotes\//, '') : branch;
+		const matchedCommit = this.commits.find((c) =>
+			isRemote
+				? c.remotes.some((r) => r.name === clean)
+				: c.heads.includes(clean)
+		);
+		if (typeof matchedCommit !== 'undefined') {
+			this.scrollToCommit(matchedCommit.hash, true, true);
+		} else {
+			this.setShownBranches([branch]);
+		}
+	}
+
+	public focusTag(tag: string) {
+		const matched = this.commits.find((c) => c.tags.some((tg) => tg.name === tag));
+		if (typeof matched !== 'undefined') {
+			this.scrollToCommit(matched.hash, true, true);
+		}
+	}
+
 	public compareArbitraryCommits(fromHash: string, toHash: string, fromLabel?: string, toLabel?: string) {
 		if (fromHash === toHash) return;
 		const idxA = this.commitLookup[fromHash], idxB = this.commitLookup[toHash];
@@ -4200,6 +4388,24 @@ class GitGraphView {
 					onClick: () => this.commandPalette.open()
 				},
 				{
+					title: t('Toggle Repository Navigator Sidebar'),
+					icon: MENU_ICONS.branch,
+					visible: true,
+					onClick: () => this.toggleGraphSidebar()
+				},
+				{
+					title: t('Review Session (Uncommitted / Unpushed / Branch)') + ELLIPSIS,
+					icon: MENU_ICONS.eye,
+					visible: true,
+					onClick: () => this.openReviewSession('uncommitted')
+				},
+				{
+					title: t('AI Natural Language Search') + ELLIPSIS,
+					icon: MENU_ICONS.sparkle,
+					visible: true,
+					onClick: () => this.openAiSearch()
+				},
+				{
 					title: t('Compare Commits Across Branches') + ELLIPSIS,
 					icon: MENU_ICONS.compare,
 					visible: this.gitBranches.length > 0,
@@ -4210,6 +4416,12 @@ class GitGraphView {
 					icon: MENU_ICONS.edit,
 					visible: this.commitHead !== null,
 					onClick: () => this.actions.openAmendCommitDialog(this.commitHead!, null)
+				},
+				{
+					title: t('Copy Repository Context for Coding Agent'),
+					icon: MENU_ICONS.copy,
+					visible: true,
+					onClick: () => this.exportAgentContext()
 				}
 			],
 			[

@@ -476,8 +476,10 @@
 	"command.submoduleManager.title": "Submodule Manager",
 	"command.branchDashboard.title": "Branch Lifecycle Dashboard",
 	"command.exportChangelog.title": "Export Changelog / Weekly Report...",
+	"command.exportContextForAgent.title": "Copy Repository Context for Coding Agent",
 	"view.compactGraph.containerTitle": "Git Map",
 	"view.compactGraph.name": "Compact Commit Graph",
+	"config.advanced.maxConcurrentGitProcesses.description": "Maximum number of concurrent Git child processes spawned by Git Map (1-32). Lower values reduce CPU spikes and index.lock contention on large repositories or multi-worktree workspaces.",
 	"config.workflowMacros.description": "Custom Git workflow macros (each with `id`, `name`, and an array of safe Git subcommand `steps`, e.g. `[\"fetch --all --prune\", \"rebase origin/main\"]`).",
 	"config.integrations.pullRequestStatus.enabled.description": "Show open Pull Request / Merge Request numbers and CI check status badges beside local branch labels on the graph for GitHub, GitLab, Gitea / Forgejo / Codeberg, Bitbucket, and Azure DevOps remotes."
 }

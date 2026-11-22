@@ -1142,6 +1142,15 @@ export class GitGraphView extends Disposable {
 			case 'runWorkflowMacro':
 			case 'exportGraphSvg':
 			case 'loadBranchCommits':
+			case 'loadRepoMetadata':
+			case 'togglePinBranch':
+			case 'loadWorktreeWip':
+			case 'loadReviewSession':
+			case 'updateReviewSession':
+			case 'aiSearchCommits':
+			case 'generateStashMessage':
+			case 'restoreFilesFromCommit':
+			case 'exportAgentContext':
 			case 'openHookFile':
 			case 'openCompanionFeature':
 				await handleCompanionMessage(msg, {
@@ -1149,6 +1158,7 @@ export class GitGraphView extends Disposable {
 					gitFeatures: this.gitFeatures,
 					undoManager: this.undoManager,
 					signCommits: signCommits,
+					metadataStore: this.extensionState.metadataStore,
 					sendMessage: (response) => this.sendMessage(response)
 				});
 				break;

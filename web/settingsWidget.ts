@@ -23,9 +23,13 @@ class SettingsWidget {
 
 	private readonly widgetElem: HTMLElement;
 	private readonly repoNameElem: HTMLElement;
+	private readonly navRailElem: HTMLElement;
+	private readonly searchInputElem: HTMLInputElement;
 	private readonly contentsElem: HTMLElement;
 	private readonly footerElem: HTMLElement;
 	private readonly loadingElem: HTMLElement;
+	private searchQuery: string = '';
+	private activeSectionIndex: number = 0;
 
 	/**
 	 * Construct a new SettingsWidget instance.
@@ -37,11 +41,16 @@ class SettingsWidget {
 
 		this.widgetElem = document.createElement('div');
 		this.widgetElem.id = 'settingsWidget';
-		this.widgetElem.innerHTML = '<div id="settingsHeader"><h2>' + MENU_ICONS.settings + t('Settings') + '</h2><span id="settingsRepoName"></span><div id="settingsClose" title="' + t('Close') + '"></div></div><div id="settingsContent"></div><div id="settingsFooter"></div><div id="settingsLoading"></div>';
+		this.widgetElem.innerHTML =
+			'<div id="settingsHeader"><h2>' + MENU_ICONS.settings + t('Settings') + '</h2><span id="settingsRepoName"></span><div id="settingsClose" title="' + t('Close') + '"></div></div>' +
+			'<div id="settingsSearchBar"><span class="settingsSearchIcon">' + SVG_ICONS.search + '</span><input id="settingsSearchInput" type="text" placeholder="' + escapeHtml(t('Filter settings…')) + '" autocomplete="off"/><button type="button" id="settingsSearchClear" class="hidden" title="' + escapeHtml(t('Clear')) + '">' + SVG_ICONS.close + '</button></div>' +
+			'<div id="settingsBody"><nav id="settingsNavRail" aria-label="' + escapeHtml(t('Setting Categories')) + '"></nav><div id="settingsContent"></div></div>' +
+			'<div id="settingsFooter"></div><div id="settingsLoading"></div>';
 		document.body.appendChild(this.widgetElem);
 
 		observeElemScroll('settingsContent', this.scrollTop, (scrollTop) => {
 			this.scrollTop = scrollTop;
+			this.syncActiveNavCategory();
 		}, () => {
 			if (this.currentRepo !== null) {
 				this.view.saveState();
@@ -49,9 +58,42 @@ class SettingsWidget {
 		});
 
 		this.repoNameElem = document.getElementById('settingsRepoName')!;
+		this.navRailElem = document.getElementById('settingsNavRail')!;
+		this.searchInputElem = <HTMLInputElement>document.getElementById('settingsSearchInput')!;
 		this.contentsElem = document.getElementById('settingsContent')!;
 		this.footerElem = document.getElementById('settingsFooter')!;
 		this.loadingElem = document.getElementById('settingsLoading')!;
+
+		const clearBtn = document.getElementById('settingsSearchClear')!;
+		this.searchInputElem.addEventListener('input', () => {
+			this.searchQuery = this.searchInputElem.value;
+			alterClass(clearBtn, 'hidden', this.searchQuery.trim() === '');
+			this.applySearchFilter();
+		});
+		clearBtn.addEventListener('click', () => {
+			this.searchQuery = '';
+			this.searchInputElem.value = '';
+			clearBtn.classList.add('hidden');
+			this.applySearchFilter();
+			this.searchInputElem.focus();
+		});
+		this.navRailElem.addEventListener('click', (e) => {
+			const item = e.target instanceof Element ? <HTMLElement | null>e.target.closest('[data-settings-nav]') : null;
+			if (item === null) return;
+			const idx = parseInt(item.dataset.settingsNav!, 10);
+			const sections = this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection');
+			if (idx >= 0 && idx < sections.length) {
+				this.activeSectionIndex = idx;
+				if (this.searchQuery.trim() !== '') {
+					this.searchQuery = '';
+					this.searchInputElem.value = '';
+					clearBtn.classList.add('hidden');
+					this.applySearchFilter();
+				}
+				sections[idx].scrollIntoView({ behavior: 'smooth', block: 'start' });
+				this.updateNavRailHighlight();
+			}
+		});
 
 		const settingsClose = document.getElementById('settingsClose')!;
 		settingsClose.innerHTML = SVG_ICONS.close;
@@ -406,6 +448,8 @@ class SettingsWidget {
 			this.contentsElem.innerHTML = html;
 			this.repoNameElem.textContent = this.repo.name || getRepoName(this.currentRepo);
 			this.footerElem.innerHTML = '<button type="button" id="exportRepositoryConfig" class="settingsBtn" tabindex="-1">' + SVG_ICONS.package + t('Export Repository Configuration') + '</button><span id="openExtensionSettings" class="settingsLink" tabindex="-1">' + t('Open Git Map Extension Settings') + '</span>';
+			this.renderNavRail();
+			this.applySearchFilter();
 			this.renderAppearanceListeners();
 
 			const showRemoteBranchesElem = <HTMLInputElement>document.getElementById('settingsShowRemoteBranchesCheckbox');
@@ -1195,6 +1239,81 @@ class SettingsWidget {
 	 * @param remotes The remotes of the repository.
 	 * @returns The Issue URL, or NULL if it couldn't be detected.
 	 */
+	private renderNavRail() {
+		const sections = Array.from(this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection'));
+		this.navRailElem.innerHTML = sections.map((sec, idx) => {
+			const h3 = sec.querySelector('h3');
+			const label = h3 ? (h3.textContent || '').trim() : ('Section ' + (idx + 1));
+			return '<button type="button" class="settingsNavItem' + (idx === this.activeSectionIndex ? ' active' : '') + '" data-settings-nav="' + idx + '" title="' + escapeHtml(label) + '">' + escapeHtml(label) + '</button>';
+		}).join('');
+	}
+
+	private updateNavRailHighlight() {
+		this.navRailElem.querySelectorAll<HTMLElement>('.settingsNavItem').forEach((item) => {
+			alterClass(item, CLASS_ACTIVE, parseInt(item.dataset.settingsNav!, 10) === this.activeSectionIndex);
+		});
+	}
+
+	private syncActiveNavCategory() {
+		const sections = Array.from(this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection'));
+		if (sections.length === 0) return;
+		const scrollTop = this.contentsElem.scrollTop + 40;
+		let bestIdx = 0;
+		for (let i = 0; i < sections.length; i++) {
+			if (sections[i].style.display === 'none') continue;
+			if (sections[i].offsetTop <= scrollTop) bestIdx = i;
+		}
+		if (bestIdx !== this.activeSectionIndex) {
+			this.activeSectionIndex = bestIdx;
+			this.updateNavRailHighlight();
+		}
+	}
+
+	private applySearchFilter() {
+		const q = this.searchQuery.trim().toLowerCase();
+		const existingEmpty = this.contentsElem.querySelector('.settingsEmptySearch');
+		if (existingEmpty !== null) existingEmpty.remove();
+
+		const sections = Array.from(this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection'));
+		let visibleCount = 0;
+		sections.forEach((sec) => {
+			if (q === '') {
+				sec.style.display = '';
+				sec.querySelectorAll<HTMLElement>('.settingsCard, .settingsRow').forEach((el) => { el.style.display = ''; });
+				visibleCount++;
+				return;
+			}
+			const secText = (sec.querySelector('h3')?.textContent || '').toLowerCase();
+			if (secText.includes(q)) {
+				sec.style.display = '';
+				sec.querySelectorAll<HTMLElement>('.settingsCard, .settingsRow').forEach((el) => { el.style.display = ''; });
+				visibleCount++;
+				return;
+			}
+			const cards = Array.from(sec.querySelectorAll<HTMLElement>(':scope > .settingsCard, :scope > .settingsRow'));
+			if (cards.length === 0) {
+				const match = (sec.textContent || '').toLowerCase().includes(q);
+				sec.style.display = match ? '' : 'none';
+				if (match) visibleCount++;
+				return;
+			}
+			let sectionHasMatch = false;
+			cards.forEach((card) => {
+				const match = (card.textContent || '').toLowerCase().includes(q);
+				card.style.display = match ? '' : 'none';
+				if (match) sectionHasMatch = true;
+			});
+			sec.style.display = sectionHasMatch ? '' : 'none';
+			if (sectionHasMatch) visibleCount++;
+		});
+		if (q !== '' && visibleCount === 0) {
+			const empty = document.createElement('div');
+			empty.className = 'settingsEmptySearch';
+			empty.textContent = t('No settings match "{0}".', this.searchQuery.trim());
+			this.contentsElem.appendChild(empty);
+		}
+	}
+
 	private static autoDetectIssueUrl(issueRegex: string, remotes: ReadonlyArray<{ readonly name: string, readonly url: string | null }>) {
 		if (issueRegex !== '#(\\d+)' || remotes.length === 0) return null;
 

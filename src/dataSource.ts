@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { AskpassEnvironment, AskpassManager } from './askpass/askpassManager';
 import { getConfig } from './config';
+import { GitProcessScheduler } from './gitProcessScheduler';
 import { getBaseRange, getRangeDiff, mapLines } from './lineMapping';
 import { Logger } from './logger';
 import { CommitOrdering, DateType, DeepWriteable, ErrorInfo, ErrorInfoExtensionPrefix, GitBlameCommit, GitBranchUpstream, GitBranchUpstreams, GitCommit, GitCommitDetails, GitCommitStash, GitCommitStats, GitConfigLocation, GitFileBlame, GitFileChange, GitFileHistory, GitFileHistoryCommit, GitFileStatus, GitLineBlame, GitLineHistory, GitLineHistoryEntry, GitLineRange, GitOperation, GitPushBranchMode, GitRebaseCommit, GitRebaseTodoItem, GitRepoConfig, GitRepoConfigBranches, GitResetMode, GitSignature, GitSignatureStatus, GitStash, GitStashStats, GitTagDetails, GitWorktree, MergeActionOn, RebaseActionOn, SquashMessageFormat, TagType, Writeable } from './types';
@@ -52,6 +53,7 @@ const GPG_STATUS_CODE_PARSING_DETAILS: Readonly<{ [statusCode: string]: GpgStatu
 export class DataSource extends Disposable {
 	private readonly logger: Logger;
 	private readonly askpassEnv: AskpassEnvironment;
+	private readonly scheduler: GitProcessScheduler;
 	private gitExecutable!: GitExecutable | null;
 	private gitExecutableSupportsGpgInfo!: boolean;
 	private gitFormatCommitDetails!: string;
@@ -69,6 +71,7 @@ export class DataSource extends Disposable {
 	constructor(gitExecutable: GitExecutable | null, onDidChangeConfiguration: Event<vscode.ConfigurationChangeEvent>, onDidChangeGitExecutable: Event<GitExecutable>, logger: Logger) {
 		super();
 		this.logger = logger;
+		this.scheduler = new GitProcessScheduler(8);
 		this.setGitExecutable(gitExecutable);
 
 		const askpassManager = new AskpassManager();
@@ -82,6 +85,12 @@ export class DataSource extends Disposable {
 					event.affectsConfiguration('git-map.repository.useMailmap') || event.affectsConfiguration('git-map.useMailmap')
 				) {
 					this.generateGitCommandFormats();
+				}
+				if (event.affectsConfiguration('git-map.advanced.maxConcurrentGitProcesses')) {
+					const nextCfg = getConfig();
+					if (nextCfg && typeof nextCfg.maxConcurrentGitProcesses === 'number') {
+						this.scheduler.setMaxConcurrent(nextCfg.maxConcurrentGitProcesses);
+					}
 				}
 			}),
 			onDidChangeGitExecutable((gitExecutable) => {
@@ -2578,7 +2587,7 @@ export class DataSource extends Disposable {
 	 */
 	public getWorktrees(repo: string): Promise<{ worktrees: GitWorktree[], error: ErrorInfo }> {
 		return this.spawnGit(['worktree', 'list', '--porcelain'], repo, (stdout) => {
-			const current = getPathFromStr(path.resolve(repo)), worktrees: GitWorktree[] = [];
+			const current = getPathFromStr(path.resolve(repo)), worktrees: Writeable<GitWorktree>[] = [];
 			// Each worktree is a block of lines ("worktree <path>", "HEAD <hash>", "branch <ref>" or "detached", "locked", "prunable", "bare")
 			stdout.split(/\r?\n\r?\n/).forEach((block) => {
 				const lines = block.split(/\r?\n/).filter((line) => line !== ''), attribute = (name: string) => {
@@ -2598,8 +2607,57 @@ export class DataSource extends Disposable {
 					prunable: attribute('prunable') !== null
 				});
 			});
-			return { worktrees: worktrees, error: null };
+			return worktrees;
+		}).then(async (worktrees) => {
+			await Promise.all(worktrees.map(async (wt) => {
+				if (wt.prunable) {
+					wt.dirtyCount = 0;
+					wt.stagedCount = 0;
+					wt.unstagedCount = 0;
+					wt.untrackedCount = 0;
+					return;
+				}
+				try {
+					const counts = await this.spawnGit(['status', '--porcelain=v1'], wt.path, (out) => {
+						let staged = 0, unstaged = 0, untracked = 0;
+						out.split(LF_REGEX).forEach((line) => {
+							if (line.length < 3) return;
+							const x = line[0], y = line[1];
+							if (x === '?' && y === '?') {
+								untracked++;
+							} else {
+								if (x !== ' ' && x !== '?') staged++;
+								if (y !== ' ' && y !== '?') unstaged++;
+							}
+						});
+						return { staged: staged, unstaged: unstaged, untracked: untracked, dirty: staged + unstaged + untracked };
+					});
+					wt.stagedCount = counts.staged;
+					wt.unstagedCount = counts.unstaged;
+					wt.untrackedCount = counts.untracked;
+					wt.dirtyCount = counts.dirty;
+				} catch (_) {
+					wt.stagedCount = 0;
+					wt.unstagedCount = 0;
+					wt.untrackedCount = 0;
+					wt.dirtyCount = 0;
+				}
+			}));
+			return { worktrees: <GitWorktree[]>worktrees, error: null };
 		}).catch((errorMessage: string) => ({ worktrees: [], error: errorMessage }));
+	}
+
+	public setMaxConcurrentGitProcesses(maxConcurrent: number) {
+		this.scheduler.setMaxConcurrent(maxConcurrent);
+	}
+
+	/**
+	 * Restore multiple files from a specific commit in one Git command.
+	 */
+	public restoreFilesFromCommit(repo: string, commitHash: string, filePaths: ReadonlyArray<string>): Promise<ErrorInfo> {
+		const valid = filePaths.filter((p) => typeof p === 'string' && p.trim() !== '');
+		if (valid.length === 0) return Promise.resolve(null);
+		return this.runGitCommand(['checkout', commitHash, '--'].concat(valid), repo);
 	}
 
 	/**
@@ -2710,7 +2768,7 @@ export class DataSource extends Disposable {
 	 * @param ignoreExitCode Ignore the exit code returned by Git (default: `FALSE`).
 	 */
 	private _spawnGit<T>(args: string[], repo: string, resolveValue: { (stdout: Buffer, stderr: string): T }, ignoreExitCode: boolean = false, input: string | null = null, env: { [name: string]: string } | null = null, options?: SpawnOutputOptions) {
-		return new Promise<T>((resolve, reject) => {
+		return this.scheduler.run(() => new Promise<T>((resolve, reject) => {
 			if (this.gitExecutable === null) {
 				return reject(UNABLE_TO_FIND_GIT_MSG);
 			}
@@ -2734,7 +2792,7 @@ export class DataSource extends Disposable {
 			});
 
 			this.logger.logCmd('git', args);
-		});
+		}), options ? options.cancellation : null);
 	}
 }
 

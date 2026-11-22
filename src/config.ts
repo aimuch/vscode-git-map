@@ -191,6 +191,15 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-map.advanced.maxConcurrentGitProcesses` Extension Setting (clamped to 1..32).
+	 */
+	get maxConcurrentGitProcesses(): number {
+		const raw = this.config.get('advanced.maxConcurrentGitProcesses', 8);
+		if (typeof raw !== 'number' || !Number.isFinite(raw)) return 8;
+		return Math.max(1, Math.min(32, Math.floor(raw)));
+	}
+
+	/**
 	 * Get the value of the `git-map.commitDetailsView.location` Extension Setting.
 	 */
 	private getCommitDetailsViewLocation() {

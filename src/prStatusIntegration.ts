@@ -205,13 +205,21 @@ async function performFetchRepoPullRequestBadges(dataSource: DataSource, repo: s
 						else if (runs.every((r) => r.conclusion === 'success' || r.conclusion === 'neutral' || r.conclusion === 'skipped')) ci = 'success';
 					}
 				}
+				let mergeQueueState: PullRequestBadgeInfo['mergeQueueState'] = null;
+				if (pr.merge_queue_entry && typeof pr.merge_queue_entry === 'object') {
+					const mqState = typeof pr.merge_queue_entry.state === 'string' ? pr.merge_queue_entry.state.toLowerCase() : '';
+					mergeQueueState = mqState === 'mergeable' || mqState === 'locked' ? 'merging' : (mqState === 'awaiting_checks' ? 'awaiting_checks' : 'queued');
+				} else if (pr.auto_merge && typeof pr.auto_merge === 'object') {
+					mergeQueueState = 'awaiting_checks';
+				}
 				badges[branch] = {
 					number: pr.number,
 					title: String(pr.title || ''),
 					url: String(pr.html_url || ('https://' + remote.host + '/' + remote.ownerRepo + '/pull/' + pr.number)),
 					state: pr.draft ? 'draft' : 'open',
 					ciStatus: ci,
-					baseBranch: pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : ''
+					baseBranch: pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : '',
+					mergeQueueState: mergeQueueState
 				};
 			}));
 		}
@@ -329,8 +337,81 @@ async function performFetchRepoPullRequestBadges(dataSource: DataSource, repo: s
 		}
 	}
 
-	prCache.set(repo, { expiresAt: Date.now() + PR_CACHE_TTL_MS, badges: badges });
-	return badges;
+	const enriched = computeStackedPrMetadata(badges);
+	prCache.set(repo, { expiresAt: Date.now() + PR_CACHE_TTL_MS, badges: enriched });
+	return enriched;
+}
+
+/**
+ * Compute stacked PR chains across open PR badges based on baseBranch -> headBranch links.
+ * Safely guards against cycles and annotates stackDepth (1-based), stackSize, parent & children.
+ */
+export function computeStackedPrMetadata(
+	badges: { readonly [branch: string]: PullRequestBadgeInfo }
+): { [branch: string]: PullRequestBadgeInfo } {
+	const branches = Object.keys(badges);
+	const childrenMap: { [branch: string]: string[] } = {};
+	branches.forEach((branch) => {
+		const base = badges[branch].baseBranch;
+		if (base !== '' && base !== branch && typeof badges[base] !== 'undefined') {
+			if (!childrenMap[base]) childrenMap[base] = [];
+			childrenMap[base].push(branch);
+		}
+	});
+
+	const depthCache: { [branch: string]: number } = {};
+	const rootCache: { [branch: string]: string } = {};
+
+	const resolveChain = (branch: string): { depth: number, root: string } => {
+		if (typeof depthCache[branch] === 'number') {
+			return { depth: depthCache[branch], root: rootCache[branch] };
+		}
+		const visited = new Set<string>([branch]);
+		let curr = branch;
+		const pathList: string[] = [branch];
+		while (true) {
+			const base = badges[curr] ? badges[curr].baseBranch : '';
+			if (base === '' || typeof badges[base] === 'undefined' || visited.has(base)) break;
+			visited.add(base);
+			pathList.push(base);
+			curr = base;
+		}
+		const root = pathList[pathList.length - 1];
+		for (let i = 0; i < pathList.length; i++) {
+			const b = pathList[i];
+			depthCache[b] = pathList.length - i;
+			rootCache[b] = root;
+		}
+		return { depth: depthCache[branch], root: root };
+	};
+
+	const stackCounts: { [root: string]: number } = {};
+	branches.forEach((b) => {
+		const { root } = resolveChain(b);
+		stackCounts[root] = (stackCounts[root] || 0) + 1;
+	});
+
+	const out: { [branch: string]: PullRequestBadgeInfo } = {};
+	branches.forEach((branch) => {
+		const badge = badges[branch];
+		const { depth, root } = resolveChain(branch);
+		const size = stackCounts[root] || 1;
+		const parent = badge.baseBranch !== '' && typeof badges[badge.baseBranch] !== 'undefined' && badge.baseBranch !== branch
+			? badge.baseBranch
+			: null;
+		const children = (childrenMap[branch] || []).slice().sort();
+		if (size > 1) {
+			out[branch] = Object.assign({}, badge, {
+				stackDepth: depth,
+				stackSize: size,
+				stackParentBranch: parent,
+				stackChildBranches: children
+			});
+		} else {
+			out[branch] = badge;
+		}
+	});
+	return out;
 }
 
 /**
@@ -451,7 +532,12 @@ export async function fetchPullRequestDetails(
 		headBranch: branch,
 		ciStatus: ciStatus,
 		checks: checks,
-		reviewSummary: reviewSummary
+		reviewSummary: reviewSummary,
+		mergeQueueState: cachedBadge ? cachedBadge.mergeQueueState : null,
+		stackDepth: cachedBadge ? cachedBadge.stackDepth : undefined,
+		stackSize: cachedBadge ? cachedBadge.stackSize : undefined,
+		stackParentBranch: cachedBadge ? cachedBadge.stackParentBranch : undefined,
+		stackChildBranches: cachedBadge ? cachedBadge.stackChildBranches : undefined
 	};
 }
 
