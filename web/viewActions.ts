@@ -1286,7 +1286,7 @@ class ViewActions {
 			aiBtn.type = 'button';
 			aiBtn.id = 'stashAiMsgBtn';
 			aiBtn.className = 'dialogInlineAiBtn';
-			aiBtn.textContent = '✨ ' + t('AI Name');
+			aiBtn.innerHTML = MENU_ICONS.sparkle + '<span>' + escapeHtml(t('AI Name')) + '</span>';
 			aiBtn.title = t('Generate a descriptive stash message with AI');
 			aiBtn.addEventListener('click', () => {
 				aiBtn.disabled = true;
@@ -1302,7 +1302,7 @@ class ViewActions {
 		const msgInput = <HTMLInputElement | null>document.getElementById('dialogInput0');
 		if (aiBtn !== null) {
 			aiBtn.disabled = false;
-			aiBtn.textContent = '✨ ' + t('AI Name');
+			aiBtn.innerHTML = MENU_ICONS.sparkle + '<span>' + escapeHtml(t('AI Name')) + '</span>';
 		}
 		if (msg.error !== null) {
 			if (aiBtn !== null) aiBtn.title = msg.error;

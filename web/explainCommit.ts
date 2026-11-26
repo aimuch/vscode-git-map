@@ -5,7 +5,7 @@
  * that destination).
  */
 class CommitExplainer {
-	public static readonly ICON = '<svg class="explainIcon" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/></svg>';
+	public static readonly ICON = colorIcon('<path d="M7.1 1.7l1.45 3.65L12.2 6.8 8.55 8.25 7.1 11.9 5.65 8.25 2 6.8l3.65-1.45z" fill="#A855F7" stroke="#C084FC" stroke-width="0.6"/><path d="M12.6 1.2l.58 1.48 1.48.58-1.48.58-.58 1.48-.58-1.48-1.48-.58 1.48-.58z" fill="#FBBF24"/><path d="M12.2 10.3l.5 1.28 1.28.5-1.28.5-.5 1.28-.5-1.28-1.28-.5 1.28-.5z" fill="#22D3EE"/>', 'explainIcon');
 	private static readonly MAX_CACHED_RESULTS = 50;
 
 	private readonly view: GitGraphView;

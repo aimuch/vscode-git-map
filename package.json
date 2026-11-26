@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.8.1",
+	"version": "2.8.2",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -302,7 +302,7 @@
 				"category": "Git Map",
 				"command": "git-map.ai.generateCommitMessage",
 				"title": "%command.ai.generateCommitMessage.title%",
-				"icon": "$(sparkle)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",
@@ -339,13 +339,13 @@
 				"category": "Git Map",
 				"command": "git-map.ai.reviewChanges",
 				"title": "%command.ai.reviewChanges.title%",
-				"icon": "$(shield)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.ai.generateReleaseNotes",
 				"title": "%command.ai.generateReleaseNotes.title%",
-				"icon": "$(note)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",
@@ -399,13 +399,13 @@
 				"category": "Git Map",
 				"command": "git-map.aiSmartCommitSplit",
 				"title": "%command.aiSmartCommitSplit.title%",
-				"icon": "$(sparkle)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",
 				"command": "git-map.ai.explainRegression",
 				"title": "%command.ai.explainRegression.title%",
-				"icon": "$(bug)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",
@@ -495,7 +495,7 @@
 				"category": "Git Map",
 				"command": "git-map.ai.autoRebase",
 				"title": "%command.ai.autoRebase.title%",
-				"icon": "$(sparkle)"
+				"icon": "resources/ai-sparkle.svg"
 			},
 			{
 				"category": "Git Map",

@@ -188,8 +188,12 @@ class GraphCommandPalette {
 						? '<div class="gcpGroupHeader" role="presentation">' + escapeHtml(it.group) + '</div>'
 						: '';
 					lastGroup = it.group;
+					const isAiBadge = it.badge === 'AI' || it.badge === 'Agent';
+					const badgeHtml = isAiBadge
+						? '<span class="gcpBadge gcpBadgeAi">' + (it.badge === 'Agent' ? MENU_ICONS.agent : MENU_ICONS.sparkle) + escapeHtml(it.badge) + '</span>'
+						: '<span class="gcpBadge">' + escapeHtml(it.badge) + '</span>';
 					return hdr + '<div id="gcpOpt-' + idx + '" role="option" aria-selected="' + (idx === this.activeIdx ? 'true' : 'false') + '" class="gcpRow' + (idx === this.activeIdx ? ' active' : '') + '" data-gcp-idx="' + idx + '">' +
-						'<span class="gcpBadge">' + escapeHtml(it.badge) + '</span>' +
+						badgeHtml +
 						'<span class="gcpTitle">' + escapeHtml(it.title) + '</span>' +
 						'<span class="gcpDetail">' + escapeHtml(it.detail) + '</span>' +
 						(it.shortcut ? '<kbd class="gcpKbd">' + escapeHtml(it.shortcut) + '</kbd>' : '') +

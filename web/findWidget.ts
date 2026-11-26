@@ -82,7 +82,7 @@ class FindWidget {
 		this.widgetElem.innerHTML = '<span id="findBtn" title="' + t('Find') + '">' + SVG_ICONS.search + '</span><span id="findChips"></span>' +
 			'<input id="findInput" type="text" placeholder="' + t('Search commits') + ELLIPSIS + '" title="' + t('Search operators: author: (or @:), message: (or =:), commit: (or #:), file: (or ?:), change: (or ~:), after: (or >:), before: (or <:). Enclose a value containing spaces in double quotes. Press Enter to add the condition as a chip.') + '" tabindex="-1"/>' +
 			'<span id="findCaseSensitive" class="findModifier" title="' + t('Match Case') + '">Aa</span><span id="findRegex" class="findModifier" title="' + t('Use Regular Expression') + '">.*</span>' +
-			'<span id="findAiBtn" class="findModifier" title="' + t('AI Natural Language Search') + '">✨</span>' +
+			'<span id="findAiBtn" class="findModifier" title="' + t('AI Natural Language Search') + '">' + MENU_ICONS.sparkle + '</span>' +
 			'<span id="findClose" title="' + t('Clear Search (Escape)') + '">' + SVG_ICONS.close + '</span>';
 		controlsElem.insertBefore(this.widgetElem, document.getElementById('scrollToHeadBtn'));
 

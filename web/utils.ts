@@ -63,6 +63,10 @@ function strokeIcon(paths: string) {
 	return '<svg class="uiIcon" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
 }
 
+function colorIcon(paths: string, extraClass: string = '') {
+	return '<svg class="uiIcon aiColorIcon' + (extraClass ? ' ' + extraClass : '') + '" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+}
+
 const MENU_ICONS = {
 	tag: strokeIcon('<path d="M2.5 8.2V3.5a1 1 0 0 1 1-1h4.7l5.3 5.3a1 1 0 0 1 0 1.4l-3.9 3.9a1 1 0 0 1-1.4 0z"/><circle cx="5.5" cy="5.5" r="1"/>'),
 	createBranch: strokeIcon('<circle cx="4.5" cy="3.5" r="1.5"/><circle cx="4.5" cy="12.5" r="1.5"/><path d="M4.5 5v6M4.5 9.5c0-2.5 2-3 4.5-3M12 4v5M9.5 6.5h5"/>'),
@@ -84,7 +88,7 @@ const MENU_ICONS = {
 	subject: strokeIcon('<path d="M2.5 4.5h11M2.5 8h8.5M2.5 11.5h6"/>'),
 	patchSave: strokeIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13M8 7.5v4M6.2 9.8L8 11.6l1.8-1.8"/>'),
 	patchApply: strokeIcon('<path d="M4 2h5.5L13 5.5V13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M9.5 2v3.5H13M6 9.5h4M8 7.5v4"/>'),
-	sparkle: strokeIcon('<path d="M8 1.5l1.6 3.9 3.9 1.6-3.9 1.6L8 12.5 6.4 8.6 2.5 7l3.9-1.6z"/>'),
+	sparkle: colorIcon('<path d="M7.1 1.7l1.45 3.65L12.2 6.8 8.55 8.25 7.1 11.9 5.65 8.25 2 6.8l3.65-1.45z" fill="#A855F7" stroke="#C084FC" stroke-width="0.6"/><path d="M12.6 1.2l.58 1.48 1.48.58-1.48.58-.58 1.48-.58-1.48-1.48-.58 1.48-.58z" fill="#FBBF24"/><path d="M12.2 10.3l.5 1.28 1.28.5-1.28.5-.5 1.28-.5-1.28-1.28-.5 1.28-.5z" fill="#22D3EE"/>'),
 	stash: strokeIcon('<path d="M2.5 9.5l1.5-6h8l1.5 6v3.5h-11z"/><path d="M2.5 9.5h3.5l.5 1.5h3l.5-1.5h3.5"/>'),
 	stashApply: strokeIcon('<path d="M2.5 9.5l1.2-4.8h8.6l1.2 4.8v3.5h-11z"/><path d="M8 2v5.5M5.8 5.5L8 7.7l2.2-2.2"/>'),
 	stashPop: strokeIcon('<path d="M2.5 9.5l1.2-4.8h8.6l1.2 4.8v3.5h-11z"/><path d="M8 7.8V2M5.8 4.2L8 2l2.2 2.2"/>'),
@@ -120,7 +124,7 @@ const MENU_ICONS = {
 	stop: strokeIcon('<circle cx="8" cy="8" r="5.8"/><rect x="6" y="6" width="4" height="4" rx="0.6"/>'),
 	cloud: strokeIcon('<path d="M4.5 12.2h7.2a2.7 2.7 0 0 0 .4-5.4A3.9 3.9 0 0 0 4.4 6.1a3 3 0 0 0 .1 6.1z"/>'),
 	foldDiff: strokeIcon('<path d="M5.5 2.5L8 5l2.5-2.5M5.5 13.5L8 11l2.5 2.5M2.5 8h11"/>'),
-	agent: strokeIcon('<rect x="3" y="4.5" width="10" height="8" rx="1.8"/><path d="M8 2v2.5M6 2h4M1.5 8.5H3M13 8.5h1.5"/><circle cx="6.2" cy="8.2" r="0.8"/><circle cx="9.8" cy="8.2" r="0.8"/><path d="M6.2 10.6h3.6"/>'),
+	agent: colorIcon('<circle cx="8" cy="1.9" r="1.1" fill="#FBBF24"/><path d="M8 3v1.6" stroke="#38BDF8" stroke-width="1.35"/><path d="M1.4 8.6H2.8M13.2 8.6h1.4" stroke="#A855F7" stroke-width="1.4"/><rect x="2.8" y="4.6" width="10.4" height="8.2" rx="2" fill="#38BDF8" fill-opacity="0.16" stroke="#38BDF8" stroke-width="1.35"/><circle cx="6.1" cy="8.2" r="1" fill="#C084FC"/><circle cx="9.9" cy="8.2" r="1" fill="#C084FC"/><path d="M6.1 10.7h3.8" stroke="#22D3EE" stroke-width="1.3"/>'),
 	link: strokeIcon('<path d="M6.5 11H4.8a3 3 0 0 1 0-6h1.7M9.5 5h1.7a3 3 0 0 1 0 6H9.5M5.5 8h5"/>'),
 	scm: strokeIcon('<circle cx="8" cy="8" r="6"/><circle cx="6.2" cy="5.5" r="1"/><circle cx="6.2" cy="10.5" r="1"/><circle cx="10.2" cy="7.5" r="1"/><path d="M6.2 6.5v3M10.2 8.5c0 1.4-4 1-4 2"/>'),
 	blame: strokeIcon('<path d="M2.2 8.5a6.2 6.2 0 0 1 11.6 0"/><path d="M4.5 9.8a3.8 3.8 0 0 1 7 0"/><circle cx="8" cy="11.2" r="1.3"/>'),

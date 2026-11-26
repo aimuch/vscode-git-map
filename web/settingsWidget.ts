@@ -255,6 +255,7 @@ class SettingsWidget {
 		if (this.currentRepo !== null) return;
 		this.currentRepo = currentRepo;
 		this.scrollTop = scrollTop;
+		if (scrollTop === 0) this.activeSectionIndex = 0;
 		alterClass(this.widgetElem, CLASS_TRANSITION, isInitialLoad);
 		this.widgetElem.classList.add(CLASS_ACTIVE);
 		this.view.saveState();
@@ -447,7 +448,7 @@ class SettingsWidget {
 				['tags', t('Tags')],
 				['worktrees', t('Worktrees')]
 			];
-			let html = '<div class="settingsSection" data-nav-group="views" data-nav-icon="branch" data-nav-label="' + escapeHtml(t('Commit Graph & Views')) + '" data-nav-enabled="' + viewsEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
+			const commitGraphSectionHtml = '<div class="settingsSection" data-nav-group="views" data-nav-icon="branch" data-nav-label="' + escapeHtml(t('Commit Graph & Views')) + '" data-nav-enabled="' + viewsEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsGraphLivePreview">' + this.renderGraphPreviewHtml(presetColours, graphDensity, graphNodeStyle, ext.showGhostRefs) + '</div>' +
 				'<div class="settingsLabel">' + t('Branch Line Colours') + '</div>' +
 				'<div class="settingsPresets">' + appearance.colourPresets.map((preset) => '<button type="button" class="settingsPreset' + (preset.name === appearance.colourPreset ? ' selected' : '') + '" data-preset="' + escapeHtml(preset.name) + '" aria-pressed="' + (preset.name === appearance.colourPreset) + '" tabindex="-1"><span class="settingsPresetColours">' + preset.colours.map((colour) => '<span style="background-color:' + escapeHtml(colour) + '"></span>').join('') + '</span><span class="settingsPresetName">' + escapeHtml(t(preset.name)) + '</span></button>').join('') + '</div>' +
@@ -493,7 +494,7 @@ class SettingsWidget {
 				['fileHistory', t('File History')]
 			];
 			const scmVisibleCount = scmSectionDefs.filter((s) => !ext.scmHiddenSections.includes(s[0])).length;
-			html += '<div class="settingsSection" id="settingsScmSection" data-nav-group="views" data-nav-icon="scm" data-nav-label="' + escapeHtml(t('Git Map SCM & Views')) + '" data-nav-enabled="' + scmVisibleCount + '" data-nav-total="' + scmSectionDefs.length + '"><h3>' + MENU_ICONS.scm + t('Git Map SCM & View Formats') + '</h3>' +
+			const scmSectionHtml = '<div class="settingsSection" id="settingsScmSection" data-nav-group="views" data-nav-icon="scm" data-nav-label="' + escapeHtml(t('Git Map SCM & Views')) + '" data-nav-enabled="' + scmVisibleCount + '" data-nav-total="' + scmSectionDefs.length + '"><h3>' + MENU_ICONS.scm + t('Git Map SCM & View Formats') + '</h3>' +
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Section') + '</th><th>' + t('Visible') + '</th><th>' + t('Default Expanded') + '</th></tr></thead><tbody>' +
 				scmSectionDefs.map((sec) => {
 					const vis = !ext.scmHiddenSections.includes(sec[0]);
@@ -513,17 +514,17 @@ class SettingsWidget {
 				'</div>') +
 				'</div>';
 
-			html += '<div class="settingsSection" data-nav-group="general" data-nav-icon="globe" data-nav-label="' + escapeHtml(t('Language')) + '"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
+			const languageSectionHtml = '<div class="settingsSection" data-nav-group="general" data-nav-icon="globe" data-nav-label="' + escapeHtml(t('Language')) + '"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
 				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
 				'</div></div>';
 
-			html += '<div class="settingsSection" data-nav-group="general" data-nav-icon="layout" data-nav-label="' + escapeHtml(t('Status Bar')) + '" data-nav-enabled="1" data-nav-total="1"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
+			const statusBarSectionHtml = '<div class="settingsSection" data-nav-group="general" data-nav-icon="layout" data-nav-label="' + escapeHtml(t('Status Bar')) + '" data-nav-enabled="1" data-nav-total="1"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
 				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div></div>';
 
 			const menusEnabled = extBoolCount([ext.menus.editor, ext.menus.editorGroup, ext.menus.explorer, ext.menus.scm, ext.menus.editorTab]);
-			html += '<div class="settingsSection" id="settingsMenusSection" data-nav-group="general" data-nav-icon="menus" data-nav-label="' + escapeHtml(t('Menus & Toolbars')) + '" data-nav-enabled="' + menusEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.menus + t('Menus & Toolbars') + '</h3>' +
+			const menusSectionHtml = '<div class="settingsSection" id="settingsMenusSection" data-nav-group="general" data-nav-icon="menus" data-nav-label="' + escapeHtml(t('Menus & Toolbars')) + '" data-nav-enabled="' + menusEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.menus + t('Menus & Toolbars') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + extCheckbox('settingsMenuEditor', 'menus.editor.enabled', ext.menus.editor, t('Editor Context Menu')) + '</span>' +
 				'<span>' + extCheckbox('settingsMenuEditorGroup', 'menus.editorGroup.enabled', ext.menus.editorGroup, t('Editor Title Toolbar')) + '</span>' +
@@ -596,19 +597,19 @@ class SettingsWidget {
 				const cur = customInstr[taskKey] || '';
 				return '<label class="settingsKey">' + escapeHtml(taskKey) + ':</label><input type="text" class="settingsInput settingsAiInstructionInput" data-ai-instr-task="' + taskKey + '" value="' + escapeHtml(cur) + '" placeholder="' + escapeHtml(t('Optional custom prompt instructions…')) + '">';
 			}).join('');
-			html += '<div class="settingsSection" id="settingsAiSection" data-nav-group="integrations" data-nav-icon="sparkle" data-nav-label="' + escapeHtml(t('AI')) + '" data-nav-enabled="' + aiEnabledCount + '" data-nav-total="2"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
+			const aiSectionHtml = '<div class="settingsSection" id="settingsAiSection" data-nav-group="integrations" data-nav-icon="sparkle" data-nav-label="' + escapeHtml(t('AI')) + '" data-nav-enabled="' + aiEnabledCount + '" data-nav-total="2"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +
 				'<span>' + checkbox('settingsAiExplainCommit', t('Explain Commits'), t('Shows an "Explain" tab in the Commit Details View, where a language model explains the selected commit.')) + '</span>' +
 				'</div>' +
 				card(MENU_ICONS.sparkle + t('Language Model'), aiButtons, aiCardBody) +
-				card(MENU_ICONS.settings + t('AI Task Model Routing & Safety'), '', '<div class="settingsGrid two">' +
+				card(MENU_ICONS.sparkle + t('AI Task Model Routing & Safety'), '', '<div class="settingsGrid two">' +
 					aiTaskRows +
 					'<label class="settingsKey">' + t('Exclude Files:') + '</label><input id="settingsAiExcludeFiles" type="text" class="settingsInput mono" value="' + escapeHtml(aiExcludeStr) + '" placeholder="**/*.lock, dist/**">' +
 					'<label class="settingsKey">' + t('Token Warning:') + '</label><input id="settingsAiTokenWarn" type="number" min="500" step="500" class="settingsInput mono" value="' + (ai.largePromptWarningThreshold || 6000) + '">' +
 					'<label class="settingsKey">' + t('Auto-Rebase Threshold:') + '</label><input id="settingsAiAutoRebaseThreshold" type="number" min="0.5" max="1" step="0.05" class="settingsInput mono" value="' + (ai.autoRebaseConfidenceThreshold || 0.85) + '">' +
 					'</div>') +
-				card(MENU_ICONS.edit + t('AI Custom Instructions'), '', '<div class="settingsGrid two">' + aiInstrRows + '</div>') +
+				card(MENU_ICONS.sparkle + t('AI Custom Instructions'), '', '<div class="settingsGrid two">' + aiInstrRows + '</div>') +
 				'</div>';
 
 			const fallbackAgents: ReadonlyArray<GG.CodingAgentStatus> = [
@@ -620,7 +621,7 @@ class SettingsWidget {
 			];
 			const agentsList = this.codingAgents.length > 0 ? this.codingAgents : fallbackAgents;
 			const detectedAgentsCount = agentsList.filter((a) => a.detected || a.mcpConfigured).length;
-			html += '<div class="settingsSection" id="settingsAgentsSection" data-nav-group="integrations" data-nav-icon="agent" data-nav-label="' + escapeHtml(t('Agents')) + '" data-nav-enabled="' + detectedAgentsCount + '" data-nav-total="' + agentsList.length + '"><h3>' + MENU_ICONS.agent + t('Coding Agents, MCP & Hooks') + '</h3>' +
+			const agentsSectionHtml = '<div class="settingsSection" id="settingsAgentsSection" data-nav-group="integrations" data-nav-icon="agent" data-nav-label="' + escapeHtml(t('Agents')) + '" data-nav-enabled="' + detectedAgentsCount + '" data-nav-total="' + agentsList.length + '"><h3>' + MENU_ICONS.agent + t('Coding Agents, MCP & Hooks') + '</h3>' +
 				'<p class="settingsDescription">' + t('Choose a default coding agent and configure the local Git Map stdio MCP server and repository Git hooks.') + '</p>' +
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Agent') + '</th><th>' + t('Default') + '</th><th>MCP</th><th>' + t('Hooks') + '</th></tr></thead><tbody>' +
 				agentsList.map((ag) => {
@@ -641,7 +642,7 @@ class SettingsWidget {
 			const autolinkListHtml = ext.autolinks.length === 0
 				? '<p class="settingsDescription">' + t('No autolink rules configured. Add a prefix such as "JIRA-" or "#" with a URL containing "<num>".') + '</p>'
 				: ext.autolinks.map((r, i) => '<div class="settingsRuleChip"><span class="mono">' + escapeHtml(r.prefix) + '&lt;num&gt; &rarr; ' + escapeHtml(r.url) + '</span><button type="button" class="settingsBtn removeBtn settingsRemoveAutolinkBtn" data-rule-idx="' + i + '" tabindex="-1">&times;</button></div>').join('');
-			html += '<div class="settingsSection" id="settingsAutolinksSection" data-nav-group="integrations" data-nav-icon="link" data-nav-label="' + escapeHtml(t('Autolinks & Start Work')) + '" data-nav-enabled="' + ext.autolinks.length + '" data-nav-total="' + Math.max(1, ext.autolinks.length) + '"><h3>' + MENU_ICONS.link + t('Autolinks & Start Work') + '</h3>' +
+			const autolinksSectionHtml = '<div class="settingsSection" id="settingsAutolinksSection" data-nav-group="integrations" data-nav-icon="link" data-nav-label="' + escapeHtml(t('Autolinks & Start Work')) + '" data-nav-enabled="' + ext.autolinks.length + '" data-nav-total="' + Math.max(1, ext.autolinks.length) + '"><h3>' + MENU_ICONS.link + t('Autolinks & Start Work') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsAutolinkLivePreview">' + this.renderAutolinkPreviewHtml(ext.autolinks, ext.startWorkBranchFormat) + '</div>' +
 				'<div class="settingsRuleList">' + autolinkListHtml + '</div>' +
 				'<div class="settingsRuleRow">' +
@@ -659,7 +660,7 @@ class SettingsWidget {
 					'<button type="button" class="settingsBtn removeBtn settingsRemoveCustomRemoteBtn" data-cr-idx="' + idx + '" tabindex="-1">&times;</button></div>'
 				).join('');
 			const integrationsEnabled = extBoolCount([ext.terminalLinksEnabled, ext.followTerminalEnabled, ext.launchpadEnabled]);
-			html += '<div class="settingsSection" id="settingsIntegrationsSection" data-nav-group="integrations" data-nav-icon="terminal" data-nav-label="' + escapeHtml(t('Terminal Links & Launchpad')) + '" data-nav-enabled="' + integrationsEnabled + '" data-nav-total="3"><h3>' + MENU_ICONS.terminal + t('Terminal Links, Launchpad & Custom Remotes') + '</h3>' +
+			const integrationsSectionHtml = '<div class="settingsSection" id="settingsIntegrationsSection" data-nav-group="integrations" data-nav-icon="terminal" data-nav-label="' + escapeHtml(t('Terminal Links & Launchpad')) + '" data-nav-enabled="' + integrationsEnabled + '" data-nav-total="3"><h3>' + MENU_ICONS.terminal + t('Terminal Links, Launchpad & Custom Remotes') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + extCheckbox('settingsTerminalLinks', 'terminalLinks.enabled', ext.terminalLinksEnabled, t('Terminal Git Links')) + '</span>' +
 				'<span>' + extCheckbox('settingsTerminalDetails', 'terminalLinks.showDetailsView', ext.terminalLinksShowDetails, t('Open Details View on Link Click')) + '</span>' +
@@ -679,7 +680,7 @@ class SettingsWidget {
 				'</div>';
 
 			const editorEnabledCount = extBoolCount([ext.editor.currentLineEnabled, ext.editor.statusBarEnabled, ext.editor.codeLensEnabled, ext.editor.hoversEnabled, ext.editor.fileBlameHeatmap, ext.editor.fileBlameHighlightSameCommit]);
-			html += '<div class="settingsSection" id="settingsEditorSection" data-nav-group="editor" data-nav-icon="blame" data-nav-label="' + escapeHtml(t('Editor Annotations')) + '" data-nav-enabled="' + editorEnabledCount + '" data-nav-total="6"><h3>' + MENU_ICONS.blame + t('Editor Annotations & Modes · All Repositories') + '</h3>' +
+			const editorSectionHtml = '<div class="settingsSection" id="settingsEditorSection" data-nav-group="editor" data-nav-icon="blame" data-nav-label="' + escapeHtml(t('Editor Annotations')) + '" data-nav-enabled="' + editorEnabledCount + '" data-nav-total="6"><h3>' + MENU_ICONS.blame + t('Editor Annotations & Modes · All Repositories') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsEditorLivePreview">' + this.renderEditorPreviewHtml(ext.editor) + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Active Editor Mode') + '</span>' + extSegmented('mode.active', [['default', t('Default')], ['zen', t('Zen')], ['review', t('Review')]], ext.editor.activeMode) + '</div>' +
 				'<div class="settingsCheckboxes two">' +
@@ -708,7 +709,7 @@ class SettingsWidget {
 					'</div>') +
 				'</div>';
 
-			html += '<div class="settingsSection" data-nav-group="views" data-nav-icon="repo" data-nav-label="' + escapeHtml(t('This Repository')) + '"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
+			let html = '<div class="settingsSection" data-nav-group="views" data-nav-icon="repo" data-nav-label="' + escapeHtml(t('This Repository')) + '"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
 				'<div class="settingsCheckboxes">' +
 				'<span>' + checkbox('settingsShowRemoteBranches', t('Show Remote Branches'), null) + '</span>' +
 				'<span>' + checkbox('settingsShowStashes', t('Show Stashes'), null) + '</span>' +
@@ -801,7 +802,7 @@ class SettingsWidget {
 					'<div class="settingsOptions"><span>' + checkbox('settingsPrStatusBadges', t('Show open PR / MR numbers & CI status badges on local branch labels'), t('Supports GitHub, GitLab, Gitea / Forgejo / Codeberg, Bitbucket & Azure DevOps.')) + '</span></div>'
 				);
 			}
-			html += generalHtml +
+			const thisRepoSectionHtml = html + generalHtml +
 				card(
 					MENU_ICONS.settings + t('Repository Health & SSH Signing'),
 					button('settingsCheckRepoHealthBtn', 'editBtn', MENU_ICONS.settings + t('Check & Optimize') + ELLIPSIS) +
@@ -810,10 +811,22 @@ class SettingsWidget {
 				) +
 				'</div>';
 
-			this.contentsElem.innerHTML = html;
+			this.contentsElem.innerHTML =
+				aiSectionHtml +
+				agentsSectionHtml +
+				autolinksSectionHtml +
+				integrationsSectionHtml +
+				commitGraphSectionHtml +
+				scmSectionHtml +
+				thisRepoSectionHtml +
+				editorSectionHtml +
+				languageSectionHtml +
+				statusBarSectionHtml +
+				menusSectionHtml;
 			this.repoNameElem.textContent = this.repo.name || getRepoName(this.currentRepo);
 			this.footerElem.innerHTML = '<button type="button" id="exportRepositoryConfig" class="settingsBtn" tabindex="-1">' + SVG_ICONS.package + t('Export Repository Configuration') + '</button><span id="openExtensionSettings" class="settingsLink" tabindex="-1">' + t('Open Git Map Extension Settings') + '</span>';
 			this.renderNavRail();
+			this.syncActiveNavCategory();
 			this.applySearchFilter();
 			this.renderAppearanceListeners();
 
@@ -2039,16 +2052,16 @@ class SettingsWidget {
 			const startX = e.clientX;
 			const startWidth = Math.round(this.widgetElem.getBoundingClientRect().width) || this.widgetWidth;
 			let moved = false;
+			let active = true;
 			const hadTransition = this.widgetElem.classList.contains('transition');
 			if (hadTransition) this.widgetElem.classList.remove('transition');
 			resizeHandle.classList.add('dragging');
-			eventOverlay.create('colResize', (moveEvent) => {
-				const delta = startX - (<MouseEvent>moveEvent).clientX;
-				if (!moved && Math.abs(delta) < 2) return;
-				moved = true;
-				this.preMaximizeWidth = null;
-				this.setWidgetWidth(startWidth + delta);
-			}, () => {
+			const stopWidgetResize = () => {
+				if (!active) return;
+				active = false;
+				window.removeEventListener('mouseup', stopWidgetResize, true);
+				window.removeEventListener('blur', stopWidgetResize);
+				eventOverlay.remove();
 				resizeHandle.classList.remove('dragging');
 				if (hadTransition) this.widgetElem.classList.add('transition');
 				if (moved) {
@@ -2062,7 +2075,17 @@ class SettingsWidget {
 						lastWidgetResizeClick = clickTime;
 					}
 				}
-			});
+			};
+			window.addEventListener('mouseup', stopWidgetResize, true);
+			window.addEventListener('blur', stopWidgetResize);
+			eventOverlay.create('colResize', (moveEvent) => {
+				if (!active) return;
+				const delta = startX - (<MouseEvent>moveEvent).clientX;
+				if (!moved && Math.abs(delta) < 2) return;
+				moved = true;
+				this.preMaximizeWidth = null;
+				this.setWidgetWidth(startWidth + delta);
+			}, stopWidgetResize);
 		});
 
 		this.maximizeBtnElem.addEventListener('click', () => {
@@ -2093,13 +2116,14 @@ class SettingsWidget {
 			const startX = e.clientX;
 			const startNavWidth = Math.round(this.navRailElem.getBoundingClientRect().width) || this.navWidth;
 			let moved = false;
+			let active = true;
 			navResizeHandle.classList.add('dragging');
-			eventOverlay.create('colResize', (moveEvent) => {
-				const delta = (<MouseEvent>moveEvent).clientX - startX;
-				if (!moved && Math.abs(delta) < 2) return;
-				moved = true;
-				this.setNavWidth(startNavWidth + delta);
-			}, () => {
+			const stopNavResize = () => {
+				if (!active) return;
+				active = false;
+				window.removeEventListener('mouseup', stopNavResize, true);
+				window.removeEventListener('blur', stopNavResize);
+				eventOverlay.remove();
 				navResizeHandle.classList.remove('dragging');
 				if (moved) {
 					updateGlobalViewState('settingsNavWidth', this.navWidth);
@@ -2112,7 +2136,16 @@ class SettingsWidget {
 						lastNavResizeClick = clickTime;
 					}
 				}
-			});
+			};
+			window.addEventListener('mouseup', stopNavResize, true);
+			window.addEventListener('blur', stopNavResize);
+			eventOverlay.create('colResize', (moveEvent) => {
+				if (!active) return;
+				const delta = (<MouseEvent>moveEvent).clientX - startX;
+				if (!moved && Math.abs(delta) < 2) return;
+				moved = true;
+				this.setNavWidth(startNavWidth + delta);
+			}, stopNavResize);
 		});
 	}
 
@@ -2146,7 +2179,7 @@ class SettingsWidget {
 
 	private renderNavRail() {
 		const sections = Array.from(this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection'));
-		const groups: { id: string, title: string, items: { idx: number, label: string, icon: string, enabled: number | null, total: number | null }[] }[] = [
+		const groups: { id: string, title: string, items: { idx: number, label: string, icon: string, isColorIcon: boolean, enabled: number | null, total: number | null }[] }[] = [
 			{ id: 'integrations', title: t('Integrations'), items: [] },
 			{ id: 'views', title: t('Views'), items: [] },
 			{ id: 'editor', title: t('Editor'), items: [] },
@@ -2158,10 +2191,11 @@ class SettingsWidget {
 			const label = sec.dataset.navLabel || (h3 ? (h3.textContent || '').trim() : ('Section ' + (idx + 1)));
 			const iconKey = <keyof typeof MENU_ICONS | undefined>sec.dataset.navIcon;
 			const iconSvg = (iconKey && MENU_ICONS[iconKey]) ? MENU_ICONS[iconKey] : MENU_ICONS.settings;
+			const isColorIcon = iconKey === 'sparkle' || iconKey === 'agent';
 			const enabled = typeof sec.dataset.navEnabled === 'string' ? parseInt(sec.dataset.navEnabled, 10) : null;
 			const total = typeof sec.dataset.navTotal === 'string' ? parseInt(sec.dataset.navTotal, 10) : null;
 			const bucket = groups.find((g) => g.id === groupId) || groups[3];
-			bucket.items.push({ idx: idx, label: label, icon: iconSvg, enabled: enabled, total: total });
+			bucket.items.push({ idx: idx, label: label, icon: iconSvg, isColorIcon: isColorIcon, enabled: enabled, total: total });
 		});
 		this.navRailElem.innerHTML = groups.filter((g) => g.items.length > 0).map((g) =>
 			'<div class="settingsNavGroup">' + escapeHtml(g.title) + '</div>' +
@@ -2169,7 +2203,7 @@ class SettingsWidget {
 				const hasRatio = item.enabled !== null && item.total !== null && item.total > 0;
 				const dotClass = 'settingsNavDot' + (hasRatio ? (item.enabled! > 0 ? ' on' : ' off') : ' none');
 				return '<button type="button" class="settingsNavItem' + (item.idx === this.activeSectionIndex ? ' active' : '') + '" data-settings-nav="' + item.idx + '" title="' + escapeHtml(item.label) + '">' +
-					'<span class="settingsNavItemLabel"><span class="' + dotClass + '"></span><span class="settingsNavIcon">' + item.icon + '</span><span class="settingsNavText">' + escapeHtml(item.label) + '</span></span>' +
+					'<span class="settingsNavItemLabel"><span class="' + dotClass + '"></span><span class="settingsNavIcon' + (item.isColorIcon ? ' aiNavIcon' : '') + '">' + item.icon + '</span><span class="settingsNavText">' + escapeHtml(item.label) + '</span></span>' +
 					(hasRatio ? '<span class="settingsNavRatio">' + item.enabled + '/' + item.total + '</span>' : '') +
 					'</button>';
 			}).join('')

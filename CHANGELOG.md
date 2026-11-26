@@ -1,5 +1,11 @@
 # Change Log
 
+## 2.8.2 - 2026-11-26
+* **Settings Order Alignment, Colorful AI Icons & Resize Release Fix**:
+    * Aligned the top-to-bottom section order of `#settingsContent` (`Integrations` -> `Views` -> `Editor` -> `General`) 1-to-1 with `#settingsNavRail` so opening Settings and scrolling track categories sequentially.
+    * Upgraded all AI and Coding Agent icons across the Settings drawer, Commit Details View (`Explain`), Find Widget, Stash / Review dialogs, Command Palette, Context Menus, and VS Code command contributions (`resources/ai-sparkle.svg`) to vibrant multi-tone vector icons.
+    * Fixed mouse capture overlay (`#eventCaptureElem`) remaining active after releasing `mouseup` or losing window focus when resizing the Settings drawer or Settings navigation sidebar.
+
 ## 2.8.1 - 2026-11-26
 * **Resizable Settings Drawer & Navigation Sidebar**:
     * Added horizontal drag-resizing on the Settings drawer left edge (`#settingsResizeHandle`, `480px` up to viewport width, double-click to reset to `860px`), a header **Maximize / Restore Settings Width** button (`#settingsMaximizeBtn`), and an independent drag divider (`#settingsNavResizeHandle`, widened default `232px`, double-click to reset) between the category navigation rail and content pane, persisted across repositories and restarts via `globalState`.

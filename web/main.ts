@@ -4736,7 +4736,7 @@ class GitGraphView {
 				},
 				{
 					title: t('Copy Repository Context for Coding Agent'),
-					icon: MENU_ICONS.copy,
+					icon: MENU_ICONS.agent,
 					visible: true,
 					onClick: () => this.exportAgentContext()
 				},
@@ -4763,7 +4763,7 @@ class GitGraphView {
 				},
 				{
 					title: t('AI PR / Release Notes') + ELLIPSIS,
-					icon: MENU_ICONS.subject,
+					icon: MENU_ICONS.sparkle,
 					visible: true,
 					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReleaseNotes', repo: this.currentRepo })
 				},

@@ -2247,10 +2247,13 @@
 				const agentsSec = document.getElementById('settingsAgentsSection');
 				assert(agentsSec.querySelectorAll('.settingsAgentMcpBtn').length === 5, 'Expected 5 coding agents in Agents section');
 
-				// Semantic icons on every Settings nav rail item + resizable Settings drawer & nav rail
-				const navItems = widget.querySelectorAll('#settingsNavRail .settingsNavItem');
+				// Semantic icons on every Settings nav rail item + 1-to-1 order with #settingsContent + colorful AI icons + resizable Settings drawer & nav rail
+				const navItems = Array.from(widget.querySelectorAll('#settingsNavRail .settingsNavItem'));
 				const navIcons = widget.querySelectorAll('#settingsNavRail .settingsNavItem .settingsNavIcon svg.uiIcon');
-				assert(navItems.length === 11 && navIcons.length === 11, 'Expected 11 semantic nav rail icons, got ' + navIcons.length + '/' + navItems.length);
+				const contentSections = Array.from(widget.querySelectorAll('#settingsContent .settingsSection'));
+				assert(navItems.length === 11 && navIcons.length === 11 && contentSections.length === 11, 'Expected 11 semantic nav rail icons & sections, got ' + navIcons.length + '/' + navItems.length);
+				assert(navItems.every((el, idx) => el.dataset.settingsNav === String(idx) && el.title === contentSections[idx].dataset.navLabel), 'Settings nav rail order does not match #settingsContent section order');
+				assert(widget.querySelectorAll('#settingsNavRail svg.aiColorIcon').length >= 2 && document.querySelector('#findAiBtn svg.aiColorIcon') !== null, 'Expected colorful AI icons in Settings nav rail and Find Widget');
 				assert(widget.querySelectorAll('#settingsNavRail .settingsNavDot.none').length >= 2, 'Expected spacer dots on non-toggle categories');
 
 				const resizeHandle = document.getElementById('settingsResizeHandle');
@@ -2258,9 +2261,13 @@
 				const gStateBefore = requestsOf('setGlobalViewState').length;
 				const handleRect = resizeHandle.getBoundingClientRect();
 				mouse(resizeHandle, 'mousedown', { button: 0, clientX: handleRect.left, clientY: handleRect.top + 40 });
+				assert(document.getElementById('eventCaptureElem') !== null, 'Expected #eventCaptureElem during Settings resize drag');
 				mouse(document.getElementById('eventCaptureElem'), 'mousemove', { clientX: handleRect.left + 120, clientY: handleRect.top + 40 });
 				mouse(document.getElementById('eventCaptureElem'), 'mouseup', { button: 0, clientX: handleRect.left + 120, clientY: handleRect.top + 40 });
+				assert(document.getElementById('eventCaptureElem') === null && !resizeHandle.classList.contains('dragging'), 'Settings resize overlay was not released on mouseup');
 				const narrowerWidth = Math.round(widget.getBoundingClientRect().width);
+				mouse(document.body, 'mousemove', { clientX: handleRect.left - 80, clientY: handleRect.top + 40 });
+				assert(Math.round(widget.getBoundingClientRect().width) === narrowerWidth, 'Settings width continued changing after mouseup');
 				assert(narrowerWidth < initialWidgetWidth && requestsOf('setGlobalViewState').length > gStateBefore, 'Settings panel left-edge drag did not resize or persist width: ' + initialWidgetWidth + ' -> ' + narrowerWidth);
 				mouse(document.getElementById('settingsMaximizeBtn'), 'click');
 				assert(Math.abs(Math.round(widget.getBoundingClientRect().width) - (window.innerWidth - 32)) <= 2, 'Maximize Settings button did not expand to viewport width');
@@ -2272,9 +2279,13 @@
 				const initialNavWidth = Math.round(navRail.getBoundingClientRect().width);
 				const navHandleRect = navResizeHandle.getBoundingClientRect();
 				mouse(navResizeHandle, 'mousedown', { button: 0, clientX: navHandleRect.left, clientY: navHandleRect.top + 40 });
+				assert(document.getElementById('eventCaptureElem') !== null, 'Expected #eventCaptureElem during nav rail resize drag');
 				mouse(document.getElementById('eventCaptureElem'), 'mousemove', { clientX: navHandleRect.left + 36, clientY: navHandleRect.top + 40 });
 				mouse(document.getElementById('eventCaptureElem'), 'mouseup', { button: 0, clientX: navHandleRect.left + 36, clientY: navHandleRect.top + 40 });
+				assert(document.getElementById('eventCaptureElem') === null && !navResizeHandle.classList.contains('dragging'), 'Settings nav resize overlay was not released on mouseup');
 				const widerNavWidth = Math.round(navRail.getBoundingClientRect().width);
+				mouse(document.body, 'mousemove', { clientX: navHandleRect.left + 100, clientY: navHandleRect.top + 40 });
+				assert(Math.round(navRail.getBoundingClientRect().width) === widerNavWidth, 'Settings nav rail width continued changing after mouseup');
 				assert(widerNavWidth > initialNavWidth, 'Settings nav rail drag did not resize width: ' + initialNavWidth + ' -> ' + widerNavWidth);
 				navResizeHandle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
 				assert(Math.round(navRail.getBoundingClientRect().width) === initialNavWidth, 'Double-click on #settingsNavResizeHandle did not reset width');

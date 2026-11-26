@@ -467,7 +467,7 @@ class ReviewSessionModal {
 				'</div>' +
 				'<div class="rsBody">' + bodyHtml + '</div>' +
 				'<div class="rsFooter">' +
-					'<button type="button" class="rsBtn" data-rs="aiReviewScope"' + (d === null || d.files.length === 0 ? ' disabled' : '') + '>✨ ' + t('AI Review Scope') + '</button>' +
+					'<button type="button" class="rsBtn" data-rs="aiReviewScope"' + (d === null || d.files.length === 0 ? ' disabled' : '') + '>' + MENU_ICONS.sparkle + t('AI Review Scope') + '</button>' +
 					'<button type="button" class="rsBtn" data-rs="copyForAgent"' + (d === null ? ' disabled' : '') + '>' + t('Copy for Coding Agent') + '</button>' +
 					'<button type="button" class="rsBtn" data-rs="resetProgress"' + (d === null ? ' disabled' : '') + '>' + t('Reset Progress') + '</button>' +
 					'<span class="rsFooterSpacer"></span>' +
