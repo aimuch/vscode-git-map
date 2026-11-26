@@ -730,6 +730,8 @@ export interface GitGraphViewGlobalState {
 	alwaysAcceptCheckoutCommit: boolean;
 	issueLinkingConfig: IssueLinkingConfig | null;
 	minimapHeight?: number;
+	settingsNavWidth?: number;
+	settingsWidgetWidth?: number;
 	pushTagSkipRemoteCheck: boolean;
 	explainCommitAccepted?: boolean; // Has the person agreed to send the changes of commits to a language model
 	explainCommitAcceptedTarget?: string | null; // Which provider / endpoint was consented to (re-asks when the target changes)

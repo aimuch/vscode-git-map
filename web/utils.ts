@@ -119,7 +119,14 @@ const MENU_ICONS = {
 	terminal: strokeIcon('<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M5 6.5L7.5 8.5 5 10.5M8.5 10.5h2.5"/>'),
 	stop: strokeIcon('<circle cx="8" cy="8" r="5.8"/><rect x="6" y="6" width="4" height="4" rx="0.6"/>'),
 	cloud: strokeIcon('<path d="M4.5 12.2h7.2a2.7 2.7 0 0 0 .4-5.4A3.9 3.9 0 0 0 4.4 6.1a3 3 0 0 0 .1 6.1z"/>'),
-	foldDiff: strokeIcon('<path d="M5.5 2.5L8 5l2.5-2.5M5.5 13.5L8 11l2.5 2.5M2.5 8h11"/>')
+	foldDiff: strokeIcon('<path d="M5.5 2.5L8 5l2.5-2.5M5.5 13.5L8 11l2.5 2.5M2.5 8h11"/>'),
+	agent: strokeIcon('<rect x="3" y="4.5" width="10" height="8" rx="1.8"/><path d="M8 2v2.5M6 2h4M1.5 8.5H3M13 8.5h1.5"/><circle cx="6.2" cy="8.2" r="0.8"/><circle cx="9.8" cy="8.2" r="0.8"/><path d="M6.2 10.6h3.6"/>'),
+	link: strokeIcon('<path d="M6.5 11H4.8a3 3 0 0 1 0-6h1.7M9.5 5h1.7a3 3 0 0 1 0 6H9.5M5.5 8h5"/>'),
+	scm: strokeIcon('<circle cx="8" cy="8" r="6"/><circle cx="6.2" cy="5.5" r="1"/><circle cx="6.2" cy="10.5" r="1"/><circle cx="10.2" cy="7.5" r="1"/><path d="M6.2 6.5v3M10.2 8.5c0 1.4-4 1-4 2"/>'),
+	blame: strokeIcon('<path d="M2.2 8.5a6.2 6.2 0 0 1 11.6 0"/><path d="M4.5 9.8a3.8 3.8 0 0 1 7 0"/><circle cx="8" cy="11.2" r="1.3"/>'),
+	menus: strokeIcon('<rect x="2" y="4" width="12" height="8" rx="1.6"/><circle cx="5.2" cy="8" r="0.8"/><circle cx="8" cy="8" r="0.8"/><circle cx="10.8" cy="8" r="0.8"/>'),
+	expandWidth: strokeIcon('<path d="M2.5 8h11M5.5 5L2.5 8l3 3M10.5 5l3 3-3 3"/>'),
+	restoreWidth: strokeIcon('<path d="M1.5 8h4.5M4 5.5L6.5 8 4 10.5M14.5 8H10M12 5.5L9.5 8 12 10.5"/>')
 };
 
 const DEFAULT_CDV_COMMIT_ACTIONS: ReadonlyArray<string> = ['checkout', 'createBranch', 'cherrypick'];

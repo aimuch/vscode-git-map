@@ -4647,10 +4647,16 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 /* Categorized Settings Rail with Status Dots & Enabled Ratios + Live Interactive Previews */
 .settingsNavGroup{padding:8px 8px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--vscode-descriptionForeground);opacity:.85}
 .settingsNavItem{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;text-align:left}
-.settingsNavItemLabel{display:inline-flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.settingsNavDot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--vscode-descriptionForeground);opacity:.35}
+.settingsNavItemLabel{display:inline-flex;align-items:center;gap:6px;min-width:0;overflow:hidden}
+.settingsNavDot{width:7px;height:7px;border-radius:50%;flex:0 0 7px;box-sizing:border-box;background:var(--vscode-descriptionForeground);opacity:.35}
 .settingsNavDot.on{background:#2da44e;opacity:1}
-.settingsNavRatio{font-size:10px;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);opacity:.85;flex:0 0 auto}
+.settingsNavDot.off{background:transparent;border:1.4px solid var(--vscode-descriptionForeground);opacity:.55}
+.settingsNavDot.none{visibility:hidden}
+.settingsNavIcon{display:inline-flex;align-items:center;justify-content:center;flex:0 0 15px;opacity:.82}
+.settingsNavIcon svg.uiIcon{width:14px !important;height:14px !important}
+.settingsNavItem:hover .settingsNavIcon,.settingsNavItem.active .settingsNavIcon{opacity:1}
+.settingsNavText{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsNavRatio{font-size:10px;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);opacity:.85;flex:0 0 auto;margin-left:4px}
 .settingsLivePreview{margin:10px 0 12px;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-md);background:var(--vscode-editor-background);overflow:hidden}
 .settingsLivePreviewHeader{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11px;color:var(--vscode-descriptionForeground)}
 .settingsEditorPreviewCode{padding:8px 10px;font-family:var(--vscode-editor-font-family);font-size:12px;line-height:1.55}

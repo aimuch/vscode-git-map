@@ -2130,5 +2130,9 @@
 	"Copy Uncommitted Changes to Worktree": "复制未提交更改到工作树",
 	"Select the target worktree to copy your uncommitted changes into:": "选择要将未提交更改复制到的目标工作树：",
 	"Copy Changes": "复制更改",
-	"Copying Uncommitted Changes": "正在复制未提交更改"
+	"Copying Uncommitted Changes": "正在复制未提交更改",
+	"Drag to resize the Settings panel, double-click to reset": "拖拽以调整设置面板宽度，双击恢复默认宽度",
+	"Drag to resize navigation sidebar, double-click to reset": "拖拽以调整导航栏宽度，双击恢复默认宽度",
+	"Maximize Settings Width": "最大化设置面板宽度",
+	"Restore Settings Width": "恢复设置面板宽度"
 }

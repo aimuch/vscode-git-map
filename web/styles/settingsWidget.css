@@ -5,7 +5,8 @@
 	top:0;
 	right:0;
 	bottom:0;
-	width:min(760px, calc(100vw - 40px));
+	width:min(var(--git-map-settingsWidth, 860px), calc(100vw - 32px));
+	min-width:min(480px, calc(100vw - 32px));
 	z-index:31;
 	box-sizing:border-box;
 	background-color:var(--vscode-sideBar-background, var(--vscode-editorWidget-background));
@@ -19,6 +20,19 @@
 	visibility:hidden;
 	-webkit-user-select:none;
 	user-select:none;
+}
+#settingsResizeHandle{
+	position:absolute;
+	top:0;
+	left:-3px;
+	bottom:0;
+	width:7px;
+	cursor:ew-resize;
+	z-index:6;
+	transition:background-color .12s ease;
+}
+#settingsResizeHandle:hover, #settingsResizeHandle.dragging{
+	background-color:var(--vscode-focusBorder, #007acc);
 }
 #settingsWidget.active{
 	transform:none;
@@ -56,6 +70,29 @@
 	color:var(--vscode-descriptionForeground);
 	text-overflow:ellipsis;
 	white-space:nowrap;
+}
+#settingsMaximizeBtn{
+	flex:0 0 auto;
+	display:inline-flex;
+	align-items:center;
+	justify-content:center;
+	width:28px;
+	height:28px;
+	padding:0;
+	border:none;
+	border-radius:6px;
+	background:transparent;
+	color:inherit;
+	cursor:pointer;
+	opacity:0.8;
+}
+#settingsMaximizeBtn:hover, #settingsMaximizeBtn.active{
+	background-color:var(--vscode-toolbar-hoverBackground, rgba(128,128,128,0.2));
+	opacity:1;
+}
+#settingsMaximizeBtn svg.uiIcon{
+	width:15px !important;
+	height:15px !important;
 }
 #settingsClose{
 	position:relative;
@@ -136,7 +173,10 @@
 	overflow:hidden;
 }
 #settingsNavRail{
-	flex:0 0 168px;
+	flex:0 0 var(--git-map-settingsNavWidth, 232px);
+	min-width:156px;
+	max-width:45%;
+	box-sizing:border-box;
 	display:flex;
 	flex-direction:column;
 	gap:2px;
@@ -144,6 +184,18 @@
 	border-right:1px solid var(--vscode-panel-border, rgba(128,128,128,0.25));
 	overflow-y:auto;
 	background:rgba(128,128,128,0.03);
+}
+#settingsNavResizeHandle{
+	flex:0 0 5px;
+	margin-left:-3px;
+	margin-right:-2px;
+	cursor:ew-resize;
+	z-index:4;
+	position:relative;
+	transition:background-color .12s ease;
+}
+#settingsNavResizeHandle:hover, #settingsNavResizeHandle.dragging{
+	background-color:var(--vscode-focusBorder, #007acc);
 }
 .settingsNavItem{
 	display:flex;
@@ -174,7 +226,7 @@
 	font-weight:600;
 }
 @media (max-width:620px){
-	#settingsNavRail{ display:none; }
+	#settingsNavRail, #settingsNavResizeHandle{ display:none; }
 }
 .settingsEmptySearch{
 	padding:24px 12px;
@@ -184,6 +236,7 @@
 }
 
 #settingsContent{
+	position:relative;
 	display:flex;
 	flex-direction:column;
 	flex:1 1 auto;

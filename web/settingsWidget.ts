@@ -141,8 +141,15 @@ class SettingsWidget {
 		};
 	}
 
+	private static readonly DEFAULT_WIDTH = 860;
+	private static readonly MIN_WIDTH = 480;
+	private static readonly NAV_DEFAULT_WIDTH = 232;
+	private static readonly NAV_MIN_WIDTH = 156;
+	private static readonly NAV_MAX_WIDTH = 360;
+
 	private readonly widgetElem: HTMLElement;
 	private readonly repoNameElem: HTMLElement;
+	private readonly maximizeBtnElem: HTMLButtonElement;
 	private readonly navRailElem: HTMLElement;
 	private readonly searchInputElem: HTMLInputElement;
 	private readonly contentsElem: HTMLElement;
@@ -150,6 +157,9 @@ class SettingsWidget {
 	private readonly loadingElem: HTMLElement;
 	private searchQuery: string = '';
 	private activeSectionIndex: number = 0;
+	private widgetWidth: number = SettingsWidget.DEFAULT_WIDTH;
+	private navWidth: number = SettingsWidget.NAV_DEFAULT_WIDTH;
+	private preMaximizeWidth: number | null = null;
 
 	/**
 	 * Construct a new SettingsWidget instance.
@@ -162,9 +172,10 @@ class SettingsWidget {
 		this.widgetElem = document.createElement('div');
 		this.widgetElem.id = 'settingsWidget';
 		this.widgetElem.innerHTML =
-			'<div id="settingsHeader"><h2>' + MENU_ICONS.settings + t('Settings') + '</h2><span id="settingsRepoName"></span><div id="settingsClose" title="' + t('Close') + '"></div></div>' +
+			'<div id="settingsResizeHandle" title="' + escapeHtml(t('Drag to resize the Settings panel, double-click to reset')) + '"></div>' +
+			'<div id="settingsHeader"><h2>' + MENU_ICONS.settings + t('Settings') + '</h2><span id="settingsRepoName"></span><button type="button" id="settingsMaximizeBtn" title="' + escapeHtml(t('Maximize Settings Width')) + '" tabindex="-1">' + MENU_ICONS.expandWidth + '</button><div id="settingsClose" title="' + t('Close') + '"></div></div>' +
 			'<div id="settingsSearchBar"><span class="settingsSearchIcon">' + SVG_ICONS.search + '</span><input id="settingsSearchInput" type="text" placeholder="' + escapeHtml(t('Filter settings…')) + '" autocomplete="off"/><button type="button" id="settingsSearchClear" class="hidden" title="' + escapeHtml(t('Clear')) + '">' + SVG_ICONS.close + '</button></div>' +
-			'<div id="settingsBody"><nav id="settingsNavRail" aria-label="' + escapeHtml(t('Setting Categories')) + '"></nav><div id="settingsContent"></div></div>' +
+			'<div id="settingsBody"><nav id="settingsNavRail" aria-label="' + escapeHtml(t('Setting Categories')) + '"></nav><div id="settingsNavResizeHandle" title="' + escapeHtml(t('Drag to resize navigation sidebar, double-click to reset')) + '"></div><div id="settingsContent"></div></div>' +
 			'<div id="settingsFooter"></div><div id="settingsLoading"></div>';
 		document.body.appendChild(this.widgetElem);
 
@@ -178,11 +189,25 @@ class SettingsWidget {
 		});
 
 		this.repoNameElem = document.getElementById('settingsRepoName')!;
+		this.maximizeBtnElem = <HTMLButtonElement>document.getElementById('settingsMaximizeBtn')!;
 		this.navRailElem = document.getElementById('settingsNavRail')!;
 		this.searchInputElem = <HTMLInputElement>document.getElementById('settingsSearchInput')!;
 		this.contentsElem = document.getElementById('settingsContent')!;
 		this.footerElem = document.getElementById('settingsFooter')!;
 		this.loadingElem = document.getElementById('settingsLoading')!;
+
+		if (typeof globalState.settingsWidgetWidth === 'number') {
+			this.setWidgetWidth(globalState.settingsWidgetWidth);
+		} else {
+			this.widgetElem.style.setProperty('--git-map-settingsWidth', SettingsWidget.DEFAULT_WIDTH + 'px');
+			this.updateMaximizeButtonState();
+		}
+		if (typeof globalState.settingsNavWidth === 'number') {
+			this.setNavWidth(globalState.settingsNavWidth);
+		} else {
+			this.widgetElem.style.setProperty('--git-map-settingsNavWidth', SettingsWidget.NAV_DEFAULT_WIDTH + 'px');
+		}
+		this.setupResizeHandles();
 
 		const clearBtn = document.getElementById('settingsSearchClear')!;
 		this.searchInputElem.addEventListener('input', () => {
@@ -422,7 +447,7 @@ class SettingsWidget {
 				['tags', t('Tags')],
 				['worktrees', t('Worktrees')]
 			];
-			let html = '<div class="settingsSection" data-nav-group="views" data-nav-label="' + escapeHtml(t('Commit Graph & Views')) + '" data-nav-enabled="' + viewsEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
+			let html = '<div class="settingsSection" data-nav-group="views" data-nav-icon="branch" data-nav-label="' + escapeHtml(t('Commit Graph & Views')) + '" data-nav-enabled="' + viewsEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsGraphLivePreview">' + this.renderGraphPreviewHtml(presetColours, graphDensity, graphNodeStyle, ext.showGhostRefs) + '</div>' +
 				'<div class="settingsLabel">' + t('Branch Line Colours') + '</div>' +
 				'<div class="settingsPresets">' + appearance.colourPresets.map((preset) => '<button type="button" class="settingsPreset' + (preset.name === appearance.colourPreset ? ' selected' : '') + '" data-preset="' + escapeHtml(preset.name) + '" aria-pressed="' + (preset.name === appearance.colourPreset) + '" tabindex="-1"><span class="settingsPresetColours">' + preset.colours.map((colour) => '<span style="background-color:' + escapeHtml(colour) + '"></span>').join('') + '</span><span class="settingsPresetName">' + escapeHtml(t(preset.name)) + '</span></button>').join('') + '</div>' +
@@ -468,7 +493,7 @@ class SettingsWidget {
 				['fileHistory', t('File History')]
 			];
 			const scmVisibleCount = scmSectionDefs.filter((s) => !ext.scmHiddenSections.includes(s[0])).length;
-			html += '<div class="settingsSection" id="settingsScmSection" data-nav-group="views" data-nav-label="' + escapeHtml(t('Git Map SCM & Views')) + '" data-nav-enabled="' + scmVisibleCount + '" data-nav-total="' + scmSectionDefs.length + '"><h3>' + MENU_ICONS.branch + t('Git Map SCM & View Formats') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsScmSection" data-nav-group="views" data-nav-icon="scm" data-nav-label="' + escapeHtml(t('Git Map SCM & Views')) + '" data-nav-enabled="' + scmVisibleCount + '" data-nav-total="' + scmSectionDefs.length + '"><h3>' + MENU_ICONS.scm + t('Git Map SCM & View Formats') + '</h3>' +
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Section') + '</th><th>' + t('Visible') + '</th><th>' + t('Default Expanded') + '</th></tr></thead><tbody>' +
 				scmSectionDefs.map((sec) => {
 					const vis = !ext.scmHiddenSections.includes(sec[0]);
@@ -488,17 +513,17 @@ class SettingsWidget {
 				'</div>') +
 				'</div>';
 
-			html += '<div class="settingsSection" data-nav-group="general" data-nav-label="' + escapeHtml(t('Language')) + '"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
+			html += '<div class="settingsSection" data-nav-group="general" data-nav-icon="globe" data-nav-label="' + escapeHtml(t('Language')) + '"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
 				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
 				'</div></div>';
 
-			html += '<div class="settingsSection" data-nav-group="general" data-nav-label="' + escapeHtml(t('Status Bar')) + '" data-nav-enabled="1" data-nav-total="1"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
+			html += '<div class="settingsSection" data-nav-group="general" data-nav-icon="layout" data-nav-label="' + escapeHtml(t('Status Bar')) + '" data-nav-enabled="1" data-nav-total="1"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
 				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div></div>';
 
 			const menusEnabled = extBoolCount([ext.menus.editor, ext.menus.editorGroup, ext.menus.explorer, ext.menus.scm, ext.menus.editorTab]);
-			html += '<div class="settingsSection" id="settingsMenusSection" data-nav-group="general" data-nav-label="' + escapeHtml(t('Menus & Toolbars')) + '" data-nav-enabled="' + menusEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.settings + t('Menus & Toolbars') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsMenusSection" data-nav-group="general" data-nav-icon="menus" data-nav-label="' + escapeHtml(t('Menus & Toolbars')) + '" data-nav-enabled="' + menusEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.menus + t('Menus & Toolbars') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + extCheckbox('settingsMenuEditor', 'menus.editor.enabled', ext.menus.editor, t('Editor Context Menu')) + '</span>' +
 				'<span>' + extCheckbox('settingsMenuEditorGroup', 'menus.editorGroup.enabled', ext.menus.editorGroup, t('Editor Title Toolbar')) + '</span>' +
@@ -571,7 +596,7 @@ class SettingsWidget {
 				const cur = customInstr[taskKey] || '';
 				return '<label class="settingsKey">' + escapeHtml(taskKey) + ':</label><input type="text" class="settingsInput settingsAiInstructionInput" data-ai-instr-task="' + taskKey + '" value="' + escapeHtml(cur) + '" placeholder="' + escapeHtml(t('Optional custom prompt instructions…')) + '">';
 			}).join('');
-			html += '<div class="settingsSection" id="settingsAiSection" data-nav-group="integrations" data-nav-label="' + escapeHtml(t('AI')) + '" data-nav-enabled="' + aiEnabledCount + '" data-nav-total="2"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsAiSection" data-nav-group="integrations" data-nav-icon="sparkle" data-nav-label="' + escapeHtml(t('AI')) + '" data-nav-enabled="' + aiEnabledCount + '" data-nav-total="2"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +
 				'<span>' + checkbox('settingsAiExplainCommit', t('Explain Commits'), t('Shows an "Explain" tab in the Commit Details View, where a language model explains the selected commit.')) + '</span>' +
@@ -595,7 +620,7 @@ class SettingsWidget {
 			];
 			const agentsList = this.codingAgents.length > 0 ? this.codingAgents : fallbackAgents;
 			const detectedAgentsCount = agentsList.filter((a) => a.detected || a.mcpConfigured).length;
-			html += '<div class="settingsSection" id="settingsAgentsSection" data-nav-group="integrations" data-nav-label="' + escapeHtml(t('Agents')) + '" data-nav-enabled="' + detectedAgentsCount + '" data-nav-total="' + agentsList.length + '"><h3>' + MENU_ICONS.sparkle + t('Coding Agents, MCP & Hooks') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsAgentsSection" data-nav-group="integrations" data-nav-icon="agent" data-nav-label="' + escapeHtml(t('Agents')) + '" data-nav-enabled="' + detectedAgentsCount + '" data-nav-total="' + agentsList.length + '"><h3>' + MENU_ICONS.agent + t('Coding Agents, MCP & Hooks') + '</h3>' +
 				'<p class="settingsDescription">' + t('Choose a default coding agent and configure the local Git Map stdio MCP server and repository Git hooks.') + '</p>' +
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Agent') + '</th><th>' + t('Default') + '</th><th>MCP</th><th>' + t('Hooks') + '</th></tr></thead><tbody>' +
 				agentsList.map((ag) => {
@@ -616,7 +641,7 @@ class SettingsWidget {
 			const autolinkListHtml = ext.autolinks.length === 0
 				? '<p class="settingsDescription">' + t('No autolink rules configured. Add a prefix such as "JIRA-" or "#" with a URL containing "<num>".') + '</p>'
 				: ext.autolinks.map((r, i) => '<div class="settingsRuleChip"><span class="mono">' + escapeHtml(r.prefix) + '&lt;num&gt; &rarr; ' + escapeHtml(r.url) + '</span><button type="button" class="settingsBtn removeBtn settingsRemoveAutolinkBtn" data-rule-idx="' + i + '" tabindex="-1">&times;</button></div>').join('');
-			html += '<div class="settingsSection" id="settingsAutolinksSection" data-nav-group="integrations" data-nav-label="' + escapeHtml(t('Autolinks & Start Work')) + '" data-nav-enabled="' + ext.autolinks.length + '" data-nav-total="' + Math.max(1, ext.autolinks.length) + '"><h3>' + MENU_ICONS.issue + t('Autolinks & Start Work') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsAutolinksSection" data-nav-group="integrations" data-nav-icon="link" data-nav-label="' + escapeHtml(t('Autolinks & Start Work')) + '" data-nav-enabled="' + ext.autolinks.length + '" data-nav-total="' + Math.max(1, ext.autolinks.length) + '"><h3>' + MENU_ICONS.link + t('Autolinks & Start Work') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsAutolinkLivePreview">' + this.renderAutolinkPreviewHtml(ext.autolinks, ext.startWorkBranchFormat) + '</div>' +
 				'<div class="settingsRuleList">' + autolinkListHtml + '</div>' +
 				'<div class="settingsRuleRow">' +
@@ -634,7 +659,7 @@ class SettingsWidget {
 					'<button type="button" class="settingsBtn removeBtn settingsRemoveCustomRemoteBtn" data-cr-idx="' + idx + '" tabindex="-1">&times;</button></div>'
 				).join('');
 			const integrationsEnabled = extBoolCount([ext.terminalLinksEnabled, ext.followTerminalEnabled, ext.launchpadEnabled]);
-			html += '<div class="settingsSection" id="settingsIntegrationsSection" data-nav-group="integrations" data-nav-label="' + escapeHtml(t('Terminal Links & Launchpad')) + '" data-nav-enabled="' + integrationsEnabled + '" data-nav-total="3"><h3>' + MENU_ICONS.cloud + t('Terminal Links, Launchpad & Custom Remotes') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsIntegrationsSection" data-nav-group="integrations" data-nav-icon="terminal" data-nav-label="' + escapeHtml(t('Terminal Links & Launchpad')) + '" data-nav-enabled="' + integrationsEnabled + '" data-nav-total="3"><h3>' + MENU_ICONS.terminal + t('Terminal Links, Launchpad & Custom Remotes') + '</h3>' +
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + extCheckbox('settingsTerminalLinks', 'terminalLinks.enabled', ext.terminalLinksEnabled, t('Terminal Git Links')) + '</span>' +
 				'<span>' + extCheckbox('settingsTerminalDetails', 'terminalLinks.showDetailsView', ext.terminalLinksShowDetails, t('Open Details View on Link Click')) + '</span>' +
@@ -654,7 +679,7 @@ class SettingsWidget {
 				'</div>';
 
 			const editorEnabledCount = extBoolCount([ext.editor.currentLineEnabled, ext.editor.statusBarEnabled, ext.editor.codeLensEnabled, ext.editor.hoversEnabled, ext.editor.fileBlameHeatmap, ext.editor.fileBlameHighlightSameCommit]);
-			html += '<div class="settingsSection" id="settingsEditorSection" data-nav-group="editor" data-nav-label="' + escapeHtml(t('Editor Annotations')) + '" data-nav-enabled="' + editorEnabledCount + '" data-nav-total="6"><h3>' + MENU_ICONS.edit + t('Editor Annotations & Modes · All Repositories') + '</h3>' +
+			html += '<div class="settingsSection" id="settingsEditorSection" data-nav-group="editor" data-nav-icon="blame" data-nav-label="' + escapeHtml(t('Editor Annotations')) + '" data-nav-enabled="' + editorEnabledCount + '" data-nav-total="6"><h3>' + MENU_ICONS.blame + t('Editor Annotations & Modes · All Repositories') + '</h3>' +
 				'<div class="settingsLivePreview" id="settingsEditorLivePreview">' + this.renderEditorPreviewHtml(ext.editor) + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Active Editor Mode') + '</span>' + extSegmented('mode.active', [['default', t('Default')], ['zen', t('Zen')], ['review', t('Review')]], ext.editor.activeMode) + '</div>' +
 				'<div class="settingsCheckboxes two">' +
@@ -683,7 +708,7 @@ class SettingsWidget {
 					'</div>') +
 				'</div>';
 
-			html += '<div class="settingsSection" data-nav-group="views" data-nav-label="' + escapeHtml(t('This Repository')) + '"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
+			html += '<div class="settingsSection" data-nav-group="views" data-nav-icon="repo" data-nav-label="' + escapeHtml(t('This Repository')) + '"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
 				'<div class="settingsCheckboxes">' +
 				'<span>' + checkbox('settingsShowRemoteBranches', t('Show Remote Branches'), null) + '</span>' +
 				'<span>' + checkbox('settingsShowStashes', t('Show Stashes'), null) + '</span>' +
@@ -1997,9 +2022,131 @@ class SettingsWidget {
 	 * @param remotes The remotes of the repository.
 	 * @returns The Issue URL, or NULL if it couldn't be detected.
 	 */
+	private setupResizeHandles() {
+		const resizeHandle = document.getElementById('settingsResizeHandle')!;
+		let lastWidgetResizeClick = 0;
+		const resetWidgetWidth = () => {
+			this.preMaximizeWidth = null;
+			this.widgetWidth = SettingsWidget.DEFAULT_WIDTH;
+			this.widgetElem.style.setProperty('--git-map-settingsWidth', SettingsWidget.DEFAULT_WIDTH + 'px');
+			this.updateMaximizeButtonState();
+			updateGlobalViewState('settingsWidgetWidth', undefined);
+		};
+		resizeHandle.addEventListener('dblclick', () => resetWidgetWidth());
+		resizeHandle.addEventListener('mousedown', (e) => {
+			if (e.button !== 0) return;
+			handledEvent(e);
+			const startX = e.clientX;
+			const startWidth = Math.round(this.widgetElem.getBoundingClientRect().width) || this.widgetWidth;
+			let moved = false;
+			const hadTransition = this.widgetElem.classList.contains('transition');
+			if (hadTransition) this.widgetElem.classList.remove('transition');
+			resizeHandle.classList.add('dragging');
+			eventOverlay.create('colResize', (moveEvent) => {
+				const delta = startX - (<MouseEvent>moveEvent).clientX;
+				if (!moved && Math.abs(delta) < 2) return;
+				moved = true;
+				this.preMaximizeWidth = null;
+				this.setWidgetWidth(startWidth + delta);
+			}, () => {
+				resizeHandle.classList.remove('dragging');
+				if (hadTransition) this.widgetElem.classList.add('transition');
+				if (moved) {
+					updateGlobalViewState('settingsWidgetWidth', this.widgetWidth);
+				} else {
+					const clickTime = performance.now();
+					if (clickTime - lastWidgetResizeClick < 400) {
+						lastWidgetResizeClick = 0;
+						resetWidgetWidth();
+					} else {
+						lastWidgetResizeClick = clickTime;
+					}
+				}
+			});
+		});
+
+		this.maximizeBtnElem.addEventListener('click', () => {
+			const maxWidth = Math.max(SettingsWidget.MIN_WIDTH, window.innerWidth - 32);
+			const currentWidth = Math.round(this.widgetElem.getBoundingClientRect().width) || this.widgetWidth;
+			if (this.preMaximizeWidth !== null && Math.abs(currentWidth - maxWidth) <= 8) {
+				const restoreTo = this.preMaximizeWidth;
+				this.preMaximizeWidth = null;
+				this.setWidgetWidth(restoreTo);
+			} else {
+				this.preMaximizeWidth = currentWidth;
+				this.setWidgetWidth(maxWidth);
+			}
+			updateGlobalViewState('settingsWidgetWidth', this.widgetWidth);
+		});
+
+		const navResizeHandle = document.getElementById('settingsNavResizeHandle')!;
+		let lastNavResizeClick = 0;
+		const resetNavWidth = () => {
+			this.navWidth = SettingsWidget.NAV_DEFAULT_WIDTH;
+			this.widgetElem.style.setProperty('--git-map-settingsNavWidth', SettingsWidget.NAV_DEFAULT_WIDTH + 'px');
+			updateGlobalViewState('settingsNavWidth', undefined);
+		};
+		navResizeHandle.addEventListener('dblclick', () => resetNavWidth());
+		navResizeHandle.addEventListener('mousedown', (e) => {
+			if (e.button !== 0) return;
+			handledEvent(e);
+			const startX = e.clientX;
+			const startNavWidth = Math.round(this.navRailElem.getBoundingClientRect().width) || this.navWidth;
+			let moved = false;
+			navResizeHandle.classList.add('dragging');
+			eventOverlay.create('colResize', (moveEvent) => {
+				const delta = (<MouseEvent>moveEvent).clientX - startX;
+				if (!moved && Math.abs(delta) < 2) return;
+				moved = true;
+				this.setNavWidth(startNavWidth + delta);
+			}, () => {
+				navResizeHandle.classList.remove('dragging');
+				if (moved) {
+					updateGlobalViewState('settingsNavWidth', this.navWidth);
+				} else {
+					const clickTime = performance.now();
+					if (clickTime - lastNavResizeClick < 400) {
+						lastNavResizeClick = 0;
+						resetNavWidth();
+					} else {
+						lastNavResizeClick = clickTime;
+					}
+				}
+			});
+		});
+	}
+
+	private setWidgetWidth(width: number) {
+		const maxWidth = Math.max(SettingsWidget.MIN_WIDTH, window.innerWidth - 32);
+		const clamped = Math.round(Math.min(Math.max(width, SettingsWidget.MIN_WIDTH), maxWidth));
+		this.widgetWidth = clamped;
+		this.widgetElem.style.setProperty('--git-map-settingsWidth', clamped + 'px');
+		this.updateMaximizeButtonState();
+		return clamped;
+	}
+
+	private setNavWidth(width: number) {
+		const currentWidgetW = this.widgetElem.getBoundingClientRect().width || this.widgetWidth;
+		const maxNav = Math.min(SettingsWidget.NAV_MAX_WIDTH, Math.max(SettingsWidget.NAV_MIN_WIDTH, Math.floor(currentWidgetW * 0.45)));
+		const clamped = Math.round(Math.min(Math.max(width, SettingsWidget.NAV_MIN_WIDTH), maxNav));
+		this.navWidth = clamped;
+		this.widgetElem.style.setProperty('--git-map-settingsNavWidth', clamped + 'px');
+		return clamped;
+	}
+
+	private updateMaximizeButtonState() {
+		const maxWidth = Math.max(SettingsWidget.MIN_WIDTH, window.innerWidth - 32);
+		const isMaximized = this.preMaximizeWidth !== null && Math.abs(this.widgetWidth - maxWidth) <= 8;
+		this.maximizeBtnElem.innerHTML = isMaximized ? MENU_ICONS.restoreWidth : MENU_ICONS.expandWidth;
+		const label = isMaximized ? t('Restore Settings Width') : t('Maximize Settings Width');
+		this.maximizeBtnElem.title = label;
+		this.maximizeBtnElem.setAttribute('aria-label', label);
+		alterClass(this.maximizeBtnElem, CLASS_ACTIVE, isMaximized);
+	}
+
 	private renderNavRail() {
 		const sections = Array.from(this.contentsElem.querySelectorAll<HTMLElement>('.settingsSection'));
-		const groups: { id: string, title: string, items: { idx: number, label: string, enabled: number | null, total: number | null }[] }[] = [
+		const groups: { id: string, title: string, items: { idx: number, label: string, icon: string, enabled: number | null, total: number | null }[] }[] = [
 			{ id: 'integrations', title: t('Integrations'), items: [] },
 			{ id: 'views', title: t('Views'), items: [] },
 			{ id: 'editor', title: t('Editor'), items: [] },
@@ -2009,18 +2156,20 @@ class SettingsWidget {
 			const groupId = sec.dataset.navGroup || 'general';
 			const h3 = sec.querySelector('h3');
 			const label = sec.dataset.navLabel || (h3 ? (h3.textContent || '').trim() : ('Section ' + (idx + 1)));
+			const iconKey = <keyof typeof MENU_ICONS | undefined>sec.dataset.navIcon;
+			const iconSvg = (iconKey && MENU_ICONS[iconKey]) ? MENU_ICONS[iconKey] : MENU_ICONS.settings;
 			const enabled = typeof sec.dataset.navEnabled === 'string' ? parseInt(sec.dataset.navEnabled, 10) : null;
 			const total = typeof sec.dataset.navTotal === 'string' ? parseInt(sec.dataset.navTotal, 10) : null;
 			const bucket = groups.find((g) => g.id === groupId) || groups[3];
-			bucket.items.push({ idx: idx, label: label, enabled: enabled, total: total });
+			bucket.items.push({ idx: idx, label: label, icon: iconSvg, enabled: enabled, total: total });
 		});
 		this.navRailElem.innerHTML = groups.filter((g) => g.items.length > 0).map((g) =>
 			'<div class="settingsNavGroup">' + escapeHtml(g.title) + '</div>' +
 			g.items.map((item) => {
 				const hasRatio = item.enabled !== null && item.total !== null && item.total > 0;
-				const dotClass = 'settingsNavDot' + (item.enabled !== null && item.enabled > 0 ? ' on' : '');
+				const dotClass = 'settingsNavDot' + (hasRatio ? (item.enabled! > 0 ? ' on' : ' off') : ' none');
 				return '<button type="button" class="settingsNavItem' + (item.idx === this.activeSectionIndex ? ' active' : '') + '" data-settings-nav="' + item.idx + '" title="' + escapeHtml(item.label) + '">' +
-					'<span class="settingsNavItemLabel"><span class="' + dotClass + '"></span><span>' + escapeHtml(item.label) + '</span></span>' +
+					'<span class="settingsNavItemLabel"><span class="' + dotClass + '"></span><span class="settingsNavIcon">' + item.icon + '</span><span class="settingsNavText">' + escapeHtml(item.label) + '</span></span>' +
 					(hasRatio ? '<span class="settingsNavRatio">' + item.enabled + '/' + item.total + '</span>' : '') +
 					'</button>';
 			}).join('')

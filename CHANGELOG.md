@@ -1,5 +1,11 @@
 # Change Log
 
+## 2.8.1 - 2026-11-26
+* **Resizable Settings Drawer & Navigation Sidebar**:
+    * Added horizontal drag-resizing on the Settings drawer left edge (`#settingsResizeHandle`, `480px` up to viewport width, double-click to reset to `860px`), a header **Maximize / Restore Settings Width** button (`#settingsMaximizeBtn`), and an independent drag divider (`#settingsNavResizeHandle`, widened default `232px`, double-click to reset) between the category navigation rail and content pane, persisted across repositories and restarts via `globalState`.
+* **Semantic Category Icons & Aligned Status Indicators**:
+    * Added crisp leading vector icons (`sparkle`, `agent`, `link`, `terminal`, `branch`, `scm`, `repo`, `blame`, `globe`, `layout`, `menus`) across all 11 Settings navigation rail categories, with hollow `0/N` indicators and aligned invisible spacers on non-toggle categories.
+
 ## 2.8.0 - 2026-11-26
 * **Editor Annotations & Preset Modes**:
     * Added **File Heatmap** (`git-map.toggleFileHeatmap`) and **File Changes** (`git-map.toggleFileChanges`, plus Next / Previous Change navigation) across gutter, line highlight, and overview ruler locations.

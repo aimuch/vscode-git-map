@@ -2247,6 +2247,38 @@
 				const agentsSec = document.getElementById('settingsAgentsSection');
 				assert(agentsSec.querySelectorAll('.settingsAgentMcpBtn').length === 5, 'Expected 5 coding agents in Agents section');
 
+				// Semantic icons on every Settings nav rail item + resizable Settings drawer & nav rail
+				const navItems = widget.querySelectorAll('#settingsNavRail .settingsNavItem');
+				const navIcons = widget.querySelectorAll('#settingsNavRail .settingsNavItem .settingsNavIcon svg.uiIcon');
+				assert(navItems.length === 11 && navIcons.length === 11, 'Expected 11 semantic nav rail icons, got ' + navIcons.length + '/' + navItems.length);
+				assert(widget.querySelectorAll('#settingsNavRail .settingsNavDot.none').length >= 2, 'Expected spacer dots on non-toggle categories');
+
+				const resizeHandle = document.getElementById('settingsResizeHandle');
+				const initialWidgetWidth = Math.round(widget.getBoundingClientRect().width);
+				const gStateBefore = requestsOf('setGlobalViewState').length;
+				const handleRect = resizeHandle.getBoundingClientRect();
+				mouse(resizeHandle, 'mousedown', { button: 0, clientX: handleRect.left, clientY: handleRect.top + 40 });
+				mouse(document.getElementById('eventCaptureElem'), 'mousemove', { clientX: handleRect.left + 120, clientY: handleRect.top + 40 });
+				mouse(document.getElementById('eventCaptureElem'), 'mouseup', { button: 0, clientX: handleRect.left + 120, clientY: handleRect.top + 40 });
+				const narrowerWidth = Math.round(widget.getBoundingClientRect().width);
+				assert(narrowerWidth < initialWidgetWidth && requestsOf('setGlobalViewState').length > gStateBefore, 'Settings panel left-edge drag did not resize or persist width: ' + initialWidgetWidth + ' -> ' + narrowerWidth);
+				mouse(document.getElementById('settingsMaximizeBtn'), 'click');
+				assert(Math.abs(Math.round(widget.getBoundingClientRect().width) - (window.innerWidth - 32)) <= 2, 'Maximize Settings button did not expand to viewport width');
+				resizeHandle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+				assert(Math.round(widget.getBoundingClientRect().width) === initialWidgetWidth, 'Double-click on #settingsResizeHandle did not reset width');
+
+				const navRail = document.getElementById('settingsNavRail');
+				const navResizeHandle = document.getElementById('settingsNavResizeHandle');
+				const initialNavWidth = Math.round(navRail.getBoundingClientRect().width);
+				const navHandleRect = navResizeHandle.getBoundingClientRect();
+				mouse(navResizeHandle, 'mousedown', { button: 0, clientX: navHandleRect.left, clientY: navHandleRect.top + 40 });
+				mouse(document.getElementById('eventCaptureElem'), 'mousemove', { clientX: navHandleRect.left + 36, clientY: navHandleRect.top + 40 });
+				mouse(document.getElementById('eventCaptureElem'), 'mouseup', { button: 0, clientX: navHandleRect.left + 36, clientY: navHandleRect.top + 40 });
+				const widerNavWidth = Math.round(navRail.getBoundingClientRect().width);
+				assert(widerNavWidth > initialNavWidth, 'Settings nav rail drag did not resize width: ' + initialNavWidth + ' -> ' + widerNavWidth);
+				navResizeHandle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+				assert(Math.round(navRail.getBoundingClientRect().width) === initialNavWidth, 'Double-click on #settingsNavResizeHandle did not reset width');
+
 				const scmSec = document.getElementById('settingsScmSection');
 				assert(scmSec !== null && scmSec.querySelectorAll('.settingsScmVisCheckbox').length === 11, 'Expected 11 SCM sections in matrix');
 				const commitLabelInput = scmSec.querySelector('[data-fmt-prop="commitLabel"]');
