@@ -136,6 +136,13 @@ class GitGraphView {
 	private repoMetadataLoadedFor: string | null = null;
 	private scrollJumpPillElem: HTMLElement | null = null;
 	private scrollJumpMenuOpen: boolean = false;
+	private cdvHistory: string[] = [];
+	private cdvHistoryIndex: number = -1;
+	private navigatingCdvHistory: boolean = false;
+	private readonly expandedRefCommits: Set<string> = new Set();
+	private soloRef: string | null = null;
+	private preSoloBranches: string[] | null = null;
+	private shortcutsModalElem: HTMLElement | null = null;
 
 	constructor(viewElem: HTMLElement, prevState: WebViewState | null) {
 		this.gitRepos = initialState.repos;
@@ -276,6 +283,14 @@ class GitGraphView {
 			const commits = this.getSelectedCommits();
 			if (actionElem.dataset.action === 'cherrypick') {
 				this.actions.cherrypickCommitsAction(commits, null);
+			} else if (actionElem.dataset.action === 'squash') {
+				this.actions.batchSquashCommitsAction(commits, null);
+			} else if (actionElem.dataset.action === 'drop') {
+				this.actions.batchDropCommitsAction(commits, null);
+			} else if (actionElem.dataset.action === 'changelog' && commits.length >= 2) {
+				const oldest = commits[0], newest = commits[commits.length - 1];
+				const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
+				sendMessage({ command: 'aiChangelogFromCommits', repo: this.currentRepo, fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + ' → ' + abbrevCommit(newest.hash) });
 			} else if (actionElem.dataset.action === 'copyHashes') {
 				this.actions.copyCommitsToClipboard(commits, false);
 			} else {
@@ -345,6 +360,31 @@ class GitGraphView {
 			toolsBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.showToolsMenu(toolsBtn, e);
+			});
+		}
+		const overviewBarElem = document.getElementById('graphOverviewBar');
+		if (overviewBarElem !== null) {
+			overviewBarElem.addEventListener('click', (e) => {
+				const targetEl = e.target instanceof Element ? <HTMLElement | null>e.target.closest('[data-gob-act]') : null;
+				if (targetEl === null) return;
+				handledEvent(e);
+				const act = targetEl.dataset.gobAct;
+				if (act === 'head') {
+					this.scrollToHead();
+				} else if (act === 'wip') {
+					this.scrollToCommit(UNCOMMITTED, true, true);
+				} else if (act === 'wt') {
+					const wtPath = targetEl.dataset.gobWt || '';
+					const wt = this.worktreeList.getWorktrees().find((w) => w.path === wtPath);
+					if (typeof wt !== 'undefined') {
+						if ((wt.dirtyCount || 0) > 0) this.openWorktreeWipInspector(wt);
+						else if (wt.branch !== null) this.focusBranchOrRef(wt.branch, false);
+					}
+				} else if (act === 'exitSolo') {
+					this.exitSolo();
+				} else if (act === 'shortcuts') {
+					this.toggleShortcutsModal();
+				}
 			});
 		}
 		terminalBtn.innerHTML = SVG_ICONS.terminal;
@@ -430,6 +470,9 @@ class GitGraphView {
 		this.hideUndoToast();
 		this.selectedCommits = new Set();
 		this.selectionAnchor = null;
+		this.expandedRefCommits.clear();
+		this.soloRef = null;
+		this.preSoloBranches = null;
 		this.currentRepo = repo;
 		this.currentRepoLoading = true;
 		this.scrollToHeadPending = false;
@@ -830,6 +873,29 @@ class GitGraphView {
 				const cmp = this.loadViewTo.compareBranches;
 				this.loadViewTo = null;
 				this.branchCompare.start(cmp.left, cmp.right);
+			} else if (typeof this.loadViewTo.ref === 'string' && this.loadViewTo.ref !== '') {
+				const ref = this.loadViewTo.ref;
+				this.loadViewTo = null;
+				const matched = this.commits.find((c) =>
+					c.hash.startsWith(ref) ||
+					c.heads.includes(ref) ||
+					c.remotes.some((r) => r.name === ref) ||
+					c.tags.some((tg) => tg.name === ref)
+				);
+				if (typeof matched !== 'undefined') {
+					this.scrollToCommit(matched.hash, true, true);
+				} else {
+					this.focusBranchOrRef(ref, false);
+				}
+			} else if (typeof this.loadViewTo.worktreePath === 'string' && this.loadViewTo.worktreePath !== '') {
+				const wtPath = this.loadViewTo.worktreePath;
+				this.loadViewTo = null;
+				const matchedWt = this.worktreeList.getWorktrees().find((w) => w.path === wtPath);
+				if (typeof matchedWt !== 'undefined') {
+					if (matchedWt.branch !== null) {
+						this.focusBranchOrRef(matchedWt.branch, false);
+					}
+				}
 			}
 		}
 		if (!keepLoadViewTo) this.loadViewTo = null;
@@ -847,11 +913,14 @@ class GitGraphView {
 		this.commitHead = null;
 		this.commitLookup = {};
 		this.renderedGitBranchHead = null;
+		this.cdvHistory = [];
+		this.cdvHistoryIndex = -1;
 		this.closeCommitDetails(false);
 		this.saveState();
 		this.graph.loadCommits(this.commits, this.commitHead, this.commitLookup, this.onlyFollowFirstParent);
 		this.tableElem.innerHTML = '';
 		this.footerElem.innerHTML = '';
+		this.renderOverviewBar();
 		this.renderGraph();
 		this.findWidget.refresh();
 	}
@@ -1358,6 +1427,7 @@ class GitGraphView {
 	/* Renderers */
 
 	public render() {
+		this.renderOverviewBar();
 		this.renderTable();
 		this.renderGraph();
 		this.renderOverviews();
@@ -1366,8 +1436,17 @@ class GitGraphView {
 	/**
 	 * Render the overviews of the loaded commits: the Minimap, and the markers alongside the scrollbar.
 	 */
-	private renderOverviews() {
-		this.minimap.render(this.commits, this.commitHead, this.graph.getVertexColours(), this.config.graph.colours, this.config.graph.minimap);
+	public renderOverviews() {
+		this.minimap.render(
+			this.commits,
+			this.commitHead,
+			this.graph.getVertexColours(),
+			this.config.graph.colours,
+			this.config.graph.minimap,
+			Object.values(this.pullRequestBadges),
+			this.worktreeList.getWorktrees(),
+			this.config.graph.minimapAdditionalTypes
+		);
 		this.updateMinimapViewport();
 		this.renderScrollMarkers();
 	}
@@ -1377,7 +1456,23 @@ class GitGraphView {
 	 */
 	public renderScrollMarkers() {
 		this.minimap.setFindMatches(this.findWidget.getMatchHashes());
-		this.scrollMarkers.render(this.commits, this.commitHead, this.graph.getVertexColours(), this.config.graph.colours, this.findWidget.getMatchHashes(), (index) => this.getVirtualRowCentre(index));
+		this.scrollMarkers.render(
+			this.commits,
+			this.commitHead,
+			this.graph.getVertexColours(),
+			this.config.graph.colours,
+			this.findWidget.getMatchHashes(),
+			(index) => this.getVirtualRowCentre(index),
+			{
+				enabled: this.config.graph.scrollMarkers ? this.config.graph.scrollMarkers.enabled : true,
+				types: this.config.graph.scrollMarkers ? this.config.graph.scrollMarkers.types : undefined,
+				prBadges: Object.values(this.pullRequestBadges),
+				worktrees: this.worktreeList.getWorktrees(),
+				onJumpToIndex: (index) => {
+					if (index < this.commits.length) this.scrollToCommit(this.commits[index].hash, true, true);
+				}
+			}
+		);
 	}
 
 	/**
@@ -1791,6 +1886,8 @@ class GitGraphView {
 		let date = formatShortDate(commit.date);
 		let branchLabels = getBranchLabels(commit.heads, commit.remotes);
 		let refBranches = '', refTags = '', j, k, refName, remoteName, refActive, refHtml, branchCheckedOutAtCommit: string | null = null;
+		const branchChips: { readonly html: string, readonly active: boolean }[] = [];
+		const tagChips: string[] = [];
 
 		for (j = 0; j < branchLabels.heads.length; j++) {
 			refName = escapeHtml(branchLabels.heads[j].name);
@@ -1812,17 +1909,40 @@ class GitGraphView {
 				? '<span class="gitRefPrBadge ci-' + prBadge.ciStatus + (prBadge.mergeQueueState ? ' inQueue' : '') + '" data-pr-url="' + escapeHtml(prBadge.url) + '" data-pr-branch="' + refName + '" data-pr-num="' + prBadge.number + '" title="' + escapeHtml('#' + prBadge.number + ' ' + prBadge.title + ' (CI: ' + prBadge.ciStatus + ')' + (prStackSuffix !== '' ? ' [Stack ' + prBadge.stackDepth + '/' + prBadge.stackSize + ']' : '') + (prMqSuffix !== '' ? ' [Merge Queue]' : '')) + '">#' + prBadge.number + (prBadge.ciStatus === 'success' ? ' &#10003;' : prBadge.ciStatus === 'failure' ? ' &#10005;' : prBadge.ciStatus === 'pending' ? ' &#9679;' : '') + prStackSuffix + prMqSuffix + '</span>'
 				: '';
 			refHtml += generateTrackingHtml(this.gitUpstreams[branchLabels.heads[j].name]) + prBadgeHtml + '</span>';
-			refBranches = refActive ? refHtml + refBranches : refBranches + refHtml;
-			if (refActive) branchCheckedOutAtCommit = this.gitBranchHead;
+			if (refActive) {
+				branchChips.unshift({ html: refHtml, active: true });
+				branchCheckedOutAtCommit = this.gitBranchHead;
+			} else {
+				branchChips.push({ html: refHtml, active: false });
+			}
 		}
 		for (j = 0; j < branchLabels.remotes.length; j++) {
 			refName = escapeHtml(branchLabels.remotes[j].name);
-			refBranches += '<span class="gitRef remote" data-name="' + refName + '" data-remote="' + (branchLabels.remotes[j].remote !== null ? escapeHtml(branchLabels.remotes[j].remote!) : '') + '">' + (refsInColumn ? SVG_ICONS.cloud : SVG_ICONS.branch) + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span></span>';
+			branchChips.push({
+				html: '<span class="gitRef remote" data-name="' + refName + '" data-remote="' + (branchLabels.remotes[j].remote !== null ? escapeHtml(branchLabels.remotes[j].remote!) : '') + '">' + (refsInColumn ? SVG_ICONS.cloud : SVG_ICONS.branch) + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span></span>',
+				active: false
+			});
 		}
 
 		for (j = 0; j < commit.tags.length; j++) {
 			refName = escapeHtml(commit.tags[j].name);
-			refTags += '<span class="gitRef tag" data-name="' + refName + '" data-tagtype="' + (commit.tags[j].annotated ? 'annotated' : 'lightweight') + '">' + SVG_ICONS.tag + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span></span>';
+			tagChips.push('<span class="gitRef tag" data-name="' + refName + '" data-tagtype="' + (commit.tags[j].annotated ? 'annotated' : 'lightweight') + '">' + SVG_ICONS.tag + '<span class="gitRefName" data-fullref="' + refName + '">' + refName + '</span></span>');
+		}
+
+		const maxRefs = typeof this.config.graph.maxVisibleRefsPerCommit === 'number' && this.config.graph.maxVisibleRefsPerCommit > 0
+			? this.config.graph.maxVisibleRefsPerCommit
+			: 0;
+		const totalRefChips = branchChips.length + tagChips.length;
+		if (maxRefs > 0 && totalRefChips > maxRefs && !this.expandedRefCommits.has(commit.hash)) {
+			const visibleBranches = branchChips.slice(0, maxRefs);
+			const remainingSlots = Math.max(0, maxRefs - visibleBranches.length);
+			const visibleTags = tagChips.slice(0, remainingSlots);
+			const hiddenCount = totalRefChips - visibleBranches.length - visibleTags.length;
+			refBranches = visibleBranches.map((c) => c.html).join('');
+			refTags = visibleTags.join('') + '<button type="button" class="gitRefOverflow" data-expand-refs="' + escapeHtml(commit.hash) + '" title="' + escapeHtml(t('Show {0} more references', hiddenCount)) + '">+' + hiddenCount + '</button>';
+		} else {
+			refBranches = branchChips.map((c) => c.html).join('');
+			refTags = tagChips.join('');
 		}
 
 		if (commit.stash !== null) {
@@ -1837,13 +1957,17 @@ class GitGraphView {
 			) + '."></span>'
 			: '';
 
+		const ghostRefsHtml = this.config.graph.showGhostRefsOnRowHover !== false && commit.hash !== UNCOMMITTED && commit.stash === null && branchLabels.heads.length === 0 && branchLabels.remotes.length === 0 && commit.tags.length === 0
+			? '<span class="ghostRefs"><button type="button" class="ghostRefBtn" data-ghost-act="branch" data-hash="' + escapeHtml(commit.hash) + '" title="' + escapeHtml(t('Create Branch here')) + '">+ ' + t('Branch') + '</button><button type="button" class="ghostRefBtn" data-ghost-act="tag" data-hash="' + escapeHtml(commit.hash) + '" title="' + escapeHtml(t('Add Tag here')) + '">+ ' + t('Tag') + '</button></span>'
+			: '';
+
 		message = this.branchCompare.getRowLabelHtml(commit.hash) + this.operationBar.getBisectLabelHtml(commit.hash) + message;
 		return '<tr class="commit' + this.branchCompare.getRowClass(commit.hash) + this.operationBar.getBisectRowClass(commit.hash) + (commit.hash === currentHash ? ' current' : '') + (mutedCommits[i] ? ' mute' : '') + (this.selectedCommits.has(commit.hash) ? ' multiSelected' : '') + (this.expandedCommit !== null && (this.expandedCommit.commitHash === commit.hash || this.expandedCommit.compareWithHash === commit.hash) ? ' ' + CLASS_COMMIT_DETAILS_OPEN : '') + (commit.hash === this.flashingHash ? ' flash' : '') + '"' + (commit.hash !== UNCOMMITTED ? (commit.stash === null ? ' draggable="true"' : '') : ' id="uncommittedChanges"') + ' data-id="' + i + '" data-color="' + vertexColours[i] + '">' +
 			(refsInColumn
-				? '<td class="refsCol">' + (refBranches !== '' || refTags !== '' ? '<span class="refsColLabels" style="--git-graph-refs:' + (branchLabels.heads.length + branchLabels.remotes.length + commit.tags.length + (commit.stash !== null ? 1 : 0)) + '">' + refBranches + refTags + '</span>' : '') + '</td><td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + message
+				? '<td class="refsCol">' + (refBranches !== '' || refTags !== '' ? '<span class="refsColLabels" style="--git-graph-refs:' + (branchLabels.heads.length + branchLabels.remotes.length + commit.tags.length + (commit.stash !== null ? 1 : 0)) + '">' + refBranches + refTags + '</span>' : '') + '</td><td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + message + ghostRefsHtml
 				: this.config.referenceLabels.branchLabelsAlignedToGraph
-					? '<td class="graphCol">' + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td class="descriptionCol"><span class="description">' + commitDot + (this.config.referenceLabels.tagLabelsOnRight ? message + refTags : refTags + message)
-					: '<td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + refBranches + (this.config.referenceLabels.tagLabelsOnRight ? message + refTags : refTags + message)) + '</span></td>' +
+					? '<td class="graphCol">' + (refBranches !== '' ? '<span style="margin-left:' + (widthsAtVertices[i] - 4) + 'px"' + refBranches.substring(5) : '') + '</td><td class="descriptionCol"><span class="description">' + commitDot + (this.config.referenceLabels.tagLabelsOnRight ? message + refTags : refTags + message) + ghostRefsHtml
+					: '<td class="graphCol"></td><td class="descriptionCol"><span class="description">' + commitDot + refBranches + (this.config.referenceLabels.tagLabelsOnRight ? message + refTags : refTags + message) + ghostRefsHtml) + '</span></td>' +
 			(colVisibility.date ? '<td class="dateCol text" title="' + date.title + '">' + date.formatted + '</td>' : '') +
 			(colVisibility.author ? '<td class="authorCol text" title="' + escapeHtml(commit.author + ' <' + commit.email + '>') + '">' + (this.config.fetchAvatars ? '<span class="avatar" data-email="' + escapeHtml(commit.email) + '">' + (typeof this.avatars[commit.email] === 'string' ? '<img class="avatarImg" src="' + this.avatars[commit.email] + '">' : '') + '</span>' : generateAuthorInitialHtml(commit.author)) + escapeHtml(commit.author) + '</td>' : '') +
 			(fileHistory !== null ? '<td class="fileChangesCol">' + (typeof fileChange !== 'undefined'
@@ -1970,21 +2094,45 @@ class GitGraphView {
 	 * @param toggle Add or remove the commit, instead of selecting a range of commits.
 	 */
 	private selectCommits(hash: string, toggle: boolean) {
+		const multiselectMode = this.config.graph.multiselect || 'on';
+		if (multiselectMode === 'off') return;
 		const isSelectable = (commit: GG.GitCommit) => commit.hash !== UNCOMMITTED && commit.stash === null;
 		const index = this.commitLookup[hash];
 		if (typeof index !== 'number' || !isSelectable(this.commits[index])) return;
 		if (toggle) {
-			if (this.selectedCommits.has(hash)) {
-				this.selectedCommits.delete(hash);
+			const candidate = new Set(this.selectedCommits);
+			if (candidate.has(hash)) {
+				candidate.delete(hash);
 			} else {
-				this.selectedCommits.add(hash);
+				candidate.add(hash);
 			}
+			if (multiselectMode === 'topological' && candidate.size > 1) {
+				const check = validateTopologicalSelection(this.commits, this.commitLookup, Array.from(candidate));
+				if (!check.valid) {
+					dialog.showError(t('Topological Selection'), check.reason || t('Selected commits must form a contiguous chain.'), null, null);
+					return;
+				}
+			}
+			this.selectedCommits = candidate;
 			this.selectionAnchor = hash;
 		} else {
 			let anchor = this.selectionAnchor !== null ? this.selectionAnchor : this.expandedCommit !== null && this.expandedCommit.compareWithHash === null ? this.expandedCommit.commitHash : hash;
 			if (typeof this.commitLookup[anchor] !== 'number') anchor = hash;
 			const from = Math.min(index, this.commitLookup[anchor]), to = Math.max(index, this.commitLookup[anchor]);
-			this.selectedCommits = new Set(this.commits.slice(from, to + 1).filter(isSelectable).map((commit) => commit.hash));
+			const rawRange = this.commits.slice(from, to + 1).filter(isSelectable).map((commit) => commit.hash);
+			if (multiselectMode === 'topological' && rawRange.length > 1) {
+				// Walk contiguous single-parent chain from newest commit in range
+				const chain: string[] = [rawRange[0]];
+				for (let ci = 0; ci < rawRange.length - 1; ci++) {
+					const cur = this.commits[this.commitLookup[chain[chain.length - 1]]];
+					if (cur.parents.length !== 1 || cur.parents[0] !== rawRange[ci + 1]) break;
+					chain.push(rawRange[ci + 1]);
+				}
+				const check = validateTopologicalSelection(this.commits, this.commitLookup, chain);
+				this.selectedCommits = new Set(check.valid ? chain : [hash]);
+			} else {
+				this.selectedCommits = new Set(rawRange);
+			}
 			this.selectionAnchor = anchor;
 		}
 		this.renderCommitSelection();
@@ -2026,6 +2174,9 @@ class GitGraphView {
 		selectionElem.innerHTML = count > 0
 			? '<span class="listFooterSelectionCount">' + (count !== 1 ? t('{0} commits selected', count) : t('1 commit selected')) + '</span>' +
 				'<span class="listFooterAction" data-action="cherrypick">' + MENU_ICONS.cherrypick + t('Cherry Pick') + ELLIPSIS + '</span>' +
+				(count >= 2 ? '<span class="listFooterAction" data-action="squash">' + MENU_ICONS.fixup + t('Squash') + ELLIPSIS + '</span>' : '') +
+				'<span class="listFooterAction" data-action="drop">' + MENU_ICONS.trash + t('Drop') + ELLIPSIS + '</span>' +
+				(count >= 2 ? '<span class="listFooterAction" data-action="changelog">' + MENU_ICONS.sparkle + t('AI Changelog') + '</span>' : '') +
 				'<span class="listFooterAction" data-action="copyHashes">' + MENU_ICONS.copy + t('Copy Hashes') + '</span>' +
 				'<span class="listFooterAction" data-action="clear" title="' + t('Escape') + '">' + MENU_ICONS.clear + t('Clear Selection') + '</span>'
 			: '';
@@ -2456,23 +2607,30 @@ class GitGraphView {
 					const elem = this.getCommitElem(newHashIndex);
 					if (elem !== null) this.loadCommitDetails(elem);
 				}
+			} else if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && this.expandedCommit !== null) {
+				handledEvent(e);
+				this.navigateCdvHistory(e.key === 'ArrowLeft' ? -1 : 1);
 			} else if (e.key && (e.ctrlKey || e.metaKey)) {
 				if (chordInProgress) return; // Leave the second keypress of a chord to Visual Studio Code
 
-				const key = e.key.toLowerCase(), keybindings = this.config.keybindings;
+				const key = e.key.toLowerCase();
+				const kbStash = this.getEffectiveKeybinding('scrollToStash');
+				const kbRefresh = this.getEffectiveKeybinding('refresh');
+				const kbFind = this.getEffectiveKeybinding('find');
+				const kbHead = this.getEffectiveKeybinding('scrollToHead');
 				if (e.shiftKey && !e.altKey && key === 'k') {
 					this.commandPalette.open();
 					handledEvent(e);
-				} else if (key === keybindings.scrollToStash) {
+				} else if (kbStash !== null && key === kbStash) {
 					this.scrollToStash(!e.shiftKey);
 					handledEvent(e);
-				} else if (!e.shiftKey && key === keybindings.refresh) {
+				} else if (!e.shiftKey && kbRefresh !== null && key === kbRefresh) {
 					this.refresh(true, true);
 					handledEvent(e);
-				} else if (!e.shiftKey && key === keybindings.find) {
+				} else if (!e.shiftKey && kbFind !== null && key === kbFind) {
 					this.findWidget.show(true);
 					handledEvent(e);
-				} else if (!e.shiftKey && key === keybindings.scrollToHead && this.commitHead !== null) {
+				} else if (!e.shiftKey && kbHead !== null && key === kbHead && this.commitHead !== null) {
 					this.scrollToHead();
 					handledEvent(e);
 				} else if (key === 'c' && !e.shiftKey && !e.altKey && this.copyCommitHashWithKeyboard(e)) {
@@ -2480,8 +2638,16 @@ class GitGraphView {
 				} else if (key.length === 1 && !['a', 'c', 'v', 'x', 'y', 'z'].includes(key)) {
 					possibleChordStart = Date.now();
 				}
+			} else if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey && !(e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement || (e.target instanceof HTMLElement && e.target.isContentEditable))) {
+				if (!this.commandPalette.isOpen() && !this.settingsWidget.isVisible() && !this.rebaseEditor.isOpen() && !this.branchCleanup.isOpen() && !this.commitExplainer.isCommitMessageModalOpen() && !this.findWidget.isVisible()) {
+					this.toggleShortcutsModal();
+					handledEvent(e);
+				}
 			} else if (e.key === 'Escape') {
-				if (this.commandPalette.isOpen()) {
+				if (this.isShortcutsModalOpen()) {
+					this.closeShortcutsModal();
+					handledEvent(e);
+				} else if (this.commandPalette.isOpen()) {
 					this.commandPalette.close();
 					handledEvent(e);
 				} else if (this.branchCommitCompareModal.isOpen()) {
@@ -2672,6 +2838,22 @@ class GitGraphView {
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
 
+			if ((eventElem = eventTarget.closest('.ghostRefBtn')) !== null) {
+				handledEvent(e);
+				return;
+			}
+
+			if ((eventElem = eventTarget.closest('.gitRefOverflow')) !== null) {
+				handledEvent(e);
+				const expandHash = eventElem.dataset.expandRefs || '';
+				if (expandHash !== '') {
+					this.expandedRefCommits.add(expandHash);
+					if (this.expandedCommit === null || this.isCdvDocked()) this.renderRows();
+					else this.render();
+				}
+				return;
+			}
+
 			if ((eventElem = eventTarget.closest('.gitRefWipBadge')) !== null) {
 				handledEvent(e);
 				const wtPath = typeof eventElem.dataset.wtPath === 'string' ? eventElem.dataset.wtPath : '';
@@ -2771,6 +2953,22 @@ class GitGraphView {
 			const eventTarget = <Element>e.target;
 			if (isUrlElem(eventTarget)) return;
 			let eventElem: HTMLElement | null;
+
+			if ((eventElem = eventTarget.closest('.ghostRefBtn')) !== null) {
+				handledEvent(e);
+				return;
+			}
+
+			if ((eventElem = eventTarget.closest('.gitRefOverflow')) !== null) {
+				handledEvent(e);
+				const expandHash = eventElem.dataset.expandRefs || '';
+				if (expandHash !== '') {
+					this.expandedRefCommits.add(expandHash);
+					if (this.expandedCommit === null || this.isCdvDocked()) this.renderRows();
+					else this.render();
+				}
+				return;
+			}
 
 			if ((eventElem = eventTarget.closest('.gitRefWipBadge')) !== null) {
 				handledEvent(e);
@@ -2922,11 +3120,36 @@ class GitGraphView {
 		const commit = this.getCommitOfElem(commitElem);
 		if (commit === null) return;
 
+		if (!this.navigatingCdvHistory && commit.hash !== this.cdvHistory[this.cdvHistoryIndex]) {
+			this.cdvHistory = this.cdvHistory.slice(0, this.cdvHistoryIndex + 1);
+			this.cdvHistory.push(commit.hash);
+			if (this.cdvHistory.length > 50) this.cdvHistory.shift();
+			this.cdvHistoryIndex = this.cdvHistory.length - 1;
+		}
+
 		this.closeCommitDetails(false);
 		this.saveExpandedCommitLoading(parseInt(commitElem.dataset.id!), commit.hash, commitElem, null, null);
 		commitElem.classList.add(CLASS_COMMIT_DETAILS_OPEN);
 		this.renderCommitDetailsView(false);
 		this.requestCommitDetails(commit.hash, false);
+	}
+
+	public navigateCdvHistory(delta: -1 | 1) {
+		const nextIndex = this.cdvHistoryIndex + delta;
+		if (nextIndex < 0 || nextIndex >= this.cdvHistory.length) return;
+		const hash = this.cdvHistory[nextIndex];
+		const commitIndex = this.commitLookup[hash];
+		if (typeof commitIndex !== 'number') return;
+		const elem = this.getCommitElem(commitIndex);
+		if (elem === null) return;
+		this.cdvHistoryIndex = nextIndex;
+		this.navigatingCdvHistory = true;
+		try {
+			this.loadCommitDetails(elem);
+			this.scrollToCommit(hash, false);
+		} finally {
+			this.navigatingCdvHistory = false;
+		}
 	}
 
 	public closeCommitDetails(saveAndRender: boolean) {
@@ -3197,6 +3420,8 @@ class GitGraphView {
 				(!expandedCommit.loading ? '<div id="cdvReviewSession" class="cdvControlBtn" title="' + escapeHtml(t('Review Session (Uncommitted / Unpushed / Branch)')) + '">' + MENU_ICONS.eye + '</div>' : '') +
 				(codeReviewPossible ? '<div id="cdvCodeReview" class="cdvControlBtn">' + SVG_ICONS.review + '</div>' : '') +
 				(externalDiffPossible ? '<div id="cdvExternalDiff" class="cdvControlBtn">' + SVG_ICONS.linkExternal + '</div>' : '') +
+				'<div id="cdvBack" class="cdvControlBtn' + (this.cdvHistoryIndex <= 0 ? ' ' + CLASS_DISABLED : '') + '" title="' + escapeHtml(t('Back in History (Alt+Left)')) + '">&#8592;</div>' +
+				'<div id="cdvForward" class="cdvControlBtn' + (this.cdvHistoryIndex >= this.cdvHistory.length - 1 ? ' ' + CLASS_DISABLED : '') + '" title="' + escapeHtml(t('Forward in History (Alt+Right)')) + '">&#8594;</div>' +
 				(expandedCommit.compareWithHash === null ? '<div id="cdvPrev" class="cdvControlBtn" title="' + t('Previous Commit') + '">' + SVG_ICONS.arrowUp + '</div><div id="cdvNext" class="cdvControlBtn" title="' + t('Next Commit') + '">' + SVG_ICONS.arrowDown + '</div>' : '') +
 				'<div id="cdvClose" class="cdvControlBtn" title="' + t('Close') + '">' + SVG_ICONS.close + '</div></div>' +
 				html + '</div><div class="cdvHeightResize"></div>';
@@ -3621,6 +3846,9 @@ class GitGraphView {
 		const prevElem = document.getElementById('cdvPrev'), nextElem = document.getElementById('cdvNext');
 		if (prevElem !== null) prevElem.addEventListener('click', () => navigate(-1));
 		if (nextElem !== null) nextElem.addEventListener('click', () => navigate(1));
+		const backElem = document.getElementById('cdvBack'), forwardElem = document.getElementById('cdvForward');
+		if (backElem !== null) backElem.addEventListener('click', () => this.navigateCdvHistory(-1));
+		if (forwardElem !== null) forwardElem.addEventListener('click', () => this.navigateCdvHistory(1));
 
 		const copyHashElem = document.getElementById('cdvCopyHash');
 		if (copyHashElem !== null) copyHashElem.addEventListener('click', () => sendMessage({ command: 'copyToClipboard', type: t('Commit Hash'), data: expandedCommit.commitHash }));
@@ -4511,6 +4739,13 @@ class GitGraphView {
 					icon: MENU_ICONS.copy,
 					visible: true,
 					onClick: () => this.exportAgentContext()
+				},
+				{
+					title: t('Keyboard Shortcuts Cheatsheet'),
+					icon: MENU_ICONS.subject,
+					shortcut: '?',
+					visible: true,
+					onClick: () => this.openShortcutsModal()
 				}
 			],
 			[
@@ -4589,6 +4824,12 @@ class GitGraphView {
 					icon: MENU_ICONS.trash,
 					visible: true,
 					onClick: () => this.branchCleanup.show()
+				},
+				{
+					title: t('Repository Health & Optimization') + ELLIPSIS,
+					icon: MENU_ICONS.settings,
+					visible: true,
+					onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'checkRepoHealth', repo: this.currentRepo })
 				}
 			],
 			[
@@ -4637,6 +4878,199 @@ class GitGraphView {
 			} else {
 				this.render();
 			}
+			this.renderOverviews();
+		}
+	}
+
+	public processLoadContributorsResponse(msg: GG.ResponseLoadContributors) {
+		this.inlineCommitBox.processContributorsResponse(msg);
+	}
+
+	public processLoadCodingAgentsResponse(msg: GG.ResponseLoadCodingAgents) {
+		this.settingsWidget.processCodingAgentsResponse(msg.agents);
+	}
+
+	public getSoloRef(): string | null {
+		return this.soloRef;
+	}
+
+	public soloBranchOrTag(refName: string, isTag: boolean = false) {
+		if (this.soloRef === null) {
+			this.preSoloBranches = this.currentBranches !== null ? this.currentBranches.slice() : null;
+		}
+		if (isTag) {
+			this.soloRef = 'tag:' + refName;
+			const tagCommit = this.loadedCommits.find((c) => c.tags.some((tg) => tg.name === refName));
+			if (typeof tagCommit !== 'undefined') {
+				const byHash = new Map<string, GG.GitCommit>();
+				for (let i = 0; i < this.loadedCommits.length; i++) {
+					byHash.set(this.loadedCommits[i].hash, this.loadedCommits[i]);
+				}
+				const keep = new Set<string>();
+				const queue: string[] = [tagCommit.hash];
+				while (queue.length > 0) {
+					const cur = queue.pop()!;
+					if (keep.has(cur)) continue;
+					keep.add(cur);
+					const cObj = byHash.get(cur);
+					if (cObj) {
+						for (let pi = 0; pi < cObj.parents.length; pi++) {
+							if (!keep.has(cObj.parents[pi])) queue.push(cObj.parents[pi]);
+						}
+					}
+				}
+				this.setCompareFilter(keep);
+				this.renderOverviewBar();
+			}
+			return;
+		}
+		this.soloRef = refName;
+		this.compareFilter = null;
+		this.branchDropdown.setOptions(this.getBranchOptions(true), [refName]);
+		this.setShownBranches([refName]);
+	}
+
+	public exitSolo() {
+		if (this.soloRef === null) return;
+		this.soloRef = null;
+		this.compareFilter = null;
+		const restore = this.preSoloBranches !== null && this.preSoloBranches.length > 0 ? this.preSoloBranches : [SHOW_ALL_BRANCHES];
+		this.preSoloBranches = null;
+		this.branchDropdown.setOptions(this.getBranchOptions(true), restore);
+		this.setShownBranches(restore);
+	}
+
+	public renderOverviewBar() {
+		const bar = document.getElementById('graphOverviewBar');
+		if (bar === null) return;
+		const enabled = this.config.graph.overviewBarEnabled !== false && this.commits.length > 0;
+		if (!enabled) {
+			bar.classList.remove(CLASS_ACTIVE);
+			bar.innerHTML = '';
+			document.body.style.setProperty('--git-graph-headerHeight', this.controlsElem.offsetHeight + 'px');
+			return;
+		}
+		const chips: string[] = [];
+		const headLabel = this.gitBranchHead !== null
+			? this.gitBranchHead
+			: (this.commitHead !== null ? abbrevCommit(this.commitHead) : 'HEAD');
+		chips.push(
+			'<button type="button" class="gobChip gobHead" data-gob-act="head" title="' + escapeHtml(t('Scroll to HEAD')) + '">' +
+			SVG_ICONS.branch + '<span>' + escapeHtml(headLabel) + '</span></button>'
+		);
+		if (this.gitBranchHead !== null && typeof this.gitUpstreams[this.gitBranchHead] !== 'undefined' && !this.gitUpstreams[this.gitBranchHead].gone) {
+			const up = this.gitUpstreams[this.gitBranchHead];
+			if (up.ahead > 0 || up.behind > 0) {
+				const syncParts: string[] = [];
+				if (up.ahead > 0) syncParts.push('\u2191' + up.ahead);
+				if (up.behind > 0) syncParts.push('\u2193' + up.behind);
+				chips.push(
+					'<button type="button" class="gobChip gobSync" data-gob-act="head" title="' + escapeHtml(up.name) + '">' +
+					'<span>' + escapeHtml(syncParts.join(' ')) + ' · ' + escapeHtml(up.name) + '</span></button>'
+				);
+			}
+		}
+		if (this.commits.length > 0 && this.commits[0].hash === UNCOMMITTED) {
+			chips.push(
+				'<button type="button" class="gobChip gobWip" data-gob-act="wip" title="' + escapeHtml(t('Jump to Uncommitted Changes')) + '">' +
+				'<span>\u25CF ' + escapeHtml(t('Uncommitted')) + '</span></button>'
+			);
+		}
+		const otherWts = this.worktreeList.getWorktrees().filter((w) => !w.isCurrent).slice(0, 3);
+		for (let i = 0; i < otherWts.length; i++) {
+			const wt = otherWts[i];
+			const wtLabel = wt.branch || abbrevCommit(wt.head || '');
+			const dirty = typeof wt.dirtyCount === 'number' && wt.dirtyCount > 0 ? ' (WIP ' + wt.dirtyCount + ')' : '';
+			chips.push(
+				'<button type="button" class="gobChip gobWorktree" data-gob-act="wt" data-gob-wt="' + escapeHtml(wt.path) + '" title="' + escapeHtml(wt.path) + '">' +
+				WORKTREE_ICON + '<span>' + escapeHtml(wtLabel + dirty) + '</span></button>'
+			);
+		}
+		if (this.soloRef !== null) {
+			const cleanSolo = this.soloRef.startsWith('tag:')
+				? this.soloRef.substring(4)
+				: (this.soloRef.startsWith('remotes/') ? this.soloRef.substring(8) : this.soloRef);
+			chips.push(
+				'<span class="gobSoloBadge"><span>' + escapeHtml(t('Solo: {0}', cleanSolo)) + '</span>' +
+				'<button type="button" class="gobSoloExit" data-gob-act="exitSolo" title="' + escapeHtml(t('Exit Solo Mode')) + '">&times;</button></span>'
+			);
+		}
+		bar.innerHTML =
+			'<div class="gobChips">' + chips.join('') + '</div>' +
+			'<button type="button" id="overviewShortcutsBtn" class="gobBtn" data-gob-act="shortcuts" title="' + escapeHtml(t('Keyboard Shortcuts (?)')) + '"><kbd>?</kbd><span>' + escapeHtml(t('Shortcuts')) + '</span></button>';
+		bar.classList.add(CLASS_ACTIVE);
+		document.body.style.setProperty('--git-graph-headerHeight', this.controlsElem.offsetHeight + 'px');
+	}
+
+	private getEffectiveKeybinding(action: 'find' | 'refresh' | 'scrollToHead' | 'scrollToStash'): string | null {
+		const ov = this.config.graph.shortcutOverrides;
+		if (ov && typeof ov[action] === 'string' && ov[action].trim() !== '') {
+			return ov[action].trim().toLowerCase();
+		}
+		return this.config.keybindings[action];
+	}
+
+	public isShortcutsModalOpen(): boolean {
+		return this.shortcutsModalElem !== null;
+	}
+
+	public toggleShortcutsModal() {
+		if (this.isShortcutsModalOpen()) this.closeShortcutsModal();
+		else this.openShortcutsModal();
+	}
+
+	public closeShortcutsModal() {
+		if (this.shortcutsModalElem !== null) {
+			this.shortcutsModalElem.remove();
+			this.shortcutsModalElem = null;
+		}
+	}
+
+	public openShortcutsModal() {
+		this.closeShortcutsModal();
+		const mod = /Mac/.test(navigator.platform) ? '\u2318' : 'Ctrl+';
+		const shiftMod = /Mac/.test(navigator.platform) ? '\u21E7\u2318' : 'Ctrl+Shift+';
+		const fmtModKey = (k: string | null) => k !== null && k !== '' ? mod + k.toUpperCase() : t('Unassigned');
+		const rows: ReadonlyArray<[string, string]> = [
+			[fmtModKey(this.getEffectiveKeybinding('find')), t('Find / Filter Commits')],
+			[fmtModKey(this.getEffectiveKeybinding('refresh')), t('Refresh Repository Graph')],
+			[fmtModKey(this.getEffectiveKeybinding('scrollToHead')), t('Scroll to HEAD Commit')],
+			[fmtModKey(this.getEffectiveKeybinding('scrollToStash')), t('Jump to Next Stash')],
+			[shiftMod + 'K', t('Open Graph Command Palette')],
+			['\u2191 / \u2193', t('Previous / Next Commit in Table')],
+			[mod + '\u2191 / \u2193', t('Follow First Parent / Child on Branch')],
+			['Alt+\u2190 / \u2192', t('Commit Details History Back / Forward')],
+			['Shift+Click', t('Select Commit Range (Multi-Select)')],
+			[mod + 'C', t('Copy Selected Commit Hash')],
+			['?', t('Toggle Keyboard Shortcuts Cheatsheet')],
+			['Esc', t('Close Active Modal, Menu, or Details')]
+		];
+		const overlay = document.createElement('div');
+		overlay.id = 'shortcutsModal';
+		overlay.className = 'shortcutsOverlay';
+		overlay.setAttribute('role', 'dialog');
+		overlay.setAttribute('aria-label', t('Keyboard Shortcuts'));
+		overlay.innerHTML =
+			'<div class="shortcutsPanel">' +
+			'<div class="shortcutsHeader"><span>' + escapeHtml(t('Keyboard Shortcuts')) + '</span><button type="button" id="shortcutsCloseBtn" class="rsCloseBtn" title="' + escapeHtml(t('Close')) + '">' + SVG_ICONS.close + '</button></div>' +
+			'<div class="shortcutsBody">' +
+			rows.map((r) => '<div class="shortcutsRow"><kbd class="gcpKbd">' + escapeHtml(r[0]) + '</kbd><span>' + escapeHtml(r[1]) + '</span></div>').join('') +
+			'</div>' +
+			'<div class="shortcutsFooter"><button type="button" id="shortcutsCustomizeBtn" class="rsBtn">' + escapeHtml(t('Customize in Settings')) + ELLIPSIS + '</button></div>' +
+			'</div>';
+		overlay.addEventListener('click', (e) => {
+			if (e.target === overlay) this.closeShortcutsModal();
+		});
+		document.body.appendChild(overlay);
+		this.shortcutsModalElem = overlay;
+		const closeBtn = document.getElementById('shortcutsCloseBtn');
+		if (closeBtn !== null) closeBtn.addEventListener('click', () => this.closeShortcutsModal());
+		const custBtn = document.getElementById('shortcutsCustomizeBtn');
+		if (custBtn !== null) {
+			custBtn.addEventListener('click', () => {
+				this.closeShortcutsModal();
+				this.settingsWidget.show(this.currentRepo);
+			});
 		}
 	}
 

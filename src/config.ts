@@ -1,8 +1,15 @@
 import { AI_PROVIDER_VALUES, AiProvider, getAiSettingsSnapshot } from './aiProviders';
 import * as vscode from 'vscode';
 import {
+	AiCustomInstructionsConfig,
 	AiSettingsConfig,
+	AiTaskKey,
+	AiTaskModelOverride,
+	AiTaskModelsConfig,
+	AnnotationLocation,
+	AnnotationToggleMode,
 	AppearanceConfig,
+	AutolinkRule,
 	CommitDetailsViewConfig,
 	CommitDetailsViewLocation,
 	CommitOrdering,
@@ -10,29 +17,39 @@ import {
 	CustomBranchGlobPattern,
 	CustomEmojiShortcodeMapping,
 	CustomPullRequestProvider,
+	CustomRemoteConfig,
 	DateFormat,
 	DateFormatType,
 	DateType,
 	DefaultColumnVisibility,
 	DialogDefaults,
+	EditorAnnotationsSnapshot,
+	EditorModeId,
 	FileViewType,
+	GitMapModeConfig,
 	GitResetMode,
 	GraphConfig,
 	GraphDensity,
+	GraphMarkerType,
+	GraphMultiSelectMode,
 	GraphNodeStyle,
 	GraphStyle,
 	GraphUncommittedChangesStyle,
 	KeybindingConfig,
+	LaunchpadBucket,
+	LaunchpadConfigSnapshot,
 	LineHistoryLocation,
 	MuteCommitsConfig,
 	OnRepoLoadConfig,
 	RefLabelAlignment,
 	ReferenceLabelsConfig,
 	RepoDropdownOrder,
+	ScmViewsConfigSnapshot,
 	SquashMessageFormat,
 	StatusBarItemDisplay,
 	TabIconColourTheme,
-	TagType
+	TagType,
+	TerminalLinksConfigSnapshot
 } from './types';
 
 export const GRAPH_COLOUR_PRESETS: { readonly [name: string]: ReadonlyArray<string> } = {
@@ -409,10 +426,18 @@ class Config {
 		return {
 			colours: typeof preset !== 'undefined' ? preset.slice() : this.defaultGraphColours,
 			density: this.config.get<string>('graph.density', 'Comfortable') === 'Compact' ? GraphDensity.Compact : GraphDensity.Comfortable,
+			followTerminal: this.followTerminal,
 			freezeColumnHeaders: !!this.config.get('graph.freezeColumnHeaders', true),
 			freezeFooter: !!this.config.get('graph.freezeFooter', true),
+			maxVisibleRefsPerCommit: this.graphMaxVisibleRefs,
 			minimap: !!this.config.get('graph.minimap', true),
+			minimapAdditionalTypes: this.graphMinimapAdditionalTypes,
+			multiselect: this.graphMultiselect,
 			nodeStyle: nodeStyle,
+			overviewBarEnabled: this.graphOverviewBarEnabled,
+			scrollMarkers: this.graphScrollMarkers,
+			shortcutOverrides: this.graphShortcutOverrides,
+			showGhostRefsOnRowHover: this.graphShowGhostRefs,
 			style: this.getRenamedExtensionSetting<string>('graph.style', 'graphStyle', 'rounded') === 'angular'
 				? GraphStyle.Angular
 				: GraphStyle.Rounded,
@@ -595,7 +620,61 @@ class Config {
 	 * Get the AI settings snapshot for the Git Map View.
 	 */
 	get ai(): AiSettingsConfig {
-		return getAiSettingsSnapshot(this.explainCommit, this.aiCommitMessage, this.aiProvider, this.aiBaseUrl, this.aiModel);
+		const base = getAiSettingsSnapshot(this.explainCommit, this.aiCommitMessage, this.aiProvider, this.aiBaseUrl, this.aiModel);
+		return Object.assign({}, base, {
+			taskModels: this.aiTaskModels,
+			customInstructions: this.aiCustomInstructions,
+			excludeFiles: this.aiExcludeFiles,
+			largePromptWarningThreshold: this.aiLargePromptWarningThreshold,
+			autoRebaseConfidenceThreshold: this.aiAutoRebaseConfidenceThreshold
+		});
+	}
+
+	get aiTaskModels(): AiTaskModelsConfig {
+		const raw = this.config.get<unknown>('ai.taskModels', {});
+		if (!raw || typeof raw !== 'object') return {};
+		const obj = raw as { [k: string]: unknown };
+		const keys: AiTaskKey[] = ['commitMessage', 'reviewChanges', 'resolveConflicts', 'explainAndSearch'];
+		const out: { [K in AiTaskKey]?: AiTaskModelOverride } = {};
+		for (let i = 0; i < keys.length; i++) {
+			const k = keys[i];
+			const v = obj[k];
+			if (v && typeof v === 'object') {
+				const entry = v as { provider?: unknown, baseUrl?: unknown, model?: unknown };
+				out[k] = {
+					provider: typeof entry.provider === 'string' && entry.provider.trim() !== '' ? entry.provider.trim() : undefined,
+					baseUrl: typeof entry.baseUrl === 'string' && entry.baseUrl.trim() !== '' ? entry.baseUrl.trim() : undefined,
+					model: typeof entry.model === 'string' && entry.model.trim() !== '' ? entry.model.trim() : undefined
+				};
+			}
+		}
+		return out;
+	}
+
+	get aiCustomInstructions(): AiCustomInstructionsConfig {
+		return {
+			commitMessage: String(this.config.get('ai.customInstructions.commitMessage', '') || '').trim(),
+			reviewChanges: String(this.config.get('ai.customInstructions.reviewChanges', '') || '').trim(),
+			resolveConflicts: String(this.config.get('ai.customInstructions.resolveConflicts', '') || '').trim(),
+			explainChanges: String(this.config.get('ai.customInstructions.explainChanges', '') || '').trim(),
+			generateChangelog: String(this.config.get('ai.customInstructions.generateChangelog', '') || '').trim(),
+			generateStashMessage: String(this.config.get('ai.customInstructions.generateStashMessage', '') || '').trim()
+		};
+	}
+
+	get aiExcludeFiles(): ReadonlyArray<string> {
+		const raw = this.config.get<unknown>('ai.exclude.files', ['**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml', '**/*.min.js']);
+		return Array.isArray(raw) ? raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '') : [];
+	}
+
+	get aiLargePromptWarningThreshold(): number {
+		const val = this.config.get('ai.largePromptWarningThreshold', 24000);
+		return typeof val === 'number' && Number.isFinite(val) && val >= 0 ? Math.floor(val) : 24000;
+	}
+
+	get aiAutoRebaseConfidenceThreshold(): number {
+		const val = this.config.get('ai.autoRebase.confidenceThreshold', 0.75);
+		return typeof val === 'number' && Number.isFinite(val) ? Math.max(0, Math.min(1, val)) : 0.75;
 	}
 
 	/**
@@ -603,6 +682,336 @@ class Config {
 	 */
 	get codeLensEnabled() {
 		return !!this.config.get('codeLens.enabled', false);
+	}
+
+	get codeLensConfig(): {
+		readonly enabled: boolean,
+		readonly recentChangeEnabled: boolean,
+		readonly recentChangeCommand: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit',
+		readonly authorsEnabled: boolean,
+		readonly authorsCommand: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit',
+		readonly scopes: ReadonlyArray<'document' | 'containers' | 'blocks'>,
+		readonly includeSingleLineSymbols: boolean
+	} {
+		const rawScopes = this.config.get<unknown>('codeLens.scopes', ['containers', 'blocks']);
+		const validScopes = Array.isArray(rawScopes)
+			? rawScopes.filter((s): s is 'document' | 'containers' | 'blocks' => s === 'document' || s === 'containers' || s === 'blocks')
+			: ['containers' as const, 'blocks' as const];
+		const parseCmd = (raw: unknown, fallback: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit') => {
+			if (raw === 'toggleFileBlame' || raw === 'git-map.toggleFileBlame') return 'toggleFileBlame';
+			if (raw === 'viewCommit' || raw === 'git-map.viewCommitInGitMap') return 'viewCommit';
+			if (raw === 'openLineHistory' || raw === 'git-map.viewLineHistory' || raw === 'git-map.openLineChanges') return 'openLineHistory';
+			return fallback;
+		};
+		return {
+			enabled: this.codeLensEnabled,
+			recentChangeEnabled: !!this.config.get('codeLens.recentChange.enabled', true),
+			recentChangeCommand: parseCmd(this.config.get('codeLens.recentChange.command', 'git-map.viewLineHistory'), 'openLineHistory'),
+			authorsEnabled: !!this.config.get('codeLens.authors.enabled', true),
+			authorsCommand: parseCmd(this.config.get('codeLens.authors.command', 'git-map.viewLineHistory'), 'openLineHistory'),
+			scopes: validScopes.length > 0 ? validScopes : ['containers', 'blocks'],
+			includeSingleLineSymbols: !!this.config.get('codeLens.includeSingleLineSymbols', false)
+		};
+	}
+
+	get blameInlineFormat(): string {
+		const v = this.config.get('blame.currentLine.format', '${author}, ${agoOrDate}${\' via \'pullRequest}${ • summary|60?}');
+		return typeof v === 'string' && v.trim() !== '' ? v : '${author}, ${agoOrDate}${\' via \'pullRequest}${ • summary|60?}';
+	}
+
+	get blameUncommittedFormat(): string {
+		const v = this.config.get('blame.currentLine.uncommittedChangesFormat', 'You, Uncommitted changes (${ago})');
+		return typeof v === 'string' && v.trim() !== '' ? v : 'You, Uncommitted changes';
+	}
+
+	get blamePullRequestsEnabled(): boolean {
+		return !!this.config.get('blame.pullRequests.enabled', true);
+	}
+
+	get blameScrollable(): boolean {
+		return !!this.config.get('blame.currentLine.scrollable', true);
+	}
+
+	get blameStatusBarFormat(): string {
+		const v = this.config.get('blame.statusBar.format', '${author}, ${agoOrDate}${\' via \'pullRequest}');
+		return typeof v === 'string' && v.trim() !== '' ? v : '${author}, ${agoOrDate}${\' via \'pullRequest}';
+	}
+
+	get blameStatusBarAlignment(): 'left' | 'right' {
+		return this.config.get<string>('blame.statusBar.alignment', 'left') === 'right' ? 'right' : 'left';
+	}
+
+	get blameStatusBarReduceFlicker(): boolean {
+		return !!this.config.get('blame.statusBar.reduceFlicker', true);
+	}
+
+	get hoversConfig(): {
+		readonly enabled: boolean,
+		readonly currentLineEnabled: boolean,
+		readonly currentLineOver: 'annotation' | 'line',
+		readonly currentLineDetails: boolean,
+		readonly currentLineChanges: boolean,
+		readonly autolinksEnabled: boolean,
+		readonly pullRequestsEnabled: boolean
+	} {
+		return {
+			enabled: !!this.config.get('hovers.enabled', true),
+			currentLineEnabled: !!this.config.get('hovers.currentLine.enabled', true),
+			currentLineOver: this.config.get<string>('hovers.currentLine.over', 'line') === 'annotation' ? 'annotation' : 'line',
+			currentLineDetails: !!this.config.get('hovers.currentLine.details', true),
+			currentLineChanges: !!this.config.get('hovers.currentLine.changes', true),
+			autolinksEnabled: !!this.config.get('hovers.autolinks.enabled', true),
+			pullRequestsEnabled: !!this.config.get('hovers.pullRequests.enabled', true)
+		};
+	}
+
+	get fileBlameConfig(): {
+		readonly toggleMode: AnnotationToggleMode,
+		readonly heatmapEnabled: boolean,
+		readonly heatmapLocation: 'left' | 'right',
+		readonly compact: boolean,
+		readonly highlightEnabled: boolean,
+		readonly highlightLocations: ReadonlyArray<AnnotationLocation>,
+		readonly delayAfterEdit: number,
+		readonly sizeThresholdAfterEdit: number,
+		readonly dismissOnEscape: boolean
+	} {
+		const locs = this.parseLocations(this.config.get('blame.file.highlight.locations', ['gutter', 'line', 'overviewRuler']), ['gutter', 'line']);
+		const delay = this.config.get('advanced.blame.delayAfterEdit', 5000);
+		const sizeThresh = this.config.get('advanced.blame.sizeThresholdAfterEdit', 5000);
+		return {
+			toggleMode: this.config.get<string>('blame.file.toggleMode', 'file') === 'window' ? 'window' : 'file',
+			heatmapEnabled: !!this.config.get('blame.file.heatmap.enabled', true),
+			heatmapLocation: this.config.get<string>('blame.file.heatmap.location', 'right') === 'left' ? 'left' : 'right',
+			compact: !!this.config.get('blame.file.compact', true),
+			highlightEnabled: !!this.config.get('blame.file.highlight.enabled', true),
+			highlightLocations: locs,
+			delayAfterEdit: typeof delay === 'number' && Number.isFinite(delay) && delay >= 100 ? delay : 5000,
+			sizeThresholdAfterEdit: typeof sizeThresh === 'number' && Number.isFinite(sizeThresh) && sizeThresh >= 0 ? sizeThresh : 5000,
+			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true)
+		};
+	}
+
+	get fileChangesConfig(): {
+		readonly toggleMode: AnnotationToggleMode,
+		readonly locations: ReadonlyArray<AnnotationLocation>,
+		readonly dismissOnEscape: boolean
+	} {
+		return {
+			toggleMode: this.config.get<string>('changes.toggleMode', 'file') === 'window' ? 'window' : 'file',
+			locations: this.parseLocations(this.config.get('changes.locations', ['gutter', 'line', 'overviewRuler']), ['gutter', 'overviewRuler']),
+			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true)
+		};
+	}
+
+	get fileHeatmapConfig(): {
+		readonly toggleMode: AnnotationToggleMode,
+		readonly locations: ReadonlyArray<AnnotationLocation>,
+		readonly fadeLines: boolean,
+		readonly ageThreshold: number,
+		readonly hotColor: string,
+		readonly coldColor: string,
+		readonly dismissOnEscape: boolean
+	} {
+		const threshold = this.config.get('heatmap.ageThreshold', 90);
+		const hot = String(this.config.get('heatmap.hotColor', '#f66a0a') || '#f66a0a');
+		const cold = String(this.config.get('heatmap.coldColor', '#0a60f6') || '#0a60f6');
+		return {
+			toggleMode: this.config.get<string>('heatmap.toggleMode', 'file') === 'window' ? 'window' : 'file',
+			locations: this.parseLocations(this.config.get('heatmap.locations', ['gutter', 'overviewRuler']), ['gutter', 'overviewRuler']),
+			fadeLines: !!this.config.get('heatmap.fadeLines', true),
+			ageThreshold: typeof threshold === 'number' && Number.isFinite(threshold) && threshold >= 1 ? threshold : 90,
+			hotColor: /^#[0-9a-fA-F]{6}$/.test(hot) ? hot : '#f66a0a',
+			coldColor: /^#[0-9a-fA-F]{6}$/.test(cold) ? cold : '#0a60f6',
+			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true)
+		};
+	}
+
+	get autolinks(): ReadonlyArray<AutolinkRule> {
+		const raw = this.config.get<unknown>('autolinks', []);
+		if (!Array.isArray(raw)) return [];
+		return raw.filter((r: any): r is AutolinkRule =>
+			typeof r === 'object' && r !== null && typeof r.prefix === 'string' && r.prefix !== '' && typeof r.url === 'string' && r.url.includes('<num>')
+		);
+	}
+
+	get customRemotes(): ReadonlyArray<CustomRemoteConfig> {
+		const raw = this.config.get<unknown>('remotes', []);
+		if (!Array.isArray(raw)) return [];
+		return raw.filter((r: any): r is CustomRemoteConfig =>
+			typeof r === 'object' && r !== null && typeof r.type === 'string' && (typeof r.domain === 'string' || typeof r.regex === 'string')
+		);
+	}
+
+	get startWorkBranchFormat(): string {
+		const v = this.config.get('startWork.branchNameFormat', '${id}-${title}');
+		return typeof v === 'string' && v.trim() !== '' ? v.trim() : '${id}-${title}';
+	}
+
+	get terminalLinks(): TerminalLinksConfigSnapshot {
+		return {
+			enabled: !!this.config.get('terminalLinks.enabled', true),
+			showDetailsView: !!this.config.get('terminalLinks.showDetailsView', true)
+		};
+	}
+
+	get followTerminal(): { readonly enabled: boolean, readonly allowRepositorySwitching: boolean } {
+		return {
+			enabled: !!this.config.get('graph.followTerminal.enabled', false),
+			allowRepositorySwitching: !!this.config.get('graph.followTerminal.allowRepositorySwitching', true)
+		};
+	}
+
+	get graphScrollMarkers(): { readonly enabled: boolean, readonly types: ReadonlyArray<GraphMarkerType> } {
+		const raw = this.config.get<unknown>('graph.scrollMarkers.types', ['localBranches', 'tags', 'stashes', 'worktrees']);
+		return {
+			enabled: !!this.config.get('graph.scrollMarkers.enabled', true),
+			types: this.parseMarkerTypes(raw, ['localBranches', 'tags', 'stashes', 'worktrees'])
+		};
+	}
+
+	get graphMinimapAdditionalTypes(): ReadonlyArray<GraphMarkerType> {
+		return this.parseMarkerTypes(
+			this.config.get<unknown>('graph.minimap.additionalTypes', ['localBranches', 'stashes', 'worktrees']),
+			['localBranches', 'stashes', 'worktrees']
+		);
+	}
+
+	get graphShowGhostRefs(): boolean {
+		return !!this.config.get('graph.showGhostRefsOnRowHover', true);
+	}
+
+	get graphMultiselect(): GraphMultiSelectMode {
+		const raw = this.config.get<unknown>('graph.multiselect', 'on');
+		return raw === 'off' || raw === 'on' || raw === 'topological' ? raw : 'on';
+	}
+
+	get defaultCodingAgent(): string {
+		return String(this.config.get('agents.default', '') || '');
+	}
+
+	get graphOverviewBarEnabled(): boolean {
+		return !!this.config.get('graph.overviewBar.enabled', true);
+	}
+
+	get graphMaxVisibleRefs(): number {
+		const n = this.config.get<unknown>('graph.maxVisibleRefsPerCommit', 0);
+		return typeof n === 'number' && Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+	}
+
+	get graphShortcutOverrides(): { readonly [action: string]: string } {
+		const raw = this.config.get<unknown>('graph.shortcuts.overrides', {});
+		if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+		const out: { [action: string]: string } = {};
+		const rec = raw as Record<string, unknown>;
+		const keys = Object.keys(rec);
+		for (let i = 0; i < keys.length; i++) {
+			const val = rec[keys[i]];
+			if (typeof val === 'string' && val.trim() !== '') {
+				out[keys[i]] = val.trim().toLowerCase();
+			}
+		}
+		return out;
+	}
+
+	get launchpadConfig(): LaunchpadConfigSnapshot {
+		const rawGroups = this.config.get<unknown>('launchpad.indicator.groups', ['mergeable', 'blocked', 'needsReview', 'followUp']);
+		const groups = Array.isArray(rawGroups)
+			? rawGroups.filter((g): g is LaunchpadBucket => g === 'mergeable' || g === 'blocked' || g === 'needsReview' || g === 'followUp')
+			: (['mergeable', 'blocked', 'needsReview', 'followUp'] as LaunchpadBucket[]);
+		const interval = this.config.get('launchpad.indicator.polling.interval', 30);
+		const stale = this.config.get('launchpad.staleThreshold', 14);
+		return {
+			indicatorEnabled: !!this.config.get('launchpad.indicator.enabled', true),
+			groups: groups,
+			useColors: !!this.config.get('launchpad.indicator.useColors', true),
+			pollingIntervalMinutes: typeof interval === 'number' && Number.isFinite(interval) && interval >= 0 ? Math.floor(interval) : 30,
+			staleThresholdDays: typeof stale === 'number' && Number.isFinite(stale) && stale >= 0 ? Math.floor(stale) : 14
+		};
+	}
+
+	get modeConfig(): {
+		readonly active: EditorModeId,
+		readonly statusBarEnabled: boolean,
+		readonly statusBarAlignment: 'left' | 'right',
+		readonly customModes: ReadonlyArray<GitMapModeConfig>
+	} {
+		const active = String(this.config.get('mode.active', 'default') || 'default');
+		const rawModes = this.config.get<unknown>('modes', []);
+		const customModes = Array.isArray(rawModes)
+			? rawModes.filter((m: any): m is GitMapModeConfig => typeof m === 'object' && m !== null && typeof m.name === 'string' && m.name.trim() !== '')
+			: [];
+		return {
+			active: active,
+			statusBarEnabled: !!this.config.get('mode.statusBar.enabled', false),
+			statusBarAlignment: this.config.get<string>('mode.statusBar.alignment', 'left') === 'right' ? 'right' : 'left',
+			customModes: customModes
+		};
+	}
+
+	get scmViewsConfig(): ScmViewsConfigSnapshot {
+		const rawGrouped = this.config.get<unknown>('views.scm.grouped.hiddenSections', undefined);
+		const rawLegacy = this.config.get<unknown>('views.scm.hiddenSections', []);
+		const raw = Array.isArray(rawGrouped) ? rawGrouped : rawLegacy;
+		const groupedEnabled = this.config.get<unknown>('views.scm.grouped.enabled', undefined);
+		const enabled = typeof groupedEnabled === 'boolean' ? groupedEnabled : !!this.config.get('views.scm.enabled', true);
+		return {
+			enabled: enabled,
+			hiddenSections: Array.isArray(raw) ? raw.filter((s): s is string => typeof s === 'string') : [],
+			defaultSection: String(this.config.get('views.scm.grouped.defaultSection', 'commits') || 'commits'),
+			commitLabelFormat: String(this.config.get('views.commits.labelFormat', '${message}') || '${message}'),
+			commitDescriptionFormat: String(this.config.get('views.commits.descriptionFormat', '${author, }${agoOrDate}') || '${author, }${agoOrDate}'),
+			stashLabelFormat: String(this.config.get('views.stashes.labelFormat', '${message}') || '${message}'),
+			stashDescriptionFormat: String(this.config.get('views.stashes.descriptionFormat', '${agoOrDate}') || '${agoOrDate}'),
+			fileLabelFormat: String(this.config.get('views.files.labelFormat', '${file}') || '${file}'),
+			fileDescriptionFormat: String(this.config.get('views.files.descriptionFormat', '${directory}') || '${directory}')
+		};
+	}
+
+	get editorAnnotationsSnapshot(): EditorAnnotationsSnapshot {
+		return {
+			currentLineEnabled: this.blameCurrentLine,
+			currentLinePullRequests: this.blamePullRequestsEnabled,
+			currentLineFormat: this.blameInlineFormat,
+			currentLineUncommittedFormat: this.blameUncommittedFormat,
+			currentLineScrollable: this.blameScrollable,
+			statusBarEnabled: this.blameStatusBar,
+			statusBarAlignment: this.blameStatusBarAlignment,
+			statusBarFormat: this.blameStatusBarFormat,
+			statusBarReduceFlicker: this.blameStatusBarReduceFlicker,
+			codeLensEnabled: this.codeLensEnabled,
+			codeLensRecentChange: this.codeLensConfig.recentChangeEnabled,
+			codeLensAuthors: this.codeLensConfig.authorsEnabled,
+			codeLensScopes: this.codeLensConfig.scopes,
+			hoversEnabled: this.hoversConfig.enabled,
+			hoversCurrentLineOver: this.hoversConfig.currentLineOver,
+			hoversChanges: this.hoversConfig.currentLineChanges,
+			hoversAutolinks: this.hoversConfig.autolinksEnabled,
+			fileBlameHeatmap: this.fileBlameConfig.heatmapEnabled,
+			fileBlameHeatmapLocation: this.fileBlameConfig.heatmapLocation,
+			fileBlameCompact: this.fileBlameConfig.compact,
+			fileBlameHighlightSameCommit: this.fileBlameConfig.highlightEnabled,
+			fileBlameHighlightLocations: this.fileBlameConfig.highlightLocations,
+			fileChangesLocations: this.fileChangesConfig.locations,
+			fileHeatmapLocations: this.fileHeatmapConfig.locations,
+			fileHeatmapFadeLines: this.fileHeatmapConfig.fadeLines,
+			fileHeatmapAgeThreshold: this.fileHeatmapConfig.ageThreshold,
+			fileHeatmapHotColor: this.fileHeatmapConfig.hotColor,
+			fileHeatmapColdColor: this.fileHeatmapConfig.coldColor,
+			activeMode: this.modeConfig.active,
+			customModes: this.modeConfig.customModes
+		};
+	}
+
+	private parseLocations(raw: unknown, fallback: AnnotationLocation[]): ReadonlyArray<AnnotationLocation> {
+		if (!Array.isArray(raw)) return fallback;
+		return raw.filter((l): l is AnnotationLocation => l === 'gutter' || l === 'line' || l === 'overviewRuler');
+	}
+
+	private parseMarkerTypes(raw: unknown, fallback: GraphMarkerType[]): ReadonlyArray<GraphMarkerType> {
+		if (!Array.isArray(raw)) return fallback;
+		const valid: GraphMarkerType[] = ['localBranches', 'remoteBranches', 'pullRequests', 'stashes', 'tags', 'worktrees'];
+		return raw.filter((m): m is GraphMarkerType => typeof m === 'string' && valid.includes(<GraphMarkerType>m));
 	}
 
 	/**

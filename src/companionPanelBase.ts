@@ -5,6 +5,7 @@ import { getLanguageModels } from './explainCommit';
 import { ExtensionState } from './extensionState';
 import { t } from './l10n';
 import { RepoManager } from './repoManager';
+import { AiTaskKey } from './types';
 import { getPathFromUri, getRepoName, showErrorMessage } from './utils';
 
 /**
@@ -68,14 +69,15 @@ export async function selectAiModelWithConsent(
 	extensionState: ExtensionState,
 	repo: string,
 	dialogTitle?: string,
-	promptText?: string
+	promptText?: string,
+	task?: AiTaskKey
 ) {
-	let modelsResult = await getLanguageModels();
+	let modelsResult = await getLanguageModels(task);
 	if (modelsResult.needsApiKey) {
 		const setKeyLabel = t('Set API Key...');
 		const choice = await vscode.window.showErrorMessage(modelsResult.error || t('Set an API key first.'), setKeyLabel);
 		if (choice !== setKeyLabel || !(await setApiKey())) return null;
-		modelsResult = await getLanguageModels();
+		modelsResult = await getLanguageModels(task);
 	}
 	if (modelsResult.error !== null || modelsResult.models.length === 0) {
 		showErrorMessage(modelsResult.error || t('No language model is available.'));

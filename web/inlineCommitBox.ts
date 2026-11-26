@@ -11,9 +11,17 @@ class InlineCommitBox {
 	private signoff: boolean = false;
 	private gpgSign: boolean = false;
 	private noVerify: boolean = false;
+	private contributors: ReadonlyArray<GG.ContributorSummary> = [];
+	private coauthorPickerOpen: boolean = false;
 
 	constructor(view: GitGraphView) {
 		this.view = view;
+	}
+
+	public processContributorsResponse(msg: GG.ResponseLoadContributors) {
+		if (msg.repo !== this.view.currentRepo || msg.error !== null) return;
+		this.contributors = msg.contributors;
+		if (this.coauthorPickerOpen) this.render();
 	}
 
 	public resetStatus() {
@@ -67,6 +75,7 @@ class InlineCommitBox {
 					(!f.staged || f.unstaged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="stage" title="' + escapeHtml(t('Stage File')) + '">+</button>' : '') +
 					(f.staged ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="unstage" title="' + escapeHtml(t('Unstage File')) + '">&minus;</button>' : '') +
 					(!f.untracked && !f.conflicted ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-staged="' + (f.staged && !f.unstaged ? '1' : '0') + '" data-inline-op="hunks" title="' + escapeHtml(t('Stage / Unstage Hunks…')) + '">&plusmn;</button>' : '') +
+					(f.untracked ? '<button type="button" class="cdvMiniBtn" data-inline-file="' + escapeHtml(f.path) + '" data-inline-op="gitignore" title="' + escapeHtml(t('Add to .gitignore')) + '">.ignore</button>' : '') +
 					(f.unstaged && !f.conflicted ? '<button type="button" class="cdvMiniBtn danger" data-inline-file="' + escapeHtml(f.path) + '" data-inline-untracked="' + (f.untracked ? '1' : '0') + '" data-inline-op="discard" title="' + escapeHtml(t('Discard Changes')) + '">&times;</button>' : '') +
 					'</div>';
 			}).join('') + '</div>';
@@ -86,9 +95,17 @@ class InlineCommitBox {
 			: '';
 		const convChipsHtml = '<div class="cdvConvChips">' +
 			['feat', 'fix', 'refactor', 'docs', 'chore', 'test'].map((k) => '<button type="button" class="cdvConvChip" data-conv-prefix="' + k + ': ">' + k + '</button>').join('') +
+			'<button type="button" class="cdvConvChip" data-inline-stage="coauthors">+ ' + t('Co-author') + '</button>' +
 			hooksHtml +
 			(files.length >= 2 ? '<button type="button" class="cdvConvChip aiSplit" data-inline-stage="aiSplit">' + MENU_ICONS.sparkle + t('AI Split') + '</button>' : '') +
-			'</div>';
+			'</div>' +
+			(this.coauthorPickerOpen
+				? '<div class="cdvCoauthorPicker">' +
+					(this.contributors.length === 0
+						? '<span class="cdvCoauthorEmpty">' + t('Loading contributors…') + '</span>'
+						: this.contributors.slice(0, 20).map((c) => '<button type="button" class="cdvCoauthorItem" data-coauthor-name="' + escapeHtml(c.name) + '" data-coauthor-email="' + escapeHtml(c.email) + '">' + escapeHtml(c.name) + ' &lt;' + escapeHtml(c.email) + '&gt; (' + c.commits + ')</button>').join('')) +
+					'</div>'
+				: '');
 
 		container.innerHTML = filesSummaryHtml + preBannerHtml +
 			'<div class="cdvCommitForm">' +
@@ -159,6 +176,8 @@ class InlineCommitBox {
 					runAction({ command: 'unstageFiles', repo: this.view.currentRepo, paths: [filePath] }, t('Unstaging File'));
 				} else if (op === 'hunks') {
 					this.view.openHunkStagingModal(filePath, fileBtn.dataset.inlineStaged === '1');
+				} else if (op === 'gitignore') {
+					runAction({ command: 'addToGitignore', repo: this.view.currentRepo, paths: [filePath] }, t('Adding to .gitignore'));
 				} else if (op === 'discard') {
 					const isUntracked = fileBtn.dataset.inlineUntracked === '1';
 					dialog.asDangerous().showConfirmation(t('Are you sure you want to discard uncommitted changes to <b><i>{0}</i></b>?', escapeHtml(filePath)), t('Discard Changes'), () => {
@@ -167,9 +186,29 @@ class InlineCommitBox {
 				}
 				return;
 			}
+			const coauthorBtn = <HTMLElement | null>e.target.closest('[data-coauthor-email]');
+			if (coauthorBtn !== null && typeof coauthorBtn.dataset.coauthorName === 'string' && typeof coauthorBtn.dataset.coauthorEmail === 'string') {
+				const trailer = 'Co-authored-by: ' + unescapeHtml(coauthorBtn.dataset.coauthorName) + ' <' + unescapeHtml(coauthorBtn.dataset.coauthorEmail) + '>';
+				if (this.draft.indexOf(trailer) === -1) {
+					const trimmed = this.draft.replace(/\s+$/, '');
+					this.draft = trimmed === '' ? '\n\n' + trailer : trimmed + (trimmed.indexOf('Co-authored-by:') !== -1 ? '\n' : '\n\n') + trailer;
+				}
+				this.coauthorPickerOpen = false;
+				this.render();
+				const ta = <HTMLTextAreaElement | null>document.getElementById('cdvCommitInput');
+				if (ta !== null) ta.focus();
+				return;
+			}
 			const stageBtn = <HTMLElement | null>e.target.closest('[data-inline-stage]');
 			if (stageBtn === null) return;
 			switch (stageBtn.dataset.inlineStage) {
+				case 'coauthors':
+					this.coauthorPickerOpen = !this.coauthorPickerOpen;
+					if (this.coauthorPickerOpen && this.contributors.length === 0) {
+						sendMessage({ command: 'loadContributors', repo: this.view.currentRepo });
+					}
+					this.render();
+					break;
 				case 'stageAll':
 					runAction({ command: 'stageFiles', repo: this.view.currentRepo, paths: null }, t('Staging All Changes'));
 					break;

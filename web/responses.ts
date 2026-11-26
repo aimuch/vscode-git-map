@@ -334,6 +334,49 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'pushBranch':
 				refreshAndDisplayErrors(msg.errors, t('Unable to Push Branch'), msg.willUpdateBranchConfig);
 				break;
+			case 'pushToCommit':
+				refreshAndDisplayErrors(msg.errors, t('Unable to Push to Commit'));
+				break;
+			case 'batchSquashCommits':
+				refreshOrDisplayError(msg.error, t('Unable to Squash Selected Commits'));
+				break;
+			case 'batchDropCommits':
+				refreshOrDisplayError(msg.error, t('Unable to Drop Selected Commits'));
+				break;
+			case 'addToGitignore':
+				refreshOrDisplayError(msg.error, t('Unable to Add to .gitignore'));
+				break;
+			case 'loadContributors':
+				gitGraph.processLoadContributorsResponse(msg);
+				break;
+			case 'loadCodingAgents':
+				gitGraph.processLoadCodingAgentsResponse(msg);
+				break;
+			case 'toggleCodingAgentMcp':
+			case 'toggleCodingAgentHooks':
+				if (msg.error !== null) {
+					dialog.showError(t('Coding Agent Configuration Error'), msg.error, null, null);
+				} else {
+					dialog.closeActionRunning();
+				}
+				gitGraph.processLoadCodingAgentsResponse({ command: 'loadCodingAgents', repo: msg.repo, agents: msg.agents });
+				break;
+			case 'copyWipToWorktree':
+				if (msg.error !== null) {
+					dialog.showError(t('Unable to Copy Uncommitted Changes'), msg.error, null, null);
+				} else {
+					dialog.closeActionRunning();
+					dialog.showMessage(t('Copied {0} uncommitted file(s) to the target worktree.', msg.copiedFiles));
+					gitGraph.worktreeList.requestWorktrees();
+				}
+				break;
+			case 'saveExtendedSettings':
+				if (msg.error !== null) {
+					dialog.showError(t('Unable to Save Settings'), msg.error, null, null);
+				} else {
+					dialog.closeActionRunning();
+				}
+				break;
 			case 'pushStash':
 				refreshOrDisplayError(msg.error, t('Unable to Stash Uncommitted Changes'));
 				break;

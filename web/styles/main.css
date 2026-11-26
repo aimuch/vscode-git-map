@@ -4621,3 +4621,92 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 @media (prefers-reduced-motion:reduce){
 	#graphSidebar,.gsRailBtn,.gsRailBtn[data-tip]::after,.rsProgressBar,.rsFileCheck,#scrollJumpPill,.sjpTrigger,.settingsNavItem{transition:none !important;animation:none !important}
 }
+
+/* Ghost Refs on unlabelled commit rows */
+.ghostRefs{display:inline-flex;align-items:center;gap:4px;margin-left:8px;opacity:0;pointer-events:none;transition:opacity 120ms ease}
+.commit:hover .ghostRefs,.commit.current .ghostRefs,.ghostRefs:focus-within{opacity:1;pointer-events:auto}
+.ghostRefBtn{border:1px dashed var(--gm-border-strong);border-radius:var(--gm-radius-sm);background:transparent;color:var(--vscode-descriptionForeground);font-size:10.5px;line-height:16px;padding:0 5px;cursor:pointer}
+.ghostRefBtn:hover{border-style:solid;color:var(--vscode-foreground);background:var(--gm-surface-muted)}
+
+/* Granular clickable ScrollMarkers */
+#scrollMarkers .scrollMarker{pointer-events:auto;cursor:pointer}
+.scrollMarker.pr{height:3px;opacity:.95}
+.scrollMarker.worktree{height:3px;opacity:.95}
+.scrollMarker.stash{opacity:.85}
+.scrollMarker.remoteBranch{opacity:.7}
+
+/* Co-author picker inside inline commit box */
+.cdvCoauthorPicker{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0 6px;padding:6px;border-radius:var(--gm-radius-sm);border:1px solid var(--gm-border);background:var(--gm-surface-muted);max-height:110px;overflow-y:auto}
+.cdvCoauthorItem{border:1px solid var(--gm-border);border-radius:var(--gm-radius-sm);background:var(--gm-surface-elevated);color:var(--vscode-foreground);font-size:11px;padding:2px 6px;cursor:pointer}
+.cdvCoauthorItem:hover{border-color:var(--gm-ring);background:var(--vscode-list-hoverBackground)}
+.cdvCoauthorEmpty{font-size:11px;color:var(--vscode-descriptionForeground)}
+
+/* CDV history back/forward disabled state */
+.cdvControlBtn.disabled{opacity:.35;pointer-events:none}
+
+/* Categorized Settings Rail with Status Dots & Enabled Ratios + Live Interactive Previews */
+.settingsNavGroup{padding:8px 8px 2px;font-size:10.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--vscode-descriptionForeground);opacity:.85}
+.settingsNavItem{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;text-align:left}
+.settingsNavItemLabel{display:inline-flex;align-items:center;gap:6px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsNavDot{width:7px;height:7px;border-radius:50%;flex:0 0 auto;background:var(--vscode-descriptionForeground);opacity:.35}
+.settingsNavDot.on{background:#2da44e;opacity:1}
+.settingsNavRatio{font-size:10px;font-family:var(--vscode-editor-font-family);color:var(--vscode-descriptionForeground);opacity:.85;flex:0 0 auto}
+.settingsLivePreview{margin:10px 0 12px;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-md);background:var(--vscode-editor-background);overflow:hidden}
+.settingsLivePreviewHeader{display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11px;color:var(--vscode-descriptionForeground)}
+.settingsEditorPreviewCode{padding:8px 10px;font-family:var(--vscode-editor-font-family);font-size:12px;line-height:1.55}
+.settingsEditorCodeLens{font-size:11px;color:var(--vscode-editorCodeLens-foreground,#999);margin-left:22px}
+.settingsEditorLine{display:flex;align-items:center;gap:8px;padding:0 4px;border-left:3px solid transparent}
+.settingsEditorLine.hot{border-left-color:#f97316;background:rgba(249,115,22,.08)}
+.settingsEditorLine.changed{background:rgba(56,189,248,.09)}
+.settingsEditorLn{width:14px;text-align:right;color:var(--vscode-editorLineNumber-foreground,#6e7681);user-select:none}
+.settingsEditorInlineBlame{margin-left:16px;color:var(--vscode-editorCodeLens-foreground,#8b949e);font-style:italic;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.settingsGraphPreviewRows{padding:8px 10px;display:flex;flex-direction:column;gap:4px;font-size:12px}
+.settingsGraphPreviewRow{display:flex;align-items:center;gap:8px}
+.settingsGraphPreviewRow.compact{font-size:11px;line-height:1.2}
+.settingsGraphNodeDot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+.settingsGraphNodeAvatar{width:16px;height:16px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex:0 0 auto}
+.settingsRuleRow{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.settingsRuleList{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.settingsRuleChip{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 8px;border:1px solid var(--gm-border);border-radius:var(--gm-radius-sm);background:var(--gm-surface-muted);font-size:11.5px}
+
+/* Wave 2: Graph Overview Bar, +N Ref Overflow, Shortcuts Cheatsheet, Agents & SCM Matrix */
+#graphOverviewBar{display:none;flex:1 0 100%;align-items:center;justify-content:space-between;gap:8px;box-sizing:border-box;min-height:28px;margin:0 -12px;padding:3px 12px;border-top:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11.5px}
+#graphOverviewBar.active{display:flex}
+.gobChips{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.gobChip,.gobBtn{display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 7px;border-radius:999px;border:1px solid var(--gm-border);background:var(--gm-surface-elevated);color:var(--vscode-foreground);font:inherit;font-size:11px;cursor:pointer}
+.gobChip:hover,.gobBtn:hover{border-color:var(--gm-ring);background:var(--vscode-list-hoverBackground,rgba(128,128,128,.16))}
+.gobChip svg{width:12px;height:12px;fill:currentColor;opacity:.85}
+.gobWip{color:var(--vscode-editorWarning-foreground,#d29922)}
+.gobSoloBadge{display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 6px 0 8px;border-radius:999px;background:var(--vscode-button-background);color:var(--vscode-button-foreground);font-size:11px;font-weight:600}
+.gobSoloExit{border:none;background:transparent;color:inherit;cursor:pointer;font-size:13px;line-height:1;padding:0 2px;opacity:.85}
+.gobSoloExit:hover{opacity:1}
+.gobBtn kbd{font-family:var(--vscode-editor-font-family);font-weight:700;font-size:10.5px;padding:0 3px;border-radius:3px;background:var(--gm-surface-muted)}
+
+.gitRefOverflow{display:inline-flex;align-items:center;height:18px;padding:0 6px;margin-left:3px;border-radius:999px;border:1px dashed var(--gm-border-strong);background:var(--gm-surface-muted);color:var(--vscode-descriptionForeground);font-family:var(--vscode-editor-font-family);font-size:10.5px;font-weight:600;cursor:pointer}
+.gitRefOverflow:hover{border-style:solid;color:var(--vscode-foreground);border-color:var(--gm-ring)}
+
+.shortcutsOverlay{position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.46);display:flex;align-items:center;justify-content:center;padding:20px}
+.shortcutsPanel{width:min(480px,94vw);max-height:82vh;display:flex;flex-direction:column;border-radius:var(--gm-radius-lg);border:1px solid var(--gm-border-strong);background:var(--gm-surface);box-shadow:var(--gm-shadow-modal);overflow:hidden}
+.shortcutsHeader{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--gm-border);background:var(--gm-surface-elevated);font-weight:600;font-size:13px}
+.shortcutsBody{padding:10px 14px;overflow-y:auto;display:flex;flex-direction:column;gap:6px}
+.shortcutsRow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:4px 0;border-bottom:1px solid rgba(128,128,128,.12);font-size:12px}
+.shortcutsRow:last-child{border-bottom:0}
+.shortcutsFooter{display:flex;justify-content:flex-end;padding:8px 14px;border-top:1px solid var(--gm-border);background:var(--gm-surface-elevated)}
+
+.settingsMatrixTable{width:100%;border-collapse:collapse;margin:8px 0 12px;font-size:12px}
+.settingsMatrixTable th,.settingsMatrixTable td{padding:6px 8px;border-bottom:1px solid var(--gm-border);text-align:left;vertical-align:middle}
+.settingsMatrixTable th{font-size:11px;font-weight:600;color:var(--vscode-descriptionForeground)}
+.settingsAgentPill{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:999px;font-size:10px;background:var(--gm-surface-muted);color:var(--vscode-descriptionForeground)}
+.settingsAgentPill.detected{background:rgba(45,164,78,.18);color:var(--vscode-testing-iconPassed,#2da44e);font-weight:600}
+.settingsBtn.active{border-color:var(--gm-ring);background:color-mix(in srgb,var(--gm-ring) 18%,transparent)}
+.settingsSubGroup{margin:8px 0;padding:8px 10px;border-radius:var(--gm-radius-md);border:1px solid var(--gm-border);background:var(--gm-surface-muted)}
+.settingsSubLabel{font-size:11.5px;font-weight:600;margin-bottom:6px;color:var(--vscode-descriptionForeground)}
+.settingsCheckboxes.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.settingsShortcutOverrides{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.settingsShortcutChip{display:inline-flex;align-items:center;gap:4px;font-size:11.5px}
+.settingsShortcutChip input{width:32px;text-align:center;padding:2px 4px}
+.settingsFormatGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (max-width:680px){.settingsFormatGrid{grid-template-columns:1fr}}
+.settingsFormatField{display:flex;flex-direction:column;gap:4px}
+.settingsFormatExample{font-size:11px;color:var(--vscode-descriptionForeground);font-style:italic}
+.settingsEditorStatusBarStrip{margin-top:6px;padding-top:4px;border-top:1px dashed var(--gm-border);font-size:11px;color:var(--vscode-descriptionForeground)}

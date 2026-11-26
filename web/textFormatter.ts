@@ -263,6 +263,40 @@ class TextFormatter {
 			}
 		}
 
+		const autolinks = Array.isArray(initialState.config.autolinks) ? initialState.config.autolinks : [];
+		if (this.config.issueLinking && autolinks.length > 0) {
+			for (let r = 0; r < autolinks.length; r++) {
+				const rule = autolinks[r];
+				if (!rule || typeof rule.prefix !== 'string' || typeof rule.url !== 'string') continue;
+				const prefix = rule.prefix;
+				const rawUrl = rule.url.trim();
+				if (prefix === '' || rawUrl === '' || rawUrl.indexOf('<num>') === -1 || !/^(?:https?:\/\/|mailto:)/i.test(rawUrl)) continue;
+				const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+				const numGroup = rule.alphanumeric ? '([A-Za-z0-9]+)' : '([0-9]+)';
+				try {
+					const re = new RegExp('(^|[\\s(\\[{\'".,;:])(' + escapedPrefix + numGroup + ')(?=$|[\\s)\\]}\'".,;:!?])', rule.ignoreCase ? 'gi' : 'g');
+					while ((match = re.exec(input)) !== null) {
+						if (match[0].length === 0) break;
+						const leading = match[1] || '';
+						const token = match[2];
+						const num = match[3];
+						const start = match.index + leading.length;
+						const resolvedUrl = rawUrl.replace(/<num>/g, encodeURIComponent(num));
+						TextFormatter.insertIntoTreeIfNoOverlap(tree, {
+							type: TF.NodeType.Url,
+							start: start,
+							end: start + token.length - 1,
+							url: resolvedUrl,
+							displayText: token,
+							contains: []
+						});
+					}
+				} catch (_) {
+					// Ignore invalid custom autolink patterns
+				}
+			}
+		}
+
 		if (this.config.commits) {
 			// Commit Hash Links
 			TextFormatter.COMMIT_REGEXP.lastIndex = 0;

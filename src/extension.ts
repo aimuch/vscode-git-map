@@ -21,18 +21,28 @@ import { RepoManager } from './repoManager';
 import { RevisionNavigation } from './revisionNavigation';
 import { VisualFileHistory } from './visualFileHistory';
 import { AiAssistantPanel } from './aiAssistantPanel';
+import { AiAutoRebase } from './aiAutoRebase';
 import { disposeAiCommitMessage, generateScmCommitMessage } from './aiCommitMessage';
 import { clearApiKey, setAiSecretStorage, setApiKey } from './aiProviders';
 import { BranchDashboard } from './branchDashboard';
 import { CompactPanelView } from './compactPanelView';
 import { ConflictAssistant } from './conflictAssistant';
+import { EditorModeManager } from './editorModes';
 import { exportChangelogCommand } from './exportShare';
+import { FileChanges } from './fileChanges';
+import { FileHeatmap } from './fileHeatmap';
 import { GitFeatures } from './gitFeatures';
+import { GitMaintenanceController } from './gitMaintenance';
 import { PreCommitAndSplitter } from './preCommitGuard';
+import { PrLaunchpad } from './prLaunchpad';
 import { checkoutPullRequestCommand, clearHostingTokenCommand, setHostingSecretStorage, setHostingTokenCommand } from './prStatusIntegration';
+import { RebaseTodoCustomEditorProvider } from './rebaseTodoCustomEditor';
+import { ScmTreeViewProvider } from './scmTreeViews';
+import { startWorkCommand } from './startWork';
 import { SubmoduleManager } from './submoduleManager';
 import { migrateSettings, showSettingsMigrationMessage } from './settingsMigration';
 import { StatusBarItem } from './statusBarItem';
+import { GitTerminalLinkProvider, TerminalGraphFollower } from './terminalLinks';
 import { GitExecutable, UNABLE_TO_FIND_GIT_MSG, findGit, getGitExecutableFromPaths, isInternalHideUnchangedWrite, setDiffHideUnchangedRegions, showErrorMessage, showInformationMessage } from './utils';
 import { EventEmitter } from './utils/event';
 import { t } from './l10n';
@@ -111,6 +121,44 @@ export async function activate(context: vscode.ExtensionContext) {
 	const compactPanelView = new CompactPanelView(dataSource, repoManager, extensionState, logger, onDidChangeGitState);
 	const submoduleManager = new SubmoduleManager(dataSource, repoManager, extensionState, logger);
 	const branchDashboard = new BranchDashboard(dataSource, repoManager, extensionState, logger);
+	const fileHeatmap = new FileHeatmap(dataSource, repoManager, logger, onDidChangeConfiguration, onDidChangeGitState);
+	const fileChanges = new FileChanges(dataSource, repoManager, logger, onDidChangeConfiguration, onDidChangeGitState);
+	const editorModeManager = new EditorModeManager(lineBlame, codeLens, fileBlame, fileChanges, fileHeatmap);
+	const terminalLinkProvider = new GitTerminalLinkProvider(
+		context.extensionPath,
+		dataSource,
+		extensionState,
+		avatarManager,
+		repoManager,
+		logger,
+		(loadViewTo) => GitGraphView.createOrShow(context.extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, loadViewTo),
+		onDidChangeGitState
+	);
+	const terminalGraphFollower = new TerminalGraphFollower(
+		repoManager,
+		() => Boolean(GitGraphView.currentPanel && GitGraphView.currentPanel.panelVisible),
+		(repo, worktreePath) => {
+			if (GitGraphView.currentPanel) GitGraphView.currentPanel.focusRepoWorktree(repo, worktreePath);
+		}
+	);
+	const prLaunchpad = new PrLaunchpad(
+		dataSource,
+		repoManager,
+		(repo, branch) => GitGraphView.createOrShow(context.extensionPath, dataSource, extensionState, avatarManager, repoManager, logger, { repo: repo, ref: branch }),
+		(repo, branch, badge) => {
+			void vscode.commands.executeCommand('git-map.ai.reviewChanges', {
+				repo: repo,
+				mode: 'range',
+				fromRef: badge.baseBranch || 'HEAD~1',
+				toRef: branch,
+				label: 'PR #' + badge.number
+			});
+		}
+	);
+	const aiAutoRebase = new AiAutoRebase(dataSource, repoManager, extensionState, logger);
+	const scmTreeView = new ScmTreeViewProvider(dataSource, repoManager, extensionState, onDidChangeConfiguration, onDidChangeGitState);
+	const gitMaintenance = new GitMaintenanceController(dataSource, repoManager, extensionState);
+	const rebaseTodoProvider = new RebaseTodoCustomEditorProvider();
 
 	const applyDiffViewMode = async (onlyChanges: boolean) => {
 		await setDiffHideUnchangedRegions(onlyChanges);
@@ -126,6 +174,13 @@ export async function activate(context: vscode.ExtensionContext) {
 		vscode.commands.registerCommand('git-map.clearHostingToken', () => clearHostingTokenCommand()),
 		vscode.commands.registerCommand('git-map.checkoutPullRequest', (arg?: unknown) => checkoutPullRequestCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.exportChangelog', (arg?: unknown) => exportChangelogCommand(dataSource, repoManager, extensionState, arg)),
+		vscode.commands.registerCommand('git-map.startWork', (arg?: unknown) => startWorkCommand(dataSource, repoManager, extensionState, arg)),
+		...(typeof vscode.window.registerTerminalLinkProvider === 'function'
+			? [vscode.window.registerTerminalLinkProvider(terminalLinkProvider)]
+			: []),
+		...(typeof vscode.window.registerCustomEditorProvider === 'function'
+			? [vscode.window.registerCustomEditorProvider(RebaseTodoCustomEditorProvider.viewType, rebaseTodoProvider, { webviewOptions: { retainContextWhenHidden: true } })]
+			: []),
 		vscode.commands.registerCommand('git-map.exportContextForAgent', async (arg?: unknown) => {
 			const explicitRepo = typeof arg === 'object' && arg !== null && typeof (arg as { repo?: unknown }).repo === 'string'
 				? (arg as { repo: string }).repo
@@ -213,6 +268,15 @@ export async function activate(context: vscode.ExtensionContext) {
 		compactPanelView,
 		submoduleManager,
 		branchDashboard,
+		fileHeatmap,
+		fileChanges,
+		editorModeManager,
+		terminalLinkProvider,
+		terminalGraphFollower,
+		prLaunchpad,
+		aiAutoRebase,
+		scmTreeView,
+		gitMaintenance,
 		commandManager,
 		statusBarItem,
 		repoManager,

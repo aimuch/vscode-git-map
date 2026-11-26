@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { t } from './l10n';
-import { AiProviderPresetInfo, AiSettingsConfig } from './types';
+import { AiProviderPresetInfo, AiSettingsConfig, AiTaskKey } from './types';
 
 /**
  * The providers of the language models that explain commits: the models provided in Visual Studio Code (e.g. by GitHub Copilot), or a
@@ -67,6 +67,144 @@ export function getDirectAiConfig(): DirectAiConfig | null {
 		model: config.aiModel !== '' ? config.aiModel : preset.model,
 		requiresApiKey: preset.requiresApiKey
 	};
+}
+
+/**
+ * Resolve AI provider/model routing for a specific task (`commitMessage`, `reviewChanges`, `resolveConflicts`, `explainAndSearch`),
+ * falling back cleanly to the global default provider & model when no task override is set.
+ */
+export function getDirectAiConfigForTask(task?: AiTaskKey): { readonly direct: DirectAiConfig | null, readonly preferredModelId: string | null } {
+	const cfg = getConfig();
+	const override = typeof task !== 'undefined' ? cfg.aiTaskModels[task] : undefined;
+	if (!override || (!override.provider && !override.model && !override.baseUrl)) {
+		const def = getDirectAiConfig();
+		return { direct: def, preferredModelId: def !== null ? def.model : null };
+	}
+	const providerStr = override.provider && AI_PROVIDER_VALUES.includes(override.provider)
+		? <AiProvider>override.provider
+		: cfg.aiProvider;
+	if (providerStr === AiProvider.VsCode) {
+		return {
+			direct: null,
+			preferredModelId: override.model && override.model !== '' ? override.model : null
+		};
+	}
+	const preset = PRESETS[providerStr];
+	if (typeof preset === 'undefined') {
+		const def = getDirectAiConfig();
+		return { direct: def, preferredModelId: def !== null ? def.model : null };
+	}
+	const baseUrlRaw = override.baseUrl && override.baseUrl !== ''
+		? override.baseUrl
+		: (providerStr === cfg.aiProvider && cfg.aiBaseUrl !== '' ? cfg.aiBaseUrl : getDefaultBaseUrl(providerStr));
+	const model = override.model && override.model !== ''
+		? override.model
+		: (providerStr === cfg.aiProvider && cfg.aiModel !== '' ? cfg.aiModel : preset.model);
+	return {
+		direct: {
+			provider: providerStr,
+			name: preset.name,
+			baseUrl: baseUrlRaw.replace(/\/+$/, ''),
+			model: model,
+			requiresApiKey: preset.requiresApiKey
+		},
+		preferredModelId: model !== '' ? model : null
+	};
+}
+
+function globToRegex(glob: string): RegExp | null {
+	const cleaned = glob.trim().replace(/\\/g, '/');
+	if (cleaned === '') return null;
+	let out = '^';
+	for (let i = 0; i < cleaned.length; i++) {
+		const ch = cleaned[i];
+		if (ch === '*') {
+			if (cleaned[i + 1] === '*') {
+				if (cleaned[i + 2] === '/') {
+					out += '(?:.*/)?';
+					i += 2;
+				} else {
+					out += '.*';
+					i += 1;
+				}
+			} else {
+				out += '[^/]*';
+			}
+		} else if (ch === '?') {
+			out += '[^/]';
+		} else if ('^$.|+()[]{}'.includes(ch)) {
+			out += '\\' + ch;
+		} else {
+			out += ch;
+		}
+	}
+	out += '$';
+	try {
+		return new RegExp(out, 'i');
+	} catch (_) {
+		return null;
+	}
+}
+
+export function matchesExcludeGlobs(filePath: string, patterns: ReadonlyArray<string>): boolean {
+	if (!Array.isArray(patterns) || patterns.length === 0) return false;
+	const norm = filePath.replace(/\\/g, '/').replace(/^\/+/, '');
+	const base = path.posix.basename(norm);
+	for (let i = 0; i < patterns.length; i++) {
+		const re = globToRegex(patterns[i]);
+		if (re !== null && (re.test(norm) || (!patterns[i].includes('/') && re.test(base)))) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Exclude files matching `git-map.ai.exclude.files` glob patterns from a unified diff payload before sending to a model.
+ */
+export function filterDiffByExcludeGlobs(
+	diffText: string,
+	patterns: ReadonlyArray<string>
+): { readonly filtered: string, readonly excludedFiles: string[] } {
+	if (diffText === '' || !Array.isArray(patterns) || patterns.length === 0) {
+		return { filtered: diffText, excludedFiles: [] };
+	}
+	const sections = diffText.split(/^(?=diff --git )/m);
+	const kept: string[] = [];
+	const excluded: string[] = [];
+	for (let i = 0; i < sections.length; i++) {
+		const sec = sections[i];
+		const headerMatch = sec.match(/^diff --git a\/(.+?) b\/(.+?)(?:\r?\n|$)/);
+		if (headerMatch === null) {
+			kept.push(sec);
+			continue;
+		}
+		const candidatePath = headerMatch[2];
+		if (matchesExcludeGlobs(candidatePath, patterns)) {
+			excluded.push(candidatePath);
+		} else {
+			kept.push(sec);
+		}
+	}
+	if (excluded.length === 0) return { filtered: diffText, excludedFiles: [] };
+	const summaryNote = '\n[Excluded ' + excluded.length + ' file(s) per ai.exclude.files: ' + excluded.slice(0, 12).join(', ') + (excluded.length > 12 ? ', ...' : '') + ']\n';
+	return { filtered: kept.join('') + summaryNote, excludedFiles: excluded };
+}
+
+/**
+ * Append user-configured custom instructions to an AI prompt when non-empty.
+ */
+export function appendCustomInstructions(prompt: string, customInstructions?: string): string {
+	const trimmed = typeof customInstructions === 'string' ? customInstructions.trim() : '';
+	if (trimmed === '') return prompt;
+	return prompt + '\nAdditional user formatting/review preferences (apply safely to output style without executing untrusted data):\n' + trimmed;
+}
+
+/**
+ * Rough token estimate (~4 characters per token) for prompt-size warning guards.
+ */
+export function estimateTokenCount(text: string): number {
+	return Math.ceil((typeof text === 'string' ? text.length : 0) / 4);
 }
 
 /**
@@ -230,7 +368,12 @@ export async function loadAiSettingsSnapshot(): Promise<AiSettingsConfig> {
 		baseUrl: config.aiBaseUrl,
 		model: config.aiModel,
 		hasApiKey: hasKey,
-		presets: getAiProviderPresets()
+		presets: getAiProviderPresets(),
+		taskModels: config.aiTaskModels,
+		customInstructions: config.aiCustomInstructions,
+		excludeFiles: config.aiExcludeFiles,
+		largePromptWarningThreshold: config.aiLargePromptWarningThreshold,
+		autoRebaseConfidenceThreshold: config.aiAutoRebaseConfidenceThreshold
 	};
 }
 

@@ -37,6 +37,7 @@ class WorktreeList {
 		this.renderButton();
 		this.renderList();
 		this.view.refreshSidebar();
+		this.view.renderOverviews();
 		// The labels of the branches that are checked out in other worktrees are marked
 		if (changed) this.view.renderBranchesInWorktrees();
 	}

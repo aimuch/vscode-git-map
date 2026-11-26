@@ -1,9 +1,12 @@
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as https from 'https';
+import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { ExtensionState } from './extensionState';
 import { Logger } from './logger';
+import { resolveCustomRemoteAvatarUrl } from './remoteLinks';
 import { Disposable, toDisposable } from './utils/disposable';
 import { EventEmitter } from './utils/event';
 
@@ -174,6 +177,9 @@ export class AvatarManager extends Disposable {
 				case 'gitlab':
 					this.fetchFromGitLab(avatarRequest);
 					break;
+				case 'custom':
+					this.fetchFromCustomRemote(avatarRequest, remoteSource.remoteUrl);
+					break;
 				default:
 					this.fetchFromGravatar(avatarRequest);
 			}
@@ -198,12 +204,17 @@ export class AvatarManager extends Disposable {
 			if (avatarRequest.remote !== null) {
 				let remoteUrl = await this.dataSource.getRemoteUrl(avatarRequest.repo, avatarRequest.remote);
 				if (remoteUrl !== null) {
-					// Depending on the domain of the remote repo source, determine the type of source it is
-					let match;
-					if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(\.git)?\/?$/)) !== null) {
-						remoteSource = { type: 'github', owner: match[2], repo: match[3] };
-					} else if (remoteUrl.startsWith('https://gitlab.com/') || remoteUrl.startsWith('git@gitlab.com:')) {
-						remoteSource = { type: 'gitlab' };
+					const customAvatarUrl = resolveCustomRemoteAvatarUrl(remoteUrl, avatarRequest.email, '', getConfig(avatarRequest.repo).customRemotes);
+					if (customAvatarUrl !== null) {
+						remoteSource = { type: 'custom', remoteUrl: remoteUrl };
+					} else {
+						// Depending on the domain of the remote repo source, determine the type of source it is
+						let match;
+						if ((match = remoteUrl.match(/^(https:\/\/github\.com\/|git@github\.com:)([^\/]+)\/(.+?)(\.git)?\/?$/)) !== null) {
+							remoteSource = { type: 'github', owner: match[2], repo: match[3] };
+						} else if (remoteUrl.startsWith('https://gitlab.com/') || remoteUrl.startsWith('git@gitlab.com:')) {
+							remoteSource = { type: 'gitlab' };
+						}
 					}
 				}
 			}
@@ -372,6 +383,21 @@ export class AvatarManager extends Disposable {
 	}
 
 	/**
+	 * Fetch an avatar from a configured custom remote avatar template URL.
+	 */
+	private async fetchFromCustomRemote(avatarRequest: AvatarRequestItem, remoteUrl: string) {
+		const url = resolveCustomRemoteAvatarUrl(remoteUrl, avatarRequest.email, '', getConfig(avatarRequest.repo).customRemotes);
+		if (url !== null) {
+			const img = await this.downloadAvatarImage(avatarRequest.email, url);
+			if (img !== null) {
+				this.saveAvatar(avatarRequest.email, img, false);
+				return;
+			}
+		}
+		this.fetchFromGravatar(avatarRequest);
+	}
+
+	/**
 	 * Fetch an avatar from Gravatar.
 	 * @param avatarRequest The avatar request to fetch.
 	 */
@@ -411,8 +437,11 @@ export class AvatarManager extends Disposable {
 				}
 			};
 
-			const req = https.get({
-				hostname: imgUrl.hostname, path: imgUrl.pathname + imgUrl.search,
+			const client = imgUrl.protocol === 'http:' ? http : https;
+			const req = client.get({
+				hostname: imgUrl.hostname,
+				port: imgUrl.port || undefined,
+				path: imgUrl.pathname + imgUrl.search,
 				headers: { 'User-Agent': 'vscode-git-graph' },
 				agent: false, timeout: 15000
 			}, (res) => {
@@ -624,6 +653,11 @@ export interface AvatarEvent {
 	image: string;
 }
 
+interface CustomRemoteSource {
+	readonly type: 'custom';
+	readonly remoteUrl: string;
+}
+
 interface GitLabRemoteSource {
 	readonly type: 'gitlab';
 }
@@ -632,4 +666,4 @@ interface GravatarRemoteSource {
 	readonly type: 'gravatar';
 }
 
-type RemoteSource = GitHubRemoteSource | GitLabRemoteSource | GravatarRemoteSource;
+type RemoteSource = GitHubRemoteSource | CustomRemoteSource | GitLabRemoteSource | GravatarRemoteSource;

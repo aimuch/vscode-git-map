@@ -430,6 +430,90 @@
 				"command": "git-map.exportContextForAgent",
 				"title": "%command.exportContextForAgent.title%",
 				"icon": "$(copy)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.checkRepoHealth",
+				"title": "%command.checkRepoHealth.title%",
+				"icon": "$(tools)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.editSshAllowedSigners",
+				"title": "%command.editSshAllowedSigners.title%",
+				"icon": "$(key)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.toggleFileHeatmap",
+				"title": "%command.toggleFileHeatmap.title%",
+				"icon": "$(flame)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.toggleFileChanges",
+				"title": "%command.toggleFileChanges.title%",
+				"icon": "$(diff-modified)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.annotations.nextChange",
+				"title": "%command.annotations.nextChange.title%",
+				"icon": "$(arrow-down)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.annotations.previousChange",
+				"title": "%command.annotations.previousChange.title%",
+				"icon": "$(arrow-up)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.toggleCodeLens",
+				"title": "%command.toggleCodeLens.title%",
+				"icon": "$(lens)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.startWork",
+				"title": "%command.startWork.title%",
+				"icon": "$(git-branch-create)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.openLaunchpad",
+				"title": "%command.openLaunchpad.title%",
+				"icon": "$(rocket)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.switchMode",
+				"title": "%command.switchMode.title%",
+				"icon": "$(layers)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.autoRebase",
+				"title": "%command.ai.autoRebase.title%",
+				"icon": "$(sparkle)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.autoRebase.continue",
+				"title": "%command.ai.autoRebase.continue.title%",
+				"icon": "$(debug-continue)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.ai.autoRebase.undo",
+				"title": "%command.ai.autoRebase.undo.title%",
+				"icon": "$(discard)"
+			},
+			{
+				"category": "Git Map",
+				"command": "git-map.scmView.refresh",
+				"title": "%command.scmView.refresh.title%",
+				"icon": "$(refresh)"
 			}
 		],
 		"configuration": {
@@ -524,10 +608,153 @@
 					"description": "%config.ai.provider.description%",
 					"scope": "machine"
 				},
+				"git-map.ai.taskModels": {
+					"type": "object",
+					"default": {},
+					"description": "%config.ai.taskModels.description%"
+				},
+				"git-map.ai.customInstructions": {
+					"type": "object",
+					"default": {},
+					"description": "%config.ai.customInstructions.description%"
+				},
+				"git-map.ai.exclude.files": {
+					"type": "array",
+					"items": {
+						"type": "string"
+					},
+					"default": [],
+					"description": "%config.ai.exclude.files.description%"
+				},
+				"git-map.ai.largePromptWarningThreshold": {
+					"type": "number",
+					"default": 6000,
+					"description": "%config.ai.largePromptWarningThreshold.description%"
+				},
+				"git-map.ai.autoRebase.confidenceThreshold": {
+					"type": "number",
+					"default": 0.85,
+					"minimum": 0,
+					"maximum": 1,
+					"description": "%config.ai.autoRebase.confidenceThreshold.description%"
+				},
+				"git-map.autolinks": {
+					"type": "array",
+					"default": [],
+					"items": {
+						"type": "object",
+						"properties": {
+							"prefix": { "type": "string" },
+							"url": { "type": "string" },
+							"title": { "type": "string" },
+							"alphanumeric": { "type": "boolean" },
+							"ignoreCase": { "type": "boolean" }
+						},
+						"required": ["prefix", "url"]
+					},
+					"description": "%config.autolinks.description%"
+				},
+				"git-map.remotes": {
+					"type": "array",
+					"default": [],
+					"items": {
+						"type": "object",
+						"properties": {
+							"domain": { "type": "string" },
+							"regex": { "type": "string" },
+							"type": { "type": "string", "enum": ["github", "gitlab", "bitbucket", "gitea", "azure", "custom"] },
+							"protocol": { "type": "string" },
+							"name": { "type": "string" },
+							"avatarUrl": { "type": "string" },
+							"urls": { "type": "object" }
+						},
+						"required": ["type"]
+					},
+					"description": "%config.remotes.description%"
+				},
+				"git-map.startWork.branchNameFormat": {
+					"type": "string",
+					"default": "${id}-${title}",
+					"description": "%config.startWork.branchNameFormat.description%"
+				},
+				"git-map.terminalLinks.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.terminalLinks.enabled.description%"
+				},
+				"git-map.terminalLinks.showDetailsView": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.terminalLinks.showDetailsView.description%"
+				},
+				"git-map.graph.followTerminal.enabled": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.graph.followTerminal.enabled.description%"
+				},
+				"git-map.graph.followTerminal.allowRepositorySwitching": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.graph.followTerminal.allowRepositorySwitching.description%"
+				},
+				"git-map.graph.scrollMarkers.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.graph.scrollMarkers.enabled.description%"
+				},
+				"git-map.graph.scrollMarkers.types": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["localBranches", "remoteBranches", "pullRequests", "stashes", "tags", "worktrees"]
+					},
+					"default": ["localBranches", "remoteBranches", "pullRequests", "stashes", "tags", "worktrees"],
+					"description": "%config.graph.scrollMarkers.types.description%"
+				},
+				"git-map.graph.minimap.additionalTypes": {
+					"type": "array",
+					"items": {
+						"type": "string",
+						"enum": ["localBranches", "remoteBranches", "pullRequests", "stashes", "tags", "worktrees"]
+					},
+					"default": ["pullRequests", "stashes", "worktrees"],
+					"description": "%config.graph.minimap.additionalTypes.description%"
+				},
+				"git-map.graph.showGhostRefsOnRowHover": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.graph.showGhostRefsOnRowHover.description%"
+				},
+				"git-map.graph.multiselect": {
+					"type": "string",
+					"enum": ["off", "on", "topological"],
+					"default": "on",
+					"description": "%config.graph.multiselect.description%"
+				},
 				"git-map.blame.currentLine": {
 					"type": "boolean",
 					"default": true,
 					"description": "%config.blame.currentLine.description%"
+				},
+				"git-map.blame.currentLine.format": {
+					"type": "string",
+					"default": "${author, }${agoOrDate}${' via 'pullRequest}${' • 'message}",
+					"description": "%config.blame.currentLine.format.description%"
+				},
+				"git-map.blame.currentLine.uncommittedFormat": {
+					"type": "string",
+					"default": "Uncommitted changes",
+					"description": "%config.blame.currentLine.uncommittedFormat.description%"
+				},
+				"git-map.blame.currentLine.pullRequests.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.blame.currentLine.pullRequests.enabled.description%"
+				},
+				"git-map.blame.currentLine.scrollable": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.blame.currentLine.scrollable.description%"
 				},
 				"git-map.blame.ignoreRevsFile": {
 					"type": "string",
@@ -544,10 +771,251 @@
 					"default": true,
 					"description": "%config.blame.statusBar.description%"
 				},
+				"git-map.blame.statusBar.format": {
+					"type": "string",
+					"default": "${author, }${agoOrDate}",
+					"description": "%config.blame.statusBar.format.description%"
+				},
+				"git-map.blame.statusBar.alignment": {
+					"type": "string",
+					"enum": ["left", "right"],
+					"default": "right",
+					"description": "%config.blame.statusBar.alignment.description%"
+				},
+				"git-map.blame.statusBar.reduceFlicker": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.blame.statusBar.reduceFlicker.description%"
+				},
 				"git-map.codeLens.enabled": {
 					"type": "boolean",
 					"default": false,
 					"description": "%config.codeLens.enabled.description%"
+				},
+				"git-map.codeLens.recentChange.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.codeLens.recentChange.enabled.description%"
+				},
+				"git-map.codeLens.authors.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.codeLens.authors.enabled.description%"
+				},
+				"git-map.codeLens.recentChange.command": {
+					"type": "string",
+					"enum": ["git-map.viewLineHistory", "git-map.viewCommitInGitMap", "git-map.openLineChanges"],
+					"default": "git-map.viewLineHistory",
+					"description": "%config.codeLens.recentChange.command.description%"
+				},
+				"git-map.codeLens.authors.command": {
+					"type": "string",
+					"enum": ["git-map.viewLineHistory", "git-map.toggleFileBlame", "git-map.viewFileHistory"],
+					"default": "git-map.viewLineHistory",
+					"description": "%config.codeLens.authors.command.description%"
+				},
+				"git-map.codeLens.scopes": {
+					"type": "array",
+					"items": { "type": "string", "enum": ["document", "containers", "blocks"] },
+					"default": ["containers", "blocks"],
+					"description": "%config.codeLens.scopes.description%"
+				},
+				"git-map.hovers.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.hovers.enabled.description%"
+				},
+				"git-map.hovers.currentLine.over": {
+					"type": "string",
+					"enum": ["line", "annotation"],
+					"default": "line",
+					"description": "%config.hovers.currentLine.over.description%"
+				},
+				"git-map.hovers.currentLine.details": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.hovers.currentLine.details.description%"
+				},
+				"git-map.hovers.currentLine.changes": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.hovers.currentLine.changes.description%"
+				},
+				"git-map.hovers.autolinks.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.hovers.autolinks.enabled.description%"
+				},
+				"git-map.fileBlame.compact": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.fileBlame.compact.description%"
+				},
+				"git-map.fileBlame.heatmap.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.fileBlame.heatmap.enabled.description%"
+				},
+				"git-map.fileBlame.heatmap.location": {
+					"type": "string",
+					"enum": ["left", "right"],
+					"default": "right",
+					"description": "%config.fileBlame.heatmap.location.description%"
+				},
+				"git-map.fileBlame.highlight.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.fileBlame.highlight.enabled.description%"
+				},
+				"git-map.fileBlame.highlight.locations": {
+					"type": "array",
+					"items": { "type": "string", "enum": ["gutter", "line", "overviewRuler"] },
+					"default": ["gutter", "line", "overviewRuler"],
+					"description": "%config.fileBlame.highlight.locations.description%"
+				},
+				"git-map.fileBlame.toggleMode": {
+					"type": "string",
+					"enum": ["file", "window"],
+					"default": "file",
+					"description": "%config.fileBlame.toggleMode.description%"
+				},
+				"git-map.fileBlame.delayAfterEdit": {
+					"type": "number",
+					"default": 5000,
+					"description": "%config.fileBlame.delayAfterEdit.description%"
+				},
+				"git-map.fileBlame.sizeThresholdAfterEdit": {
+					"type": "number",
+					"default": 5000,
+					"description": "%config.fileBlame.sizeThresholdAfterEdit.description%"
+				},
+				"git-map.fileChanges.locations": {
+					"type": "array",
+					"items": { "type": "string", "enum": ["gutter", "line", "overviewRuler"] },
+					"default": ["gutter", "overviewRuler"],
+					"description": "%config.fileChanges.locations.description%"
+				},
+				"git-map.fileChanges.toggleMode": {
+					"type": "string",
+					"enum": ["file", "window"],
+					"default": "file",
+					"description": "%config.fileChanges.toggleMode.description%"
+				},
+				"git-map.fileHeatmap.locations": {
+					"type": "array",
+					"items": { "type": "string", "enum": ["gutter", "line", "overviewRuler"] },
+					"default": ["gutter", "overviewRuler"],
+					"description": "%config.fileHeatmap.locations.description%"
+				},
+				"git-map.fileHeatmap.toggleMode": {
+					"type": "string",
+					"enum": ["file", "window"],
+					"default": "file",
+					"description": "%config.fileHeatmap.toggleMode.description%"
+				},
+				"git-map.fileHeatmap.ageThreshold": {
+					"type": "number",
+					"default": 90,
+					"description": "%config.fileHeatmap.ageThreshold.description%"
+				},
+				"git-map.fileHeatmap.fadeLines": {
+					"type": "boolean",
+					"default": false,
+					"description": "%config.fileHeatmap.fadeLines.description%"
+				},
+				"git-map.fileHeatmap.hotColor": {
+					"type": "string",
+					"default": "#f97316",
+					"description": "%config.fileHeatmap.hotColor.description%"
+				},
+				"git-map.fileHeatmap.coldColor": {
+					"type": "string",
+					"default": "#38bdf8",
+					"description": "%config.fileHeatmap.coldColor.description%"
+				},
+				"git-map.launchpad.indicator.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.launchpad.indicator.enabled.description%"
+				},
+				"git-map.launchpad.indicator.groups": {
+					"type": "array",
+					"items": { "type": "string", "enum": ["mergeable", "blocked", "needsReview", "followUp"] },
+					"default": ["mergeable", "blocked", "needsReview", "followUp"],
+					"description": "%config.launchpad.indicator.groups.description%"
+				},
+				"git-map.launchpad.indicator.useColors": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.launchpad.indicator.useColors.description%"
+				},
+				"git-map.launchpad.pollingIntervalMinutes": {
+					"type": "number",
+					"default": 15,
+					"description": "%config.launchpad.pollingIntervalMinutes.description%"
+				},
+				"git-map.launchpad.staleThresholdDays": {
+					"type": "number",
+					"default": 7,
+					"description": "%config.launchpad.staleThresholdDays.description%"
+				},
+				"git-map.mode.active": {
+					"type": "string",
+					"default": "default",
+					"description": "%config.mode.active.description%"
+				},
+				"git-map.mode.statusBar.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.mode.statusBar.enabled.description%"
+				},
+				"git-map.mode.statusBar.alignment": {
+					"type": "string",
+					"enum": ["left", "right"],
+					"default": "left",
+					"description": "%config.mode.statusBar.alignment.description%"
+				},
+				"git-map.modes": {
+					"type": "array",
+					"default": [],
+					"items": { "type": "object" },
+					"description": "%config.modes.description%"
+				},
+				"git-map.views.scm.grouped.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.views.scm.grouped.enabled.description%"
+				},
+				"git-map.views.scm.grouped.hiddenSections": {
+					"type": "array",
+					"items": { "type": "string" },
+					"default": [],
+					"description": "%config.views.scm.grouped.hiddenSections.description%"
+				},
+				"git-map.menus.editor.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.menus.editor.enabled.description%"
+				},
+				"git-map.menus.editorGroup.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.menus.editorGroup.enabled.description%"
+				},
+				"git-map.menus.explorer.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.menus.explorer.enabled.description%"
+				},
+				"git-map.menus.scm.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.menus.scm.enabled.description%"
+				},
+				"git-map.menus.editorTab.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.menus.editorTab.enabled.description%"
 				},
 				"git-map.commitDetailsView.actions": {
 					"type": "array",
@@ -2340,6 +2808,69 @@
 					"deprecationMessage": "%config.showUntrackedFiles.deprecationMessage%",
 					"markdownDeprecationMessage": "%config.showUntrackedFiles.markdownDeprecationMessage%"
 				},
+				"git-map.agents.default": {
+					"type": "string",
+					"enum": [
+						"",
+						"copilot-chat",
+						"claude-code",
+						"codex",
+						"copilot-cli",
+						"opencode"
+					],
+					"default": "",
+					"description": "%config.agents.default.description%"
+				},
+				"git-map.graph.overviewBar.enabled": {
+					"type": "boolean",
+					"default": true,
+					"description": "%config.graph.overviewBar.enabled.description%"
+				},
+				"git-map.graph.maxVisibleRefsPerCommit": {
+					"type": "number",
+					"default": 0,
+					"description": "%config.graph.maxVisibleRefsPerCommit.description%"
+				},
+				"git-map.graph.shortcuts.overrides": {
+					"type": "object",
+					"default": {},
+					"description": "%config.graph.shortcuts.overrides.description%"
+				},
+				"git-map.views.scm.grouped.defaultSection": {
+					"type": "string",
+					"default": "commits",
+					"description": "%config.views.scm.grouped.defaultSection.description%"
+				},
+				"git-map.views.commits.labelFormat": {
+					"type": "string",
+					"default": "${message}",
+					"description": "%config.views.commits.labelFormat.description%"
+				},
+				"git-map.views.commits.descriptionFormat": {
+					"type": "string",
+					"default": "${author, }${agoOrDate}",
+					"description": "%config.views.commits.descriptionFormat.description%"
+				},
+				"git-map.views.stashes.labelFormat": {
+					"type": "string",
+					"default": "${message}",
+					"description": "%config.views.stashes.labelFormat.description%"
+				},
+				"git-map.views.stashes.descriptionFormat": {
+					"type": "string",
+					"default": "${agoOrDate}",
+					"description": "%config.views.stashes.descriptionFormat.description%"
+				},
+				"git-map.views.files.labelFormat": {
+					"type": "string",
+					"default": "${file}",
+					"description": "%config.views.files.labelFormat.description%"
+				},
+				"git-map.views.files.descriptionFormat": {
+					"type": "string",
+					"default": "${directory}",
+					"description": "%config.views.files.descriptionFormat.description%"
+				},
 				"git-map.useMailmap": {
 					"type": "boolean",
 					"default": false,
@@ -2440,90 +2971,90 @@
 				{
 					"submenu": "git-map.editorContext",
 					"group": "gitMap@1",
-					"when": "resourceScheme == file && (config.git-map.editorContextMenu.viewLineHistory == 'Submenu' || config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Submenu' || config.git-map.editorContextMenu.viewFileHistory == 'Submenu' || config.git-map.editorContextMenu.visualFileHistory == 'Submenu' || config.git-map.editorContextMenu.toggleFileBlame == 'Submenu' || config.git-map.editorContextMenu.toggleLineBlame == 'Submenu' || config.git-map.editorContextMenu.openPreviousRevision == 'Submenu' || config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Submenu' || config.git-map.editorContextMenu.openLinesOnRemote == 'Submenu')"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && (config.git-map.editorContextMenu.viewLineHistory == 'Submenu' || config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Submenu' || config.git-map.editorContextMenu.viewFileHistory == 'Submenu' || config.git-map.editorContextMenu.visualFileHistory == 'Submenu' || config.git-map.editorContextMenu.toggleFileBlame == 'Submenu' || config.git-map.editorContextMenu.toggleLineBlame == 'Submenu' || config.git-map.editorContextMenu.openPreviousRevision == 'Submenu' || config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Submenu' || config.git-map.editorContextMenu.openLinesOnRemote == 'Submenu')"
 				},
 				{
 					"command": "git-map.viewLineHistory",
 					"group": "gitMap@2",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.viewLineHistory == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.viewLineHistory == 'Context Menu'"
 				},
 				{
 					"command": "git-map.viewLineHistoryInGitMap",
 					"group": "gitMap@3",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.viewLineHistoryInGitMap == 'Context Menu'"
 				},
 				{
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@4",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.viewFileHistory == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.viewFileHistory == 'Context Menu'"
 				},
 				{
 					"command": "git-map.visualFileHistory",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.visualFileHistory == 'Context Menu'",
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.visualFileHistory == 'Context Menu'",
 					"group": "gitMap@5"
 				},
 				{
 					"command": "git-map.toggleFileBlame",
 					"group": "gitMap@6",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.toggleFileBlame == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.toggleFileBlame == 'Context Menu'"
 				},
 				{
 					"command": "git-map.toggleLineBlame",
 					"group": "gitMap@7",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.toggleLineBlame == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.toggleLineBlame == 'Context Menu'"
 				},
 				{
 					"command": "git-map.openPreviousRevision",
 					"group": "gitMap@8",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.openPreviousRevision == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.openPreviousRevision == 'Context Menu'"
 				},
 				{
 					"command": "git-map.copyRemoteLinkToLines",
 					"group": "gitMap@9",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.copyRemoteLinkToLines == 'Context Menu'"
 				},
 				{
 					"command": "git-map.openLinesOnRemote",
 					"group": "gitMap@10",
-					"when": "resourceScheme == file && config.git-map.editorContextMenu.openLinesOnRemote == 'Context Menu'"
+					"when": "resourceScheme == file && config.git-map.menus.editor.enabled && config.git-map.editorContextMenu.openLinesOnRemote == 'Context Menu'"
 				}
 			],
 			"explorer/context": [
 				{
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@1",
-					"when": "resourceScheme == file && !explorerResourceIsFolder"
+					"when": "resourceScheme == file && config.git-map.menus.explorer.enabled && !explorerResourceIsFolder"
 				},
 				{
 					"command": "git-map.fileTimeMachine",
-					"when": "resourceScheme == file && !explorerResourceIsFolder",
+					"when": "resourceScheme == file && config.git-map.menus.explorer.enabled && !explorerResourceIsFolder",
 					"group": "gitMap@1.5"
 				},
 				{
 					"command": "git-map.visualFileHistory",
-					"when": "resourceScheme == file && !explorerResourceIsFolder",
+					"when": "resourceScheme == file && config.git-map.menus.explorer.enabled && !explorerResourceIsFolder",
 					"group": "gitMap@2"
 				},
 				{
 					"command": "git-map.removeFilesFromHistory",
 					"group": "gitMap@3",
-					"when": "resourceScheme == file"
+					"when": "resourceScheme == file && config.git-map.menus.explorer.enabled"
 				}
 			],
 			"editor/title/context": [
 				{
 					"command": "git-map.viewFileHistory",
 					"group": "gitMap@1",
-					"when": "resourceScheme == file"
+					"when": "resourceScheme == file && config.git-map.menus.editorTab.enabled"
 				},
 				{
 					"command": "git-map.fileTimeMachine",
-					"when": "resourceScheme == file",
+					"when": "resourceScheme == file && config.git-map.menus.editorTab.enabled",
 					"group": "gitMap@1.5"
 				},
 				{
 					"command": "git-map.visualFileHistory",
-					"when": "resourceScheme == file",
+					"when": "resourceScheme == file && config.git-map.menus.editorTab.enabled",
 					"group": "gitMap@2"
 				}
 			],
@@ -2531,89 +3062,94 @@
 				{
 					"command": "git-map.diff.showChangesOnly",
 					"group": "navigation@-100",
-					"when": "isInDiffEditor && !config.diffEditor.hideUnchangedRegions.enabled"
+					"when": "config.git-map.menus.editorGroup.enabled && isInDiffEditor && !config.diffEditor.hideUnchangedRegions.enabled"
 				},
 				{
 					"command": "git-map.diff.showFullFile",
 					"group": "navigation@-100",
-					"when": "isInDiffEditor && config.diffEditor.hideUnchangedRegions.enabled"
+					"when": "config.git-map.menus.editorGroup.enabled && isInDiffEditor && config.diffEditor.hideUnchangedRegions.enabled"
 				},
 				{
 					"command": "git-map.openFile",
 					"group": "navigation@-99",
-					"when": "isInDiffEditor && resourceScheme == git-map && git-map:codiconsSupported"
+					"when": "config.git-map.menus.editorGroup.enabled && isInDiffEditor && resourceScheme == git-map && git-map:codiconsSupported"
 				},
 				{
 					"command": "git-map.openPreviousRevision",
 					"group": "navigation@-98",
-					"when": "resourceScheme == git-map"
+					"when": "config.git-map.menus.editorGroup.enabled && resourceScheme == git-map"
 				},
 				{
 					"command": "git-map.openNextRevision",
 					"group": "navigation@-97",
-					"when": "resourceScheme == git-map"
+					"when": "config.git-map.menus.editorGroup.enabled && resourceScheme == git-map"
 				},
 				{
 					"command": "git-map.fileTimeMachine",
 					"group": "navigation@-96",
-					"when": "resourceScheme == git-map"
+					"when": "config.git-map.menus.editorGroup.enabled && resourceScheme == git-map"
 				},
 				{
 					"command": "git-map.conflictAssistant",
 					"group": "navigation@-95",
-					"when": "resourceScheme == file && git-map:hasMergeConflictMarkers"
+					"when": "config.git-map.menus.editorGroup.enabled && resourceScheme == file && git-map:hasMergeConflictMarkers"
 				}
 			],
 			"scm/title": [
 				{
-					"when": "scmProvider == git && config.git-map.ai.commitMessage.enabled",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.ai.commitMessage.enabled",
 					"command": "git-map.ai.generateCommitMessage",
 					"group": "navigation"
 				},
 				{
-					"when": "scmProvider == git",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled",
 					"command": "git-map.ai.reviewChanges",
 					"group": "navigation"
 				},
 				{
-					"when": "scmProvider == git",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled",
 					"command": "git-map.conflictAssistant",
 					"group": "2_gitMap@1"
 				},
 				{
-					"when": "scmProvider == git",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled",
 					"command": "git-map.reflogExplorer",
 					"group": "2_gitMap@2"
 				},
 				{
-					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
 					"command": "git-map.view",
 					"group": "navigation"
 				},
 				{
-					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'More Actions'",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.sourceCodeProviderIntegrationLocation == 'More Actions'",
 					"command": "git-map.view",
 					"group": "inline"
 				}
 			],
 			"scm/repository": [
 				{
-					"when": "scmProvider == git && config.git-map.ai.commitMessage.enabled",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.ai.commitMessage.enabled",
 					"command": "git-map.ai.generateCommitMessage",
 					"group": "inline"
 				},
 				{
-					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.sourceCodeProviderIntegrationLocation == 'Inline'",
 					"command": "git-map.view",
 					"group": "inline"
 				},
 				{
-					"when": "scmProvider == git && config.git-map.sourceCodeProviderIntegrationLocation == 'More Actions'",
+					"when": "scmProvider == git && config.git-map.menus.scm.enabled && config.git-map.sourceCodeProviderIntegrationLocation == 'More Actions'",
 					"command": "git-map.view",
 					"group": "navigation"
 				}
 			],
 			"view/title": [
+				{
+					"command": "git-map.scmView.refresh",
+					"when": "view == git-map.scmView",
+					"group": "navigation@1"
+				},
 				{
 					"command": "git-map.lineHistory.followCursor",
 					"when": "view == git-map.lineHistory && !git-map:lineHistoryFollowCursor",
@@ -2701,6 +3237,26 @@
 					"when": "config.git-map.editorContextMenu.toggleLineBlame == 'Submenu'"
 				},
 				{
+					"command": "git-map.toggleFileHeatmap",
+					"group": "2_blame@3",
+					"when": "resourceScheme == file"
+				},
+				{
+					"command": "git-map.toggleFileChanges",
+					"group": "2_blame@4",
+					"when": "resourceScheme == file"
+				},
+				{
+					"command": "git-map.toggleCodeLens",
+					"group": "2_blame@5",
+					"when": "resourceScheme == file"
+				},
+				{
+					"command": "git-map.switchMode",
+					"group": "2_blame@6",
+					"when": "resourceScheme == file"
+				},
+				{
 					"command": "git-map.openPreviousRevision",
 					"group": "3_revisions@1",
 					"when": "config.git-map.editorContextMenu.openPreviousRevision == 'Submenu'"
@@ -2739,7 +3295,26 @@
 				}
 			]
 		},
+		"customEditors": [
+			{
+				"viewType": "git-map.rebaseTodoEditor",
+				"displayName": "%customEditor.rebaseTodoEditor.displayName%",
+				"selector": [
+					{
+						"filenamePattern": "**/git-rebase-todo"
+					}
+				],
+				"priority": "default"
+			}
+		],
 		"views": {
+			"scm": [
+				{
+					"id": "git-map.scmView",
+					"name": "%view.scm.name%",
+					"when": "config.git-map.views.scm.grouped.enabled"
+				}
+			],
 			"gitMapLineHistory": [
 				{
 					"type": "webview",

@@ -187,12 +187,75 @@ export enum ViewColumn {
 	Nine = 9
 }
 
+export enum TreeItemCollapsibleState {
+	None = 0,
+	Collapsed = 1,
+	Expanded = 2
+}
+
+export class ThemeIcon {
+	public readonly id: string;
+	constructor(id: string) {
+		this.id = id;
+	}
+}
+
+export class TreeItem {
+	public id?: string;
+	public label?: string;
+	public description?: string | boolean;
+	public tooltip?: string;
+	public iconPath?: ThemeIcon;
+	public command?: vscode.Command;
+	public collapsibleState?: TreeItemCollapsibleState;
+	constructor(label: string, collapsibleState: TreeItemCollapsibleState = TreeItemCollapsibleState.None) {
+		this.label = label;
+		this.collapsibleState = collapsibleState;
+	}
+}
+
+export class Position {
+	public readonly line: number;
+	public readonly character: number;
+	constructor(line: number, character: number) {
+		this.line = line;
+		this.character = character;
+	}
+}
+
+export class Range {
+	public readonly start: Position;
+	public readonly end: Position;
+	constructor(start: Position | number, endOrStartChar: Position | number, endLine?: number, endChar?: number) {
+		if (start instanceof Position && endOrStartChar instanceof Position) {
+			this.start = start;
+			this.end = endOrStartChar;
+		} else {
+			this.start = new Position(Number(start), Number(endOrStartChar));
+			this.end = new Position(Number(endLine || 0), Number(endChar || 0));
+		}
+	}
+}
+
+export class WorkspaceEdit {
+	public readonly edits: Array<{ uri: Uri, range: Range, newText: string }> = [];
+	public replace(uri: Uri, range: Range, newText: string) {
+		this.edits.push({ uri, range, newText });
+	}
+}
+
 export const window = {
 	activeTextEditor: undefined as any,
 	createOutputChannel: jest.fn(() => mocks.outputChannel),
 	createStatusBarItem: jest.fn(() => mocks.statusBarItem),
+	createTreeView: jest.fn(() => ({
+		dispose: jest.fn(),
+		reveal: jest.fn()
+	})),
 	createWebviewPanel: jest.fn(createWebviewPanel),
 	createTerminal: jest.fn(() => mocks.terminal),
+	registerCustomEditorProvider: jest.fn(() => ({ dispose: jest.fn() })),
+	registerTerminalLinkProvider: jest.fn(() => ({ dispose: jest.fn() })),
 	showErrorMessage: jest.fn(),
 	showInformationMessage: jest.fn(),
 	showInputBox: jest.fn(),
@@ -202,6 +265,7 @@ export const window = {
 };
 
 export const workspace = {
+	applyEdit: jest.fn(async () => true),
 	createFileSystemWatcher: jest.fn(() => ({
 		onDidCreate: jest.fn(),
 		onDidChange: jest.fn(),
@@ -210,6 +274,7 @@ export const workspace = {
 	})),
 	getConfiguration: jest.fn(() => mocks.workspaceConfiguration),
 	onDidChangeConfiguration: jest.fn((_: (e: vscode.ConfigurationChangeEvent) => void) => ({ dispose: jest.fn() })),
+	onDidChangeTextDocument: jest.fn((_: (e: vscode.TextDocumentChangeEvent) => void) => ({ dispose: jest.fn() })),
 	onDidChangeWorkspaceFolders: jest.fn((_: () => Promise<void>) => ({ dispose: jest.fn() })),
 	onDidCloseTextDocument: jest.fn((_: () => void) => ({ dispose: jest.fn() })),
 	workspaceFolders: <{ uri: Uri, index: number }[] | undefined>undefined

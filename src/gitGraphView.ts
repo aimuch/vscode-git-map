@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { fetchProviderModels, getDirectAiConfig, getHost, loadAiSettingsSnapshot, onDidChangeAiApiKey } from './aiProviders';
+import { fetchProviderModels, getDirectAiConfigForTask, getHost, loadAiSettingsSnapshot, onDidChangeAiApiKey } from './aiProviders';
 import { AvatarManager } from './avatarManager';
 import { getConfig } from './config';
 import { DataSource, GitConfigKey } from './dataSource';
@@ -195,13 +195,44 @@ export class GitGraphView extends Disposable {
 
 			// Re-render the view when the appearance of the graph or language is changed; sync AI settings in place so open drawers stay open
 			vscode.workspace.onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.graph.colourPreset') || event.affectsConfiguration('git-map.graph.colours') || event.affectsConfiguration('git-map.graph.minimap') || event.affectsConfiguration('git-map.graph.style') || event.affectsConfiguration('git-map.graph.density') || event.affectsConfiguration('git-map.graph.freezeColumnHeaders') || event.affectsConfiguration('git-map.graph.freezeFooter') || event.affectsConfiguration('git-map.graph.nodeStyle') || event.affectsConfiguration('git-map.language')) {
+				if (
+					event.affectsConfiguration('git-map.graph.colourPreset') ||
+					event.affectsConfiguration('git-map.graph.colours') ||
+					event.affectsConfiguration('git-map.graph.minimap') ||
+					event.affectsConfiguration('git-map.graph.style') ||
+					event.affectsConfiguration('git-map.graph.density') ||
+					event.affectsConfiguration('git-map.graph.freezeColumnHeaders') ||
+					event.affectsConfiguration('git-map.graph.freezeFooter') ||
+					event.affectsConfiguration('git-map.graph.nodeStyle') ||
+					event.affectsConfiguration('git-map.graph.scrollMarkers') ||
+					event.affectsConfiguration('git-map.graph.showGhostRefsOnRowHover') ||
+					event.affectsConfiguration('git-map.graph.multiselect') ||
+					event.affectsConfiguration('git-map.graph.followTerminal') ||
+					event.affectsConfiguration('git-map.graph.overviewBar') ||
+					event.affectsConfiguration('git-map.graph.maxVisibleRefsPerCommit') ||
+					event.affectsConfiguration('git-map.graph.shortcuts') ||
+					event.affectsConfiguration('git-map.agents') ||
+					event.affectsConfiguration('git-map.autolinks') ||
+					event.affectsConfiguration('git-map.remotes') ||
+					event.affectsConfiguration('git-map.startWork') ||
+					event.affectsConfiguration('git-map.terminalLinks') ||
+					event.affectsConfiguration('git-map.launchpad') ||
+					event.affectsConfiguration('git-map.views') ||
+					event.affectsConfiguration('git-map.blame') ||
+					event.affectsConfiguration('git-map.codeLens') ||
+					event.affectsConfiguration('git-map.hovers') ||
+					event.affectsConfiguration('git-map.changes') ||
+					event.affectsConfiguration('git-map.heatmap') ||
+					event.affectsConfiguration('git-map.mode') ||
+					event.affectsConfiguration('git-map.modes') ||
+					event.affectsConfiguration('git-map.language')
+				) {
 					if (this.panel.visible) {
 						this.update();
 					} else {
 						this.panelSync.markFullDirty();
 					}
-				} else if (event.affectsConfiguration('git-map.ai.explainCommit.enabled') || event.affectsConfiguration('git-map.ai.commitMessage.enabled') || event.affectsConfiguration('git-map.ai.provider') || event.affectsConfiguration('git-map.ai.baseUrl') || event.affectsConfiguration('git-map.ai.model')) {
+				} else if (event.affectsConfiguration('git-map.ai')) {
 					if (this.panel.visible && this.isGraphViewLoaded) {
 						void this.sendAiState();
 					} else {
@@ -1154,12 +1185,25 @@ export class GitGraphView extends Disposable {
 			case 'restoreFilesFromCommit':
 			case 'exportAgentContext':
 			case 'openHookFile':
+			case 'pushToCommit':
+			case 'batchSquashCommits':
+			case 'batchDropCommits':
+			case 'aiChangelogFromCommits':
+			case 'addToGitignore':
+			case 'loadContributors':
+			case 'startWorkBranch':
+			case 'loadCodingAgents':
+			case 'toggleCodingAgentMcp':
+			case 'toggleCodingAgentHooks':
+			case 'copyWipToWorktree':
+			case 'saveExtendedSettings':
 			case 'openCompanionFeature':
 				await handleCompanionMessage(msg, {
 					dataSource: this.dataSource,
 					gitFeatures: this.gitFeatures,
 					undoManager: this.undoManager,
 					signCommits: signCommits,
+					extensionPath: this.extensionPath,
 					metadataStore: this.extensionState.metadataStore,
 					sendMessage: (response) => this.sendMessage(response)
 				});
@@ -1281,11 +1325,25 @@ export class GitGraphView extends Disposable {
 		await Promise.all([this.sendAiConfig(), this.sendLanguageModels()]);
 	}
 
+	public get panelVisible(): boolean {
+		return this.isPanelVisible;
+	}
+
+	public sendRefreshIfRepo(repo: string) {
+		if (this.currentRepo === repo && this.isPanelVisible) {
+			this.sendMessage({ command: 'refresh' });
+		}
+	}
+
+	public focusRepoWorktree(repo: string, worktreePath?: string) {
+		this.respondLoadRepos(this.repoManager.getRepos(), { repo: repo, worktreePath: worktreePath });
+	}
+
 	/**
 	 * Send the available language models (and whether an API key is missing) to the front-end.
 	 */
 	private async sendLanguageModels() {
-		const result = await getLanguageModels();
+		const result = await getLanguageModels('explainAndSearch');
 		this.sendMessage({ command: 'loadLanguageModels', models: result.models, needsApiKey: result.needsApiKey, error: result.error });
 	}
 
@@ -1324,7 +1382,7 @@ export class GitGraphView extends Disposable {
 				return;
 			}
 			if (typeof expectedEndpoint !== 'undefined') {
-				const direct = getDirectAiConfig();
+				const direct = getDirectAiConfigForTask('explainAndSearch').direct;
 				const actualEndpoint = direct !== null ? getHost(direct.baseUrl) : null;
 				if (expectedEndpoint !== actualEndpoint) {
 					void this.sendLanguageModels();
@@ -1369,7 +1427,7 @@ export class GitGraphView extends Disposable {
 				return;
 			}
 			if (typeof expectedEndpoint !== 'undefined') {
-				const direct = getDirectAiConfig();
+				const direct = getDirectAiConfigForTask('commitMessage').direct;
 				const actualEndpoint = direct !== null ? getHost(direct.baseUrl) : null;
 				if (expectedEndpoint !== actualEndpoint) {
 					void this.sendAiState();
@@ -1442,15 +1500,19 @@ export class GitGraphView extends Disposable {
 			config: {
 				ai: config.ai,
 				appearance: config.appearance,
+				autolinks: config.autolinks,
 				commitDetailsView: config.commitDetailsView,
 				commitOrdering: config.commitOrder,
 				contextMenuActionsVisibility: config.contextMenuActionsVisibility,
 				customBranchGlobPatterns: config.customBranchGlobPatterns,
 				customEmojiShortcodeMappings: config.customEmojiShortcodeMappings,
 				customPullRequestProviders: config.customPullRequestProviders,
+				customRemotes: config.customRemotes,
 				dateFormat: config.dateFormat,
+				defaultAgent: config.defaultCodingAgent,
 				defaultColumnVisibility: config.defaultColumnVisibility,
 				dialogDefaults: config.dialogDefaults,
+				editorAnnotations: config.editorAnnotationsSnapshot,
 				enhancedAccessibility: config.enhancedAccessibility,
 				explainCommit: config.explainCommit,
 				fetchAndPrune: config.fetchAndPrune,
@@ -1460,6 +1522,7 @@ export class GitGraphView extends Disposable {
 				includeCommitsMentionedByReflogs: config.includeCommitsMentionedByReflogs,
 				initialLoadCommits: config.initialLoadCommits,
 				keybindings: config.keybindings,
+				launchpad: config.launchpadConfig,
 				loadMoreCommits: config.loadMoreCommits,
 				loadMoreCommitsAutomatically: config.loadMoreCommitsAutomatically,
 				markdown: config.markdown,
@@ -1468,6 +1531,9 @@ export class GitGraphView extends Disposable {
 				onRepoLoad: config.onRepoLoad,
 				pullRequestStatusEnabled: config.pullRequestStatusEnabled,
 				rowActions: config.rowActions,
+				scmViews: config.scmViewsConfig,
+				startWorkBranchFormat: config.startWorkBranchFormat,
+				terminalLinks: config.terminalLinks,
 				workflowMacros: config.workflowMacros,
 				referenceLabels: config.referenceLabels,
 				repoDropdownOrder: config.repoDropdownOrder,
@@ -1514,6 +1580,7 @@ export class GitGraphView extends Disposable {
 					<div id="toolsMenuBtn" class="controlBtn" title="${t('Tools, Insights & AI')}"></div>
 					<div id="terminalBtn" class="controlBtn" title="${t('Open a Terminal for this Repository')}"></div>
 					<div id="settingsBtn" class="controlBtn" title="${t('Repository Settings')}"></div>
+					<div id="graphOverviewBar"></div>
 					<div id="fileHistoryBar"></div>
 					<div id="compareBar"></div>
 					<div id="operationBar"></div>

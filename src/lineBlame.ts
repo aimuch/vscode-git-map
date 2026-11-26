@@ -1,10 +1,12 @@
 import * as vscode from 'vscode';
+import { applyAutolinksToMarkdown } from './autolinks';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
+import { getCachedRepoPullRequestBadges } from './prStatusIntegration';
 import { RepoManager } from './repoManager';
-import { GitLineBlame } from './types';
+import { AutolinkRule, GitLineBlame } from './types';
 import { abbrevCommit, getPathFromUri, getRelativeTimeDiff } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
@@ -39,13 +41,15 @@ export class LineBlame extends Disposable {
 	private readonly dataSource: DataSource;
 	private readonly repoManager: RepoManager;
 	private readonly logger: Logger;
-	private readonly decorationType: vscode.TextEditorDecorationType;
-	private readonly statusBarItem: vscode.StatusBarItem;
+	private decorationType: vscode.TextEditorDecorationType;
+	private statusBarItem: vscode.StatusBarItem;
+	private statusBarAlignment: 'left' | 'right' = 'left';
 	private readonly lineCache = new Map<string, { readonly blame: GitLineBlame | null, readonly time: number }>();
 	private readonly diffCache = new Map<string, ReadonlyArray<string> | null>();
 	private enabled: boolean; // Is the blame of the current line shown (at the end of the line, or in the Status Bar)
 	private inline: boolean; // Is it shown at the end of the line (git-map.blame.currentLine)
 	private statusBar: boolean; // Is it shown in the Status Bar (git-map.blame.statusBar)
+	private modeOverride: { inline?: boolean, statusBar?: boolean, hovers?: boolean } | null = null;
 	private timeout: NodeJS.Timeout | null = null;
 	private hoverDiffTimeout: NodeJS.Timeout | null = null;
 	private cancellation: vscode.CancellationTokenSource | null = null;
@@ -71,7 +75,12 @@ export class LineBlame extends Disposable {
 		this.inline = config.blameCurrentLine;
 		this.statusBar = config.blameStatusBar;
 		this.enabled = this.inline || this.statusBar;
-		this.statusBarItem = vscode.window.createStatusBarItem('git-map.blame', vscode.StatusBarAlignment.Left, 0);
+		this.statusBarAlignment = config.blameStatusBarAlignment;
+		this.statusBarItem = vscode.window.createStatusBarItem(
+			'git-map.blame',
+			this.statusBarAlignment === 'right' ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left,
+			0
+		);
 		this.statusBarItem.name = t('Git Map: Blame of the Current Line');
 		this.decorationType = vscode.window.createTextEditorDecorationType({
 			after: {
@@ -84,11 +93,15 @@ export class LineBlame extends Disposable {
 
 		LineBlame.instance = this;
 		this.registerDisposables(
-			this.decorationType,
-			this.statusBarItem,
+			{
+				dispose: () => {
+					this.decorationType.dispose();
+					this.statusBarItem.dispose();
+				}
+			},
 			vscode.window.onDidChangeTextEditorSelection((event) => this.schedule(event.textEditor)),
 			vscode.window.onDidChangeActiveTextEditor((editor) => {
-				this.clear();
+				this.clear(!getConfig().blameStatusBarReduceFlicker);
 				if (editor) this.schedule(editor);
 			}),
 			vscode.workspace.onDidChangeTextDocument((event) => {
@@ -96,14 +109,13 @@ export class LineBlame extends Disposable {
 				if (this.decoratedEditor !== null && this.decoratedEditor.document === event.document) this.schedule(this.decoratedEditor);
 			}),
 			onDidChangeConfiguration((event) => {
-				if (event.affectsConfiguration('git-map.blame.currentLine') || event.affectsConfiguration('git-map.blame.statusBar') || event.affectsConfiguration('git-map.blame.ignoreWhitespace') || event.affectsConfiguration('git-map.blame.ignoreRevsFile') || event.affectsConfiguration('git-map.language')) {
-					const config = getConfig();
-					this.inline = config.blameCurrentLine;
-					this.statusBar = config.blameStatusBar;
-					this.enabled = this.inline || this.statusBar;
-					this.lineCache.clear();
-					this.clear();
-					if (this.enabled && vscode.window.activeTextEditor) this.schedule(vscode.window.activeTextEditor);
+				if (
+					event.affectsConfiguration('git-map.blame') ||
+					event.affectsConfiguration('git-map.hovers') ||
+					event.affectsConfiguration('git-map.autolinks') ||
+					event.affectsConfiguration('git-map.language')
+				) {
+					this.applyConfig();
 				}
 			}),
 			...(typeof onDidChangeGitState === 'function' ? [onDidChangeGitState(() => {
@@ -136,6 +148,31 @@ export class LineBlame extends Disposable {
 		return this.decoratedEditor !== null ? { uri: this.decoratedEditor.document.uri, line: this.decoratedLine } : null;
 	}
 
+	public setModeOverride(override: { inline?: boolean, statusBar?: boolean, hovers?: boolean } | null) {
+		this.modeOverride = override;
+		this.applyConfig();
+	}
+
+	private applyConfig() {
+		const config = getConfig();
+		this.inline = typeof this.modeOverride?.inline === 'boolean' ? this.modeOverride.inline : config.blameCurrentLine;
+		this.statusBar = typeof this.modeOverride?.statusBar === 'boolean' ? this.modeOverride.statusBar : config.blameStatusBar;
+		this.enabled = this.inline || this.statusBar;
+		if (config.blameStatusBarAlignment !== this.statusBarAlignment) {
+			this.statusBarAlignment = config.blameStatusBarAlignment;
+			this.statusBarItem.dispose();
+			this.statusBarItem = vscode.window.createStatusBarItem(
+				'git-map.blame',
+				this.statusBarAlignment === 'right' ? vscode.StatusBarAlignment.Right : vscode.StatusBarAlignment.Left,
+				0
+			);
+			this.statusBarItem.name = t('Git Map: Blame of the Current Line');
+		}
+		this.lineCache.clear();
+		this.clear();
+		if (this.enabled && vscode.window.activeTextEditor) this.schedule(vscode.window.activeTextEditor);
+	}
+
 	/**
 	 * Blame the line the cursor is on in an editor, once the cursor stops moving.
 	 * @param editor The editor.
@@ -148,11 +185,13 @@ export class LineBlame extends Disposable {
 			return;
 		}
 		this.cancel();
-		if (this.decoratedEditor !== null && this.decoratedEditor.selection.active.line !== editor.selection.active.line) this.clear();
+		const reduceFlicker = getConfig().blameStatusBarReduceFlicker;
+		if (this.decoratedEditor !== null && this.decoratedEditor.selection.active.line !== editor.selection.active.line) this.clear(!reduceFlicker);
 		this.timeout = setTimeout(() => {
 			this.timeout = null;
 			this.update(editor).catch((error) => this.logger.logError('Unable to blame the current line: ' + error));
 		}, BLAME_DELAY);
+		if (typeof this.timeout.unref === 'function') this.timeout.unref();
 	}
 
 	/**
@@ -178,10 +217,12 @@ export class LineBlame extends Disposable {
 	/**
 	 * Remove the blame from the editor it's shown in.
 	 */
-	private clear() {
+	private clear(hideStatusBar: boolean = true) {
 		this.lastBlamed = null;
-		this.statusBarItem.hide();
-		this.statusBarVisible = false;
+		if (hideStatusBar || !this.statusBar) {
+			this.statusBarItem.hide();
+			this.statusBarVisible = false;
+		}
 		if (this.decoratedEditor !== null) {
 			this.decoratedEditor.setDecorations(this.decorationType, []);
 			this.decoratedEditor = null;
@@ -200,9 +241,18 @@ export class LineBlame extends Disposable {
 	/**
 	 * Show the blame of a line in the Status Bar.
 	 */
-	private showInStatusBar(blame: GitLineBlame, uri: vscode.Uri, line: number) {
-		this.statusBarItem.text = '$(git-commit) ' + (blame.committed ? t('{0}, {1}', blame.author, getRelativeTimeDiff(blame.authorDate)) : t('You, Uncommitted changes'));
-		this.statusBarItem.tooltip = blame.committed ? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary : t('This line has uncommitted changes.');
+	private showInStatusBar(repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number) {
+		const cfg = getConfig(repo);
+		const prInfo = cfg.blamePullRequestsEnabled ? resolvePrInfoForLineBlame(repo, blame) : null;
+		if (cfg.blameStatusBarFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}') {
+			this.statusBarItem.text = '$(git-commit) ' + formatBlameTemplate(cfg.blameStatusBarFormat, blame, prInfo);
+		} else {
+			const baseText = blame.committed ? t('{0}, {1}', blame.author, getRelativeTimeDiff(blame.authorDate)) : t('You, Uncommitted changes');
+			this.statusBarItem.text = '$(git-commit) ' + baseText + (prInfo !== null ? ' via PR #' + prInfo.number : '');
+		}
+		this.statusBarItem.tooltip = blame.committed
+			? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary + (prInfo !== null ? ' (PR #' + prInfo.number + ')' : '')
+			: t('This line has uncommitted changes.');
 		this.statusBarItem.command = { title: t('View Line History'), command: 'git-map.viewLineHistory', arguments: [{ uri: uri.toString(), start: line, end: line }] };
 		this.statusBarItem.show();
 		this.statusBarVisible = true;
@@ -249,19 +299,54 @@ export class LineBlame extends Disposable {
 			return;
 		}
 
-		if (this.statusBar) this.showInStatusBar(blame, document.uri, line + 1);
+		if (this.statusBar) this.showInStatusBar(repo, blame, document.uri, line + 1);
 		this.decoratedEditor = editor;
 		this.decoratedLine = line;
 		if (!this.inline) {
 			blamed();
 			return;
 		}
-		const end = document.lineAt(line).range.end;
-		const decorate = (change: ReadonlyArray<string> | null) => editor.setDecorations(this.decorationType, [{
-			range: new vscode.Range(end, end),
-			hoverMessage: getBlameHover(repo, blame!, document.uri, line + 1, change),
-			renderOptions: { after: { contentText: getBlameText(blame!) } }
-		}]);
+		const lineRange = document.lineAt(line).range;
+		const end = lineRange.end;
+		const repoCfg = getConfig(repo);
+		const hoverCfg = repoCfg.hoversConfig;
+		const hoversAllowed = typeof this.modeOverride?.hovers === 'boolean' ? this.modeOverride.hovers : (hoverCfg.enabled && hoverCfg.currentLineEnabled);
+		const prInfo = repoCfg.blamePullRequestsEnabled ? resolvePrInfoForLineBlame(repo, blame) : null;
+		const inlineText = getBlameText(blame, {
+			inlineFormat: repoCfg.blameInlineFormat,
+			uncommittedFormat: repoCfg.blameUncommittedFormat,
+			prInfo: prInfo
+		});
+		const decRange = hoverCfg.currentLineOver === 'line' && hoversAllowed ? lineRange : new vscode.Range(end, end);
+		const decorate = (change: ReadonlyArray<string> | null) => {
+			if (repoCfg.blameScrollable) {
+				editor.setDecorations(this.decorationType, [{
+					range: decRange,
+					hoverMessage: hoversAllowed
+						? getBlameHover(repo, blame!, document.uri, line + 1, change, {
+							includeDetails: hoverCfg.currentLineDetails,
+							includeChanges: hoverCfg.currentLineChanges,
+							autolinks: hoverCfg.autolinksEnabled ? repoCfg.autolinks : [],
+							prInfo: hoverCfg.pullRequestsEnabled ? prInfo : null
+						})
+						: undefined,
+					renderOptions: { after: { contentText: inlineText } }
+				}]);
+			} else {
+				editor.setDecorations(this.decorationType, [{
+					range: new vscode.Range(end, end),
+					hoverMessage: hoversAllowed
+						? getBlameHover(repo, blame!, document.uri, line + 1, change, {
+							includeDetails: hoverCfg.currentLineDetails,
+							includeChanges: hoverCfg.currentLineChanges,
+							autolinks: hoverCfg.autolinksEnabled ? repoCfg.autolinks : [],
+							prInfo: hoverCfg.pullRequestsEnabled ? prInfo : null
+						})
+						: undefined,
+					renderOptions: { after: { contentText: inlineText } }
+				}]);
+			}
+		};
 
 		// The hover also shows how the commit changed the line, once it has been loaded
 		if (!blame.committed) {
@@ -294,21 +379,130 @@ export class LineBlame extends Disposable {
 	}
 }
 
+export interface BlamePrInfo {
+	readonly number: number;
+	readonly title?: string;
+	readonly url?: string;
+}
+
+/**
+ * Resolve associated Pull Request info from commit message references (`#N`, `Merge pull request #N`) or cached PR badges.
+ */
+export function resolvePrInfoForLineBlame(repo: string, blame: GitLineBlame): BlamePrInfo | null {
+	if (!blame.committed) return null;
+	const cached = getCachedRepoPullRequestBadges(repo);
+	const m = blame.summary.match(/(?:Merge pull request |PR )?#(\d+)\b/i) || blame.summary.match(/\(#(\d+)\)/);
+	if (m !== null) {
+		const num = parseInt(m[1], 10);
+		if (cached !== null) {
+			const matchBadge = Object.values(cached).find((b) => b.number === num);
+			if (matchBadge) return { number: matchBadge.number, title: matchBadge.title, url: matchBadge.url };
+		}
+		return { number: num };
+	}
+	return null;
+}
+
+/**
+ * Format a blame annotation string from a customizable token template (`${author}`, `${agoOrDate}`, `${' via 'pullRequest}`, `${ • summary|60?}`, etc.).
+ */
+export function formatBlameTemplate(template: string, blame: GitLineBlame, prInfo: BlamePrInfo | null): string {
+	if (!blame.committed) {
+		const ago = t('just now');
+		return template
+			.replace(/\$\{agoOrDate\}/g, ago)
+			.replace(/\$\{ago\}/g, ago)
+			.replace(/\$\{date\}/g, ago)
+			.replace(/\$\{author([^}]*)\}/g, (_, suffix: string) => t('You') + (suffix || ''))
+			.replace(/\$\{sha\}/g, '')
+			.replace(/\$\{[^}]+\}/g, '')
+			.trim();
+	}
+	const ago = getRelativeTimeDiff(blame.authorDate);
+	const absDate = new Date(blame.authorDate * 1000).toLocaleDateString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en');
+	const prText = prInfo !== null ? ('PR #' + prInfo.number) : '';
+
+	const resolveToken = (expr: string): string => {
+		const truncMatch = expr.match(/^([A-Za-z]+)\|(\d+)\??$/);
+		const tokenName = truncMatch ? truncMatch[1] : expr.replace(/\?$/, '');
+		const maxLen = truncMatch ? parseInt(truncMatch[2], 10) : 0;
+		let val = '';
+		switch (tokenName) {
+			case 'author': val = blame.author; break;
+			case 'ago': val = ago; break;
+			case 'date': val = absDate; break;
+			case 'agoOrDate': val = ago; break;
+			case 'summary':
+			case 'message': val = blame.summary; break;
+			case 'sha': val = abbrevCommit(blame.hash); break;
+			case 'pullRequest': val = prText; break;
+			default: val = '';
+		}
+		if (maxLen > 0 && val.length > maxLen) {
+			val = val.substring(0, Math.max(1, maxLen - 1)) + '…';
+		}
+		return val;
+	};
+
+	return template.replace(/\$\{([^}]+)\}/g, (_, inner: string) => {
+		// Handle conditional literal prefixes like `' via 'pullRequest` or ` • summary|60?`
+		const quoted = inner.match(/^'([^']*)'([A-Za-z0-9|?]+)$/);
+		if (quoted !== null) {
+			const v = resolveToken(quoted[2]);
+			return v !== '' ? quoted[1] + v : '';
+		}
+		const spaced = inner.match(/^(\s+[^A-Za-z\s]+\s+)([A-Za-z0-9|?]+)$/);
+		if (spaced !== null) {
+			const v = resolveToken(spaced[2]);
+			return v !== '' ? spaced[1] + v : '';
+		}
+		const trailingSuffix = inner.match(/^([A-Za-z0-9|?]+)([^A-Za-z0-9|?]+)$/);
+		if (trailingSuffix !== null) {
+			const v = resolveToken(trailingSuffix[1]);
+			return v !== '' ? v + trailingSuffix[2] : '';
+		}
+		return resolveToken(inner);
+	}).replace(/\s{2,}/g, ' ').trim();
+}
+
+export interface BlameTextOptions {
+	readonly inlineFormat?: string;
+	readonly uncommittedFormat?: string;
+	readonly prInfo?: BlamePrInfo | null;
+}
+
 /**
  * Get the text of the blame of a line, shown at the end of the line.
  * @param blame The blame of the line.
+ * @param options Optional formatting & PR metadata overrides.
  * @returns The text.
  */
-export function getBlameText(blame: GitLineBlame) {
-	if (!blame.committed) return t('You, Uncommitted changes');
+export function getBlameText(blame: GitLineBlame, options?: BlameTextOptions) {
+	if (!blame.committed) {
+		if (options && typeof options.uncommittedFormat === 'string' && options.uncommittedFormat !== 'You, Uncommitted changes (${ago})') {
+			return formatBlameTemplate(options.uncommittedFormat, blame, null);
+		}
+		return t('You, Uncommitted changes');
+	}
+	if (options && typeof options.inlineFormat === 'string' && options.inlineFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}${ • summary|60?}') {
+		return formatBlameTemplate(options.inlineFormat, blame, options.prInfo || null);
+	}
 	const summary = blame.summary.length > 60 ? blame.summary.substring(0, 59) + '…' : blame.summary;
-	return t('{0}, {1} • {2}', blame.author, getRelativeTimeDiff(blame.authorDate), summary);
+	const base = t('{0}, {1} • {2}', blame.author, getRelativeTimeDiff(blame.authorDate), summary);
+	return options && options.prInfo ? base + ' · PR #' + options.prInfo.number : base;
 }
 
 /**
  * The maximum number of lines of the diff shown in the hover of the blame of a line.
  */
 const MAX_HOVER_DIFF_LINES = 12;
+
+export interface BlameHoverOptions {
+	readonly includeDetails?: boolean;
+	readonly includeChanges?: boolean;
+	readonly autolinks?: ReadonlyArray<AutolinkRule>;
+	readonly prInfo?: BlamePrInfo | null;
+}
 
 /**
  * Get the hover of the blame of a line: the commit, how it changed the line, and links to view the history of the line, open the changes,
@@ -318,9 +512,10 @@ const MAX_HOVER_DIFF_LINES = 12;
  * @param uri The file.
  * @param line The line (1-based) in the editor.
  * @param change The diff of the line in the commit, or NULL if it hasn't been loaded.
+ * @param options Optional hover display configuration.
  * @returns The hover.
  */
-export function getBlameHover(repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number, change: ReadonlyArray<string> | null) {
+export function getBlameHover(repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number, change: ReadonlyArray<string> | null, options?: BlameHoverOptions) {
 	const hover = new vscode.MarkdownString(undefined, true);
 	const args = (value: any[]) => encodeURIComponent(JSON.stringify(value)).replace(/[()]/g, (char) => char === '(' ? '%28' : '%29');
 	const lineHistoryLink = '[$(history) ' + t('View Line History') + '](command:git-map.viewLineHistory?' + args([{ uri: uri.toString(), start: line, end: line }]) + ')';
@@ -330,11 +525,28 @@ export function getBlameHover(repo: string, blame: GitLineBlame, uri: vscode.Uri
 		hover.appendMarkdown('\n\n' + lineHistoryLink);
 		return hover;
 	}
-	hover.appendMarkdown('$(git-commit) **' + abbrevCommit(blame.hash) + '** · ');
-	hover.appendText(blame.author + ' <' + blame.authorEmail + '> · ' + new Date(blame.authorDate * 1000).toLocaleString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en'));
-	hover.appendMarkdown('\n\n');
-	hover.appendText(blame.summary);
-	if (change !== null && change.length > 0) {
+	const includeDetails = !options || options.includeDetails !== false;
+	const includeChanges = !options || options.includeChanges !== false;
+	if (includeDetails) {
+		hover.appendMarkdown('$(git-commit) **' + abbrevCommit(blame.hash) + '** · ');
+		hover.appendText(blame.author + ' <' + blame.authorEmail + '> · ' + new Date(blame.authorDate * 1000).toLocaleString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en'));
+		if (options && options.prInfo) {
+			const prLabel = 'PR #' + options.prInfo.number;
+			if (typeof options.prInfo.url === 'string' && /^https?:\/\//i.test(options.prInfo.url)) {
+				hover.appendMarkdown(' · [$(git-pull-request) ' + prLabel + '](' + options.prInfo.url + ')');
+			} else {
+				hover.appendText(' · ' + prLabel);
+			}
+		}
+		hover.appendMarkdown('\n\n');
+		const autolinks = options && Array.isArray(options.autolinks) ? options.autolinks : [];
+		if (autolinks.length > 0) {
+			hover.appendMarkdown(applyAutolinksToMarkdown(blame.summary, autolinks));
+		} else {
+			hover.appendText(blame.summary);
+		}
+	}
+	if (includeChanges && change !== null && change.length > 0) {
 		const lines = change.slice(0, MAX_HOVER_DIFF_LINES), fence = '`'.repeat(Math.max(3, ...lines.map((diffLine) => (diffLine.match(/`+/g) || ['']).reduce((max, run) => Math.max(max, run.length + 1), 0))));
 		hover.appendMarkdown('\n\n' + fence + 'diff\n' + lines.join('\n') + (change.length > MAX_HOVER_DIFF_LINES ? '\n…' : '') + '\n' + fence);
 	}

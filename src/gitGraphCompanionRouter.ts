@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { detectCodingAgents, toggleCodingAgentHooks, toggleCodingAgentMcp } from './codingAgents';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { generateStashMessage, translateNaturalLanguageToSearchQuery } from './explainCommit';
@@ -8,14 +9,16 @@ import { getLanguage, t } from './l10n';
 import { computeGuardRiskScore, scanRepoWorkingTreeForIssues } from './preCommitGuard';
 import { fetchPullRequestDetails, fetchRepoPullRequestBadges } from './prStatusIntegration';
 import { RepoMetadataStore } from './repoMetadataStore';
-import { RequestMessage, ResponseMessage } from './types';
+import { GitRebaseTodoItem, RequestMessage, ResponseMessage } from './types';
 import { UndoManager } from './undoManager';
+import { getSettingTarget } from './utils';
 
 export interface CompanionRouterContext {
 	readonly dataSource: DataSource;
 	readonly gitFeatures: GitFeatures;
 	readonly undoManager: UndoManager;
 	readonly signCommits: boolean;
+	readonly extensionPath?: string;
 	readonly metadataStore?: RepoMetadataStore;
 	readonly sendMessage: (msg: ResponseMessage) => void;
 }
@@ -32,7 +35,13 @@ const COMPANION_COMMAND_MAP: { readonly [key: string]: string } = {
 	aiSmartCommitSplit: 'git-map.aiSmartCommitSplit',
 	submoduleManager: 'git-map.submoduleManager',
 	branchDashboard: 'git-map.branchDashboard',
-	exportChangelog: 'git-map.exportChangelog'
+	exportChangelog: 'git-map.exportChangelog',
+	startWork: 'git-map.startWork',
+	openLaunchpad: 'git-map.openLaunchpad',
+	switchMode: 'git-map.switchMode',
+	aiAutoRebase: 'git-map.ai.autoRebase',
+	checkRepoHealth: 'git-map.checkRepoHealth',
+	editSshAllowedSigners: 'git-map.editSshAllowedSigners'
 };
 
 /**
@@ -299,6 +308,122 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 			}
 			if (targetPath !== null) {
 				await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(targetPath));
+			}
+			return true;
+		}
+		case 'pushToCommit': {
+			const err = await ctx.dataSource.pushToCommit(msg.repo, msg.commitHash, msg.remote, msg.branchName, msg.mode);
+			ctx.sendMessage({ command: 'pushToCommit', errors: err !== null ? [err] : [] });
+			return true;
+		}
+		case 'batchSquashCommits': {
+			const commitsRes = await ctx.dataSource.getRebaseCommits(msg.repo, msg.baseHash);
+			if (commitsRes.error !== null) {
+				ctx.sendMessage({ command: 'batchSquashCommits', error: commitsRes.error });
+				return true;
+			}
+			const selectedSet = new Set(msg.commitHashes);
+			let seenFirst = false;
+			const todo: GitRebaseTodoItem[] = commitsRes.commits.map((c) => {
+				if (selectedSet.has(c.hash)) {
+					if (!seenFirst) {
+						seenFirst = true;
+						return { hash: c.hash, action: msg.message.trim() !== '' ? 'reword' : 'pick', message: msg.message.trim() !== '' ? msg.message.trim() : null };
+					}
+					return { hash: c.hash, action: 'squash', message: null };
+				}
+				return { hash: c.hash, action: 'pick', message: null };
+			});
+			const err = await ctx.undoManager.trackHead(
+				msg.repo,
+				t('Squash Selected Commits'),
+				() => ctx.dataSource.rebaseInteractive(msg.repo, msg.baseHash, todo),
+				(e) => e === null
+			);
+			ctx.sendMessage({ command: 'batchSquashCommits', error: err });
+			return true;
+		}
+		case 'batchDropCommits': {
+			const commitsRes = await ctx.dataSource.getRebaseCommits(msg.repo, msg.baseHash);
+			if (commitsRes.error !== null) {
+				ctx.sendMessage({ command: 'batchDropCommits', error: commitsRes.error });
+				return true;
+			}
+			const dropSet = new Set(msg.commitHashes);
+			const todo: GitRebaseTodoItem[] = commitsRes.commits.map((c) => ({
+				hash: c.hash,
+				action: dropSet.has(c.hash) ? 'drop' : 'pick',
+				message: null
+			}));
+			const err = await ctx.undoManager.trackHead(
+				msg.repo,
+				t('Drop Selected Commits'),
+				() => ctx.dataSource.rebaseInteractive(msg.repo, msg.baseHash, todo),
+				(e) => e === null
+			);
+			ctx.sendMessage({ command: 'batchDropCommits', error: err });
+			return true;
+		}
+		case 'aiChangelogFromCommits': {
+			await vscode.commands.executeCommand('git-map.ai.generateReleaseNotes', {
+				repo: msg.repo,
+				fromRef: msg.fromRef,
+				toRef: msg.toRef,
+				label: msg.label
+			});
+			return true;
+		}
+		case 'addToGitignore': {
+			const res = await ctx.gitFeatures.addToGitignore(msg.repo, msg.paths);
+			ctx.sendMessage({ command: 'addToGitignore', addedCount: res.addedCount, error: res.error });
+			return true;
+		}
+		case 'loadContributors': {
+			const res = await ctx.gitFeatures.getContributors(msg.repo);
+			ctx.sendMessage({ command: 'loadContributors', repo: msg.repo, contributors: res.contributors, error: res.error });
+			return true;
+		}
+		case 'startWorkBranch': {
+			await vscode.commands.executeCommand('git-map.startWork', { repo: msg.repo, id: msg.id, title: msg.title });
+			return true;
+		}
+		case 'loadCodingAgents': {
+			const agents = await detectCodingAgents(msg.repo, getConfig().defaultCodingAgent);
+			ctx.sendMessage({ command: 'loadCodingAgents', repo: msg.repo, agents: agents });
+			return true;
+		}
+		case 'toggleCodingAgentMcp': {
+			const res = await toggleCodingAgentMcp(msg.repo, ctx.extensionPath || '', msg.agentId, msg.enable);
+			const agents = await detectCodingAgents(msg.repo, getConfig().defaultCodingAgent);
+			ctx.sendMessage({ command: 'toggleCodingAgentMcp', repo: msg.repo, agents: agents, error: res.error });
+			return true;
+		}
+		case 'toggleCodingAgentHooks': {
+			const res = await toggleCodingAgentHooks(msg.repo, msg.agentId, msg.enable);
+			const agents = await detectCodingAgents(msg.repo, getConfig().defaultCodingAgent);
+			ctx.sendMessage({ command: 'toggleCodingAgentHooks', repo: msg.repo, agents: agents, error: res.error });
+			return true;
+		}
+		case 'copyWipToWorktree': {
+			const res = await ctx.gitFeatures.copyWipToWorktree(msg.repo, msg.targetWorktreePath);
+			ctx.sendMessage({ command: 'copyWipToWorktree', copiedFiles: res.copiedFiles, error: res.error });
+			return true;
+		}
+		case 'saveExtendedSettings': {
+			const cfg = vscode.workspace.getConfiguration('git-map');
+			const keys = Object.keys(msg.settings || {});
+			const updatedKeys: string[] = [];
+			try {
+				for (let i = 0; i < keys.length; i++) {
+					const k = keys[i];
+					const val = msg.settings[k];
+					const target = getSettingTarget(cfg, k);
+					await cfg.update(k, val, target);
+					updatedKeys.push(k);
+				}
+				ctx.sendMessage({ command: 'saveExtendedSettings', updatedKeys: updatedKeys, error: null });
+			} catch (err) {
+				ctx.sendMessage({ command: 'saveExtendedSettings', updatedKeys: updatedKeys, error: err instanceof Error ? err.message : String(err) });
 			}
 			return true;
 		}

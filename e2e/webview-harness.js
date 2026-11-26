@@ -1080,6 +1080,9 @@
 			// AI · All Repositories section: toggles, provider selector, model & baseUrl inputs, and Set API Key… button
 			const aiSection = document.getElementById('settingsAiSection');
 			assert(aiSection !== null, 'The AI settings section is missing');
+			assert(widget.querySelectorAll('.settingsNavGroup').length >= 4, 'Settings nav rail missing 4 categorized groups');
+			assert(widget.querySelectorAll('.settingsNavDot').length > 0 && widget.querySelectorAll('.settingsNavRatio').length > 0, 'Settings nav items missing status dots or enabled ratios');
+			assert(widget.querySelectorAll('.settingsLivePreview').length >= 3, 'Settings panel missing live interactive previews');
 			const aiBefore = updates().length;
 			const explainBox = document.getElementById('settingsAiExplainCommitCheckbox');
 			explainBox.checked = true;
@@ -1239,7 +1242,7 @@
 			mouse(commitRow(3), 'contextmenu', { button: 2 });
 			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
 			const items = Array.from(menu.querySelectorAll('.contextMenuItem')).map((item) => item.textContent);
-			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'AI Review Selected Range…', 'AI PR / Release Notes for Selection…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
+			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Squash 3 Selected Commits…', 'Drop 3 Selected Commits…', 'AI Review Selected Range…', 'AI PR / Release Notes for Selection…', 'AI Changelog for Selection…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent.startsWith('Copy 3 Commit Hashes')), 'click');
 			const copied = await waitFor('the hashes to be copied', () => requestsOf('copyToClipboard').slice(-1)[0]);
 			assert(copied.data === [hash(6), hash(4), hash(3)].join('\n'), 'The hashes weren\'t copied oldest first: ' + JSON.stringify(copied.data));
@@ -2152,6 +2155,7 @@
 			await openDetails(uncommittedRow);
 			try {
 				const commitInput = await waitFor('#cdvCommitInput in inline commit box', () => document.getElementById('cdvCommitInput'));
+				assert(document.querySelector('#cdvInlineCommitBox [data-inline-stage="coauthors"]') !== null, 'Missing + Co-author chip button in inline commit box');
 				await waitFor('quick stage rows to render', () => document.querySelectorAll('#cdvInlineCommitBox .cdvQuickStageRow').length === 2);
 
 				// Open Hunk Staging modal on README.md, select ONLY '-beta' and '+BETA_NEW', and stage selected lines
@@ -2191,6 +2195,8 @@
 
 				// 5. Escape cancels cdvComparePending ("Compare with…") before closing the Commit Details View (D-4 / SM-4)
 				await openDetails(commitRow(1));
+				assert(document.getElementById('cdvBack') !== null && document.getElementById('cdvForward') !== null, 'Missing CDV Back/Forward history controls');
+				assert(document.querySelectorAll('.ghostRefBtn').length > 0, 'Missing Ghost Refs quick-create buttons on unlabelled commit rows');
 				const cdvCompareBtn = document.getElementById('cdvCompare');
 				if (cdvCompareBtn !== null) {
 					mouse(cdvCompareBtn, 'click');
@@ -2198,13 +2204,72 @@
 					key(document.body, 'Escape');
 					assert(document.getElementById('cdv') !== null && document.body.dataset.smCdv === 'commit' && !cdvCompareBtn.classList.contains('active'), 'Escape closed CDV instead of cancelling Compare with…');
 				}
-				return 'Tools menu, PR badge #42, Drag & Drop moveBranch, in-place partial hunk patch, Amend commit, and AX state machines verified';
+				return 'Tools menu, PR badge #42, Drag & Drop moveBranch, in-place partial hunk patch, Amend commit, CDV history, and AX state machines verified';
 			} finally {
 				if (document.getElementById('cdvHunkModal') !== null) document.getElementById('cdvHunkModal').remove();
 				await closeDetails();
 				uncommittedFixture = false;
 				mouse(document.getElementById('refreshBtn'), 'click');
 				await waitFor('uncommitted changes hidden again', () => document.getElementById('uncommittedChanges') === null);
+			}
+		});
+
+		await check('ui-v28-wave2-graph-and-settings', '[v2.8] Graph Overview Bar, ? Shortcuts Cheatsheet, Solo Branch mode, Agents table, Custom Remotes, SCM 11-section matrix, and Blame format live preview work end-to-end', async () => {
+			// Wait for the previous check's hard refresh to finish reloading commits
+			const overviewBar = await waitFor('Graph Overview Bar to become active after refresh', () => {
+				const bar = document.getElementById('graphOverviewBar');
+				return bar !== null && bar.classList.contains('active') && document.querySelectorAll('#commitTable tr.commit').length > 0 ? bar : null;
+			});
+			assert(overviewBar.textContent.includes('main') && overviewBar.textContent.includes('origin/main'), 'Unexpected Overview Bar text: ' + overviewBar.textContent);
+
+			// 2. ? key opens Keyboard Shortcuts Cheatsheet modal and Escape closes it
+			key(document.body, '?');
+			const shortcutsModal = await waitFor('#shortcutsModal to open on ?', () => document.getElementById('shortcutsModal'));
+			assert(shortcutsModal.querySelectorAll('.shortcutsRow').length >= 10, 'Shortcuts modal missing rows');
+			key(document.body, 'Escape');
+			await waitFor('#shortcutsModal to close on Escape', () => document.getElementById('shortcutsModal') === null);
+
+			// 3. Solo Branch context menu filters to branch and shows Solo badge in Overview Bar, then Exit Solo restores all branches
+			mouse(commitRow(0).querySelector('.gitRef.head[data-name="feature"]'), 'contextmenu', { button: 2 });
+			const branchMenu = await waitFor('branch context menu', () => document.querySelector('.contextMenu'));
+			const soloItem = Array.from(branchMenu.querySelectorAll('.contextMenuItem')).find((el) => el.textContent.includes('Show Only this Branch'));
+			assert(soloItem !== undefined, 'Missing Show Only this Branch in branch context menu');
+			mouse(soloItem, 'click');
+			const soloBadge = await waitFor('Solo badge in Overview Bar', () => document.querySelector('#graphOverviewBar .gobSoloBadge'));
+			assert(soloBadge.textContent.includes('Solo: feature'), 'Unexpected Solo badge: ' + soloBadge.textContent);
+			mouse(soloBadge.querySelector('.gobSoloExit'), 'click');
+			await waitFor('Solo mode to exit and commits to reload', () => document.querySelector('#graphOverviewBar .gobSoloBadge') === null && document.querySelectorAll('#commitTable tr.commit').length === 10);
+
+			// 4. Settings Widget: Agents table, Custom Remotes add/save, SCM 11-section matrix + format live example, and Blame live preview
+			mouse(document.getElementById('settingsBtn'), 'click');
+			const widget = await waitFor('Settings Widget to open', () => document.getElementById('settingsAgentsSection') ? document.getElementById('settingsWidget') : null);
+			try {
+				const agentsSec = document.getElementById('settingsAgentsSection');
+				assert(agentsSec.querySelectorAll('.settingsAgentMcpBtn').length === 5, 'Expected 5 coding agents in Agents section');
+
+				const scmSec = document.getElementById('settingsScmSection');
+				assert(scmSec !== null && scmSec.querySelectorAll('.settingsScmVisCheckbox').length === 11, 'Expected 11 SCM sections in matrix');
+				const commitLabelInput = scmSec.querySelector('[data-fmt-prop="commitLabel"]');
+				commitLabelInput.value = '[${id}] ${message}';
+				commitLabelInput.dispatchEvent(new Event('input', { bubbles: true }));
+				const fmtExample = scmSec.querySelector('[data-fmt-example="commitLabel"]');
+				assert(fmtExample.textContent.includes('[fe26af4] feat: optimize parser'), 'SCM format live preview did not update: ' + fmtExample.textContent);
+
+				const saveBefore = requestsOf('saveExtendedSettings').length;
+				const crDomain = document.getElementById('settingsNewCustomRemoteDomain');
+				crDomain.value = 'git.corp.test';
+				mouse(document.getElementById('settingsAddCustomRemoteBtn'), 'click');
+				const savedCr = await waitFor('saveExtendedSettings(remotes)', () => requestsOf('saveExtendedSettings').length > saveBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
+				assert(Array.isArray(savedCr.settings.remotes) && savedCr.settings.remotes.some((r) => r.domain === 'git.corp.test'), 'Custom remote was not saved: ' + JSON.stringify(savedCr));
+
+				const inlineFmt = document.getElementById('settingsBlameInlineFormat');
+				inlineFmt.value = '${author} :: ${sha}';
+				inlineFmt.dispatchEvent(new Event('input', { bubbles: true }));
+				assert(document.getElementById('settingsEditorLivePreview').textContent.includes('You :: fe26af4'), 'Editor inline blame preview did not update');
+				return 'Overview Bar, ? Shortcuts modal, Solo Branch mode, 5 Coding Agents, 11 SCM sections, Custom Remote form & Blame format live preview verified';
+			} finally {
+				mouse(document.getElementById('settingsClose'), 'click');
+				await waitFor('Settings Widget to close', () => !widget.classList.contains('active'));
 			}
 		});
 	};

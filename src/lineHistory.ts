@@ -453,7 +453,7 @@ export class LineHistory extends Disposable {
 	 * @returns The error that occurred, or NULL.
 	 */
 	private async remoteLinkToLines(repo: string, hash: string, filePath: string, lines: GitLineRange | null, open: boolean): Promise<ErrorInfo> {
-		const remote = await this.dataSource.getDefaultRemote(repo), webRepo = remote !== null ? getRemoteWebRepo(remote.url) : null;
+		const remote = await this.dataSource.getDefaultRemote(repo), webRepo = remote !== null ? getRemoteWebRepo(remote.url, getConfig(repo).customRemotes) : null;
 		if (remote === null || webRepo === null) {
 			const reason = t('The repository doesn\'t have a remote with a web page (e.g. on GitHub or GitLab).');
 			return open ? t('Unable to Open Lines on Remote: {0}', reason) : t('Unable to Copy Remote Link: {0}', reason);
@@ -496,7 +496,7 @@ export class LineHistory extends Disposable {
 	 * @returns The error that occurred, or NULL.
 	 */
 	private async openCommitOnRemote(repo: string, hash: string): Promise<ErrorInfo> {
-		const remote = await this.dataSource.getDefaultRemote(repo), webRepo = remote !== null ? getRemoteWebRepo(remote.url) : null;
+		const remote = await this.dataSource.getDefaultRemote(repo), webRepo = remote !== null ? getRemoteWebRepo(remote.url, getConfig(repo).customRemotes) : null;
 		if (remote === null || webRepo === null) return t('Unable to Open Commit on Remote: {0}', t('The repository doesn\'t have a remote with a web page (e.g. on GitHub or GitLab).'));
 		return openExternalUrl(getRemoteCommitUrl(webRepo, hash));
 	}

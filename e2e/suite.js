@@ -2138,6 +2138,49 @@ async function run() {
 		return 'Opened & verified all 5 companion Webview panels (' + openLabels.join(', ') + ', orphan ' + orphanHash.slice(0, 8) + ')';
 	});
 
+	await check('v28-features-e2e', 'v2.8 commands (File Heatmap, File Changes, CodeLens, Editor Mode, Start Work, Launchpad, Auto-Rebase, SCM Tree View) are registered and executable', async () => {
+		const expectedCmds = [
+			'git-map.toggleFileHeatmap',
+			'git-map.toggleFileChanges',
+			'git-map.annotations.nextChange',
+			'git-map.annotations.previousChange',
+			'git-map.toggleCodeLens',
+			'git-map.switchMode',
+			'git-map.startWork',
+			'git-map.openLaunchpad',
+			'git-map.ai.autoRebase',
+			'git-map.ai.autoRebase.continue',
+			'git-map.ai.autoRebase.undo',
+			'git-map.scmView.refresh',
+			'git-map.checkRepoHealth',
+			'git-map.editSshAllowedSigners'
+		];
+		const registered = await vscode.commands.getCommands(true);
+		const missing = expectedCmds.filter((c) => !registered.includes(c));
+		assert(missing.length === 0, 'Missing v2.8 commands: ' + missing.join(', '));
+
+		// Verify standalone stdio MCP server CLI responds to JSON-RPC initialize & tools/list
+		const mcpCliPath = path.join(extension.extensionPath, 'out', 'mcpServerCli.js');
+		assert(fs.existsSync(mcpCliPath), 'Missing compiled out/mcpServerCli.js');
+		const mcpOut = cp.execFileSync(process.execPath, [mcpCliPath, '--repo', main], {
+			input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize' }) + '\n' +
+				JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }) + '\n',
+			encoding: 'utf8',
+			timeout: 5000
+		});
+		const mcpLines = mcpOut.trim().split(/\r?\n/).map((l) => JSON.parse(l));
+		assert(mcpLines.length === 2 && mcpLines[0].result.serverInfo.name === 'git-map-mcp' && mcpLines[1].result.tools.length === 4, 'Unexpected MCP server output: ' + mcpOut);
+
+		await vscode.window.showTextDocument(vscode.Uri.file(path.join(main, 'file.txt')));
+		await vscode.commands.executeCommand('git-map.toggleCodeLens');
+		await vscode.commands.executeCommand('git-map.toggleCodeLens');
+		await vscode.commands.executeCommand('git-map.switchMode', 'zen');
+		await vscode.commands.executeCommand('git-map.switchMode', 'default');
+		await vscode.commands.executeCommand('git-map.scmView.refresh');
+		await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+		return 'Verified all ' + expectedCmds.length + ' new v2.8 commands & stdio MCP server (' + mcpLines[1].result.tools.length + ' tools)';
+	});
+
 	const report = {
 		date: new Date().toISOString(),
 		vscodeVersion: vscode.version,

@@ -31,7 +31,7 @@ interface MinimapBucket {
 
 interface MinimapMarker {
 	readonly bucket: number;
-	readonly kind: 'head' | 'branch' | 'tag';
+	readonly kind: 'head' | 'branch' | 'tag' | 'stash' | 'pr' | 'worktree';
 	readonly colour: string;
 	readonly title: string;
 }
@@ -46,6 +46,9 @@ interface MinimapData {
 	readonly commitHead: string | null;
 	readonly vertexColours: ReadonlyArray<number>;
 	readonly colours: ReadonlyArray<string>;
+	readonly prBadges?: ReadonlyArray<GG.PullRequestBadgeInfo>;
+	readonly worktrees?: ReadonlyArray<GG.GitWorktree>;
+	readonly additionalTypes?: ReadonlyArray<GG.GraphMarkerType>;
 }
 
 /**
@@ -120,7 +123,7 @@ class Minimap {
 	 * @param colours The colours of the graph.
 	 * @param enabled Is the minimap enabled (the `git-map.graph.minimap` Extension Setting).
 	 */
-	public render(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, vertexColours: ReadonlyArray<number>, colours: ReadonlyArray<string>, enabled: boolean) {
+	public render(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, vertexColours: ReadonlyArray<number>, colours: ReadonlyArray<string>, enabled: boolean, prBadges?: ReadonlyArray<GG.PullRequestBadgeInfo>, worktrees?: ReadonlyArray<GG.GitWorktree>, additionalTypes?: ReadonlyArray<GG.GraphMarkerType>) {
 		this.commitDays = commits.map((commit) => Minimap.getLocalDay(commit.date));
 		const days = this.commitDays.filter((_, i) => commits[i].hash !== UNCOMMITTED);
 		alterClass(this.elem, 'active', enabled && days.length > 0);
@@ -135,7 +138,7 @@ class Minimap {
 			return;
 		}
 
-		this.data = { commits: commits, commitHead: commitHead, vertexColours: vertexColours, colours: colours };
+		this.data = { commits: commits, commitHead: commitHead, vertexColours: vertexColours, colours: colours, prBadges: prBadges, worktrees: worktrees, additionalTypes: additionalTypes };
 		const newestDay = Math.max.apply(null, days), oldestDay = Math.min.apply(null, days);
 		this.fullRange = { start: Math.min(oldestDay, newestDay + 1 - MINIMAP_MIN_DAYS), end: newestDay + 1 };
 		if (this.range !== null) this.range = this.clampRange(this.range.start, this.range.end - this.range.start);
@@ -211,6 +214,20 @@ class Minimap {
 			}
 		};
 		const commits = data.commits, colours = data.colours, findMatches: number[] = this.buckets.map(() => 0);
+		const extraTypes = new Set<GG.GraphMarkerType>(Array.isArray(data.additionalTypes) ? data.additionalTypes : ['pullRequests', 'stashes', 'worktrees']);
+		const prByBranch: { [branch: string]: GG.PullRequestBadgeInfo } = {};
+		if (Array.isArray(data.prBadges)) {
+			for (let p = 0; p < data.prBadges.length; p++) {
+				prByBranch[data.prBadges[p].branch] = data.prBadges[p];
+			}
+		}
+		const wtBranches: { [branch: string]: GG.GitWorktree } = {};
+		if (Array.isArray(data.worktrees)) {
+			for (let w = 0; w < data.worktrees.length; w++) {
+				const wt = data.worktrees[w];
+				if (wt.branch !== null) wtBranches[wt.branch] = wt;
+			}
+		}
 		for (let i = 0; i < commits.length; i++) {
 			if (commits[i].hash === UNCOMMITTED) continue;
 			const bucketIndex = this.getBucketIndex(this.commitDays[i]), bucket = this.buckets[bucketIndex];
@@ -227,6 +244,21 @@ class Minimap {
 			}
 			if (commits[i].tags.length > 0) {
 				addMarker({ bucket: bucketIndex, kind: 'tag', colour: 'var(--vscode-descriptionForeground)', title: commits[i].tags.map((tag) => tag.name).join(', ') });
+			}
+			if (extraTypes.has('stashes') && commits[i].stash !== null) {
+				addMarker({ bucket: bucketIndex, kind: 'stash', colour: 'var(--vscode-charts-purple, #b180d7)', title: commits[i].stash!.selector });
+			}
+			if (extraTypes.has('pullRequests')) {
+				const pr = commits[i].heads.map((h) => prByBranch[h]).find((item) => Boolean(item));
+				if (pr) {
+					addMarker({ bucket: bucketIndex, kind: 'pr', colour: 'var(--vscode-charts-green, #388a34)', title: 'PR #' + pr.number + ': ' + pr.title });
+				}
+			}
+			if (extraTypes.has('worktrees')) {
+				const wt = commits[i].heads.map((h) => wtBranches[h]).find((item) => Boolean(item));
+				if (wt) {
+					addMarker({ bucket: bucketIndex, kind: 'worktree', colour: 'var(--vscode-charts-blue, #3794ff)', title: 'Worktree: ' + wt.path });
+				}
 			}
 		}
 
@@ -665,9 +697,18 @@ class Minimap {
  * Implements the markers on the right edge of the Git Map View (alongside its scrollbar), that show where HEAD, branches, tags, stashes
  * & find matches are in the loaded commits.
  */
+interface ScrollMarkersRenderOptions {
+	readonly enabled?: boolean;
+	readonly types?: ReadonlyArray<GG.GraphMarkerType>;
+	readonly prBadges?: ReadonlyArray<GG.PullRequestBadgeInfo>;
+	readonly worktrees?: ReadonlyArray<GG.GitWorktree>;
+	readonly onJumpToIndex?: (index: number) => void;
+}
+
 class ScrollMarkers {
 	private readonly elem: HTMLElement;
 	private readonly viewElem: HTMLElement;
+	private onJumpToIndex: ((index: number) => void) | null = null;
 
 	/**
 	 * Construct a new ScrollMarkers instance.
@@ -677,20 +718,47 @@ class ScrollMarkers {
 		this.viewElem = viewElem;
 		this.elem = document.createElement('div');
 		this.elem.id = 'scrollMarkers';
+		this.elem.addEventListener('click', (e: MouseEvent) => {
+			if (!(e.target instanceof Element)) return;
+			const marker = <HTMLElement | null>e.target.closest('.scrollMarker[data-commit-index]');
+			if (marker === null || typeof marker.dataset.commitIndex !== 'string') return;
+			const idx = parseInt(marker.dataset.commitIndex, 10);
+			if (!isNaN(idx) && this.onJumpToIndex !== null) {
+				e.stopPropagation();
+				this.onJumpToIndex(idx);
+			}
+		});
 		document.body.appendChild(this.elem);
 	}
 
 	/**
 	 * Render the markers.
-	 * @param commits The loaded commits.
-	 * @param commitHead The hash of the commit referenced by HEAD.
-	 * @param vertexColours The colour index of each commit's vertex on the graph.
-	 * @param colours The colours of the graph.
-	 * @param findMatches The hashes of the commits that match the Find Widget's criteria.
-	 * @param getVirtualRowCentre Get the position of the centre of the row of a commit (in the content of the view) when the rows are
-	 * virtualised (as they aren't all rendered), or NULL when all rows are rendered.
 	 */
-	public render(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, vertexColours: ReadonlyArray<number>, colours: ReadonlyArray<string>, findMatches: ReadonlyArray<string>, getVirtualRowCentre: (index: number) => number | null) {
+	public render(commits: ReadonlyArray<GG.GitCommit>, commitHead: string | null, vertexColours: ReadonlyArray<number>, colours: ReadonlyArray<string>, findMatches: ReadonlyArray<string>, getVirtualRowCentre: (index: number) => number | null, options?: ScrollMarkersRenderOptions) {
+		this.onJumpToIndex = options && options.onJumpToIndex ? options.onJumpToIndex : null;
+		if (options && options.enabled === false) {
+			this.elem.style.display = 'none';
+			this.elem.innerHTML = '';
+			return;
+		}
+		this.elem.style.display = '';
+		const allowedTypes = new Set<GG.GraphMarkerType>(
+			options && Array.isArray(options.types)
+				? options.types
+				: ['localBranches', 'remoteBranches', 'pullRequests', 'stashes', 'tags', 'worktrees']
+		);
+		const prByBranch: { [branch: string]: GG.PullRequestBadgeInfo } = {};
+		if (options && Array.isArray(options.prBadges)) {
+			for (let p = 0; p < options.prBadges.length; p++) prByBranch[options.prBadges[p].branch] = options.prBadges[p];
+		}
+		const wtBranches: { [branch: string]: GG.GitWorktree } = {};
+		if (options && Array.isArray(options.worktrees)) {
+			for (let w = 0; w < options.worktrees.length; w++) {
+				const wt = options.worktrees[w];
+				if (wt.branch !== null) wtBranches[wt.branch] = wt;
+			}
+		}
+
 		const viewRect = this.viewElem.getBoundingClientRect(), scrollHeight = this.viewElem.scrollHeight;
 		this.elem.style.top = viewRect.top + 'px';
 		this.elem.style.height = viewRect.height + 'px';
@@ -705,12 +773,22 @@ class ScrollMarkers {
 		let html = '';
 		for (let i = 0, j = 0; i < commits.length; i++) {
 			const commit = commits[i];
-			const kinds: { kind: string, colour: string }[] = [];
-			if (matches[commit.hash]) kinds.push({ kind: 'findMatch', colour: 'var(--vscode-editorOverviewRuler-findMatchForeground, #d18616)' });
-			if (commit.hash === commitHead) kinds.push({ kind: 'head', colour: 'var(--vscode-focusBorder)' });
-			if (commit.hash === UNCOMMITTED || commit.stash !== null) kinds.push({ kind: 'other', colour: 'var(--vscode-descriptionForeground)' });
-			if (commit.heads.length > 0 || commit.remotes.length > 0) kinds.push({ kind: 'branch', colour: colours[vertexColours[i] % colours.length] });
-			if (commit.tags.length > 0) kinds.push({ kind: 'tag', colour: 'var(--vscode-descriptionForeground)' });
+			const kinds: { kind: string, colour: string, title: string }[] = [];
+			if (matches[commit.hash]) kinds.push({ kind: 'findMatch', colour: 'var(--vscode-editorOverviewRuler-findMatchForeground, #d18616)', title: t('Find Match') + ': ' + commit.message });
+			if (commit.hash === commitHead) kinds.push({ kind: 'head', colour: 'var(--vscode-focusBorder)', title: 'HEAD: ' + commit.message });
+			if (commit.hash === UNCOMMITTED) kinds.push({ kind: 'other', colour: 'var(--vscode-descriptionForeground)', title: t('Uncommitted Changes') });
+			if (commit.stash !== null && allowedTypes.has('stashes')) kinds.push({ kind: 'stash', colour: 'var(--vscode-charts-purple, #b180d7)', title: commit.stash.selector + ': ' + commit.message });
+			if (commit.heads.length > 0 && allowedTypes.has('localBranches')) kinds.push({ kind: 'branch', colour: colours[vertexColours[i] % colours.length], title: commit.heads.join(', ') });
+			if (commit.remotes.length > 0 && allowedTypes.has('remoteBranches')) kinds.push({ kind: 'remoteBranch', colour: colours[vertexColours[i] % colours.length], title: commit.remotes.map((r) => r.name).join(', ') });
+			if (commit.tags.length > 0 && allowedTypes.has('tags')) kinds.push({ kind: 'tag', colour: 'var(--vscode-descriptionForeground)', title: commit.tags.map((tag) => tag.name).join(', ') });
+			if (allowedTypes.has('pullRequests')) {
+				const pr = commit.heads.map((h) => prByBranch[h]).find((item) => Boolean(item));
+				if (pr) kinds.push({ kind: 'pr', colour: 'var(--vscode-charts-green, #388a34)', title: 'PR #' + pr.number + ': ' + pr.title });
+			}
+			if (allowedTypes.has('worktrees')) {
+				const wt = commit.heads.map((h) => wtBranches[h]).find((item) => Boolean(item));
+				if (wt) kinds.push({ kind: 'worktree', colour: 'var(--vscode-charts-blue, #3794ff)', title: 'Worktree: ' + wt.path });
+			}
 			if (kinds.length === 0) continue;
 
 			let centre = getVirtualRowCentre(i);
@@ -722,7 +800,7 @@ class ScrollMarkers {
 				centre = rowRect.top + rowRect.height / 2 - viewTop;
 			}
 			const top = (centre / scrollHeight * 100).toFixed(3) + '%';
-			html += kinds.map((marker) => '<span class="scrollMarker ' + marker.kind + '" style="top:' + top + ';background-color:' + escapeHtml(marker.colour) + '"></span>').join('');
+			html += kinds.map((marker) => '<span class="scrollMarker ' + marker.kind + '" data-commit-index="' + i + '" title="' + escapeHtml(marker.title) + '" style="top:' + top + ';background-color:' + escapeHtml(marker.colour) + '"></span>').join('');
 		}
 		this.elem.innerHTML = html;
 	}

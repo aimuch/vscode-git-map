@@ -109,12 +109,12 @@ export async function generateScmCommitMessage(dataSource: DataSource, repoManag
 		return null;
 	}
 
-	let modelsResult = await getLanguageModels();
+	let modelsResult = await getLanguageModels('commitMessage');
 	if (modelsResult.needsApiKey) {
 		const setKeyLabel = t('Set API Key...');
 		const choice = await vscode.window.showErrorMessage(modelsResult.error || t('Set an API key first.'), setKeyLabel);
 		if (choice !== setKeyLabel || !(await setApiKey())) return null;
-		modelsResult = await getLanguageModels();
+		modelsResult = await getLanguageModels('commitMessage');
 	}
 	if (modelsResult.error !== null || modelsResult.models.length === 0) {
 		showErrorMessage(t('Unable to Generate Commit Message: {0}', modelsResult.error || t('No language model is available.')));

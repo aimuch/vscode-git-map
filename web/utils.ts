@@ -351,6 +351,40 @@ function getSortedRepositoryPaths(repos: GG.GitRepoSet, order: GG.RepoDropdownOr
 	}
 }
 
+/**
+ * Validate whether a set of selected commit hashes forms a contiguous, topologically valid single-parent chain.
+ */
+function validateTopologicalSelection(
+	commits: ReadonlyArray<GG.GitCommit>,
+	commitLookup: { readonly [hash: string]: number },
+	selectedHashes: ReadonlyArray<string>
+): { readonly valid: boolean, readonly reason?: string, readonly baseHash: string | null } {
+	const filtered = selectedHashes.filter((h) => typeof commitLookup[h] === 'number' && commits[commitLookup[h]].hash !== UNCOMMITTED && commits[commitLookup[h]].stash === null);
+	if (filtered.length === 0) {
+		return { valid: false, reason: 'No selectable commits in selection.', baseHash: null };
+	}
+	const ordered = filtered
+		.map((h) => ({ commit: commits[commitLookup[h]], index: commitLookup[h] }))
+		.sort((a, b) => a.index - b.index); // newest first
+	for (let i = 0; i < ordered.length; i++) {
+		const c = ordered[i].commit;
+		if (c.parents.length > 1) {
+			return { valid: false, reason: 'Merge commits cannot be part of a contiguous rebase chain.', baseHash: null };
+		}
+		if (i < ordered.length - 1) {
+			const nextOldest = ordered[i + 1].commit;
+			if (c.parents.length === 0 || c.parents[0] !== nextOldest.hash) {
+				return { valid: false, reason: 'Topological selection requires a contiguous single-parent chain of commits.', baseHash: null };
+			}
+		}
+	}
+	const oldest = ordered[ordered.length - 1].commit;
+	return {
+		valid: true,
+		baseHash: oldest.parents.length > 0 ? oldest.parents[0] : null
+	};
+}
+
 
 /* HTML Escape / Unescape */
 

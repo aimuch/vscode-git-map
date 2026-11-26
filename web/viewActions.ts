@@ -110,6 +110,12 @@ class ViewActions {
 				icon: MENU_ICONS.clear,
 				visible: visibility.unselectInBranchesDropdown && isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.unselectOption(refName)
+			},
+			{
+				title: this.view.getSoloRef() === refName ? t('Exit Solo Mode') : t('Show Only this Branch'),
+				icon: MENU_ICONS.eye,
+				visible: true,
+				onClick: () => this.view.getSoloRef() === refName ? this.view.exitSolo() : this.view.soloBranchOrTag(refName, false)
 			}
 		], [
 			{
@@ -309,6 +315,12 @@ class ViewActions {
 				visible: visibility.rebase,
 				onClick: () => this.rebaseAction(hash, abbrevCommit(hash), GG.RebaseActionOn.Commit, target)
 			}, {
+				id: 'pushToCommit',
+				title: t('Push to this Commit') + ELLIPSIS,
+				icon: MENU_ICONS.push,
+				visible: this.view.gitRemotes.length > 0 && commit.stash === null,
+				onClick: () => this.pushToCommitAction(hash, target)
+			}, {
 				id: 'reset',
 				title: t('Reset current branch to this Commit') + ELLIPSIS,
 				icon: MENU_ICONS.reset,
@@ -438,6 +450,16 @@ class ViewActions {
 				visible: visibility.cherrypick,
 				onClick: () => this.cherrypickCommitsAction(commits, target)
 			}, {
+				title: t('Squash {0} Selected Commits', commits.length) + ELLIPSIS,
+				icon: MENU_ICONS.fixup,
+				visible: commits.length >= 2 && visibility.fixup,
+				onClick: () => this.batchSquashCommitsAction(commits, target)
+			}, {
+				title: t('Drop {0} Selected Commits', commits.length) + ELLIPSIS,
+				icon: MENU_ICONS.trash,
+				visible: commits.length >= 1 && visibility.drop,
+				onClick: () => this.batchDropCommitsAction(commits, target)
+			}, {
 				title: t('AI Review Selected Range') + ELLIPSIS,
 				icon: MENU_ICONS.sparkle,
 				visible: commits.length >= 2,
@@ -454,6 +476,15 @@ class ViewActions {
 					const oldest = commits[0], newest = commits[commits.length - 1];
 					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
 					sendMessage({ command: 'openCompanionFeature', feature: 'aiReleaseNotes', repo: this.view.currentRepo, fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + ' → ' + abbrevCommit(newest.hash) });
+				}
+			}, {
+				title: t('AI Changelog for Selection') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: commits.length >= 2,
+				onClick: () => {
+					const oldest = commits[0], newest = commits[commits.length - 1];
+					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
+					sendMessage({ command: 'aiChangelogFromCommits', repo: this.view.currentRepo, fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + ' → ' + abbrevCommit(newest.hash) });
 				}
 			}
 		], [
@@ -573,6 +604,12 @@ class ViewActions {
 				icon: MENU_ICONS.clear,
 				visible: visibility.unselectInBranchesDropdown && isSelectedInBranchesDropdown,
 				onClick: () => this.view.branchDropdown.unselectOption(prefixedRefName)
+			},
+			{
+				title: this.view.getSoloRef() === prefixedRefName ? t('Exit Solo Mode') : t('Show Only this Branch'),
+				icon: MENU_ICONS.eye,
+				visible: true,
+				onClick: () => this.view.getSoloRef() === prefixedRefName ? this.view.exitSolo() : this.view.soloBranchOrTag(prefixedRefName, false)
 			}
 		], [
 			{
@@ -708,6 +745,12 @@ class ViewActions {
 			}
 		], [
 			{
+				title: this.view.getSoloRef() === 'tag:' + tagName ? t('Exit Solo Mode') : t('Show Only this Tag'),
+				icon: MENU_ICONS.eye,
+				visible: true,
+				onClick: () => this.view.getSoloRef() === 'tag:' + tagName ? this.view.exitSolo() : this.view.soloBranchOrTag(tagName, true)
+			},
+			{
 				title: t('Create Archive'),
 				icon: MENU_ICONS.archive,
 				visible: visibility.createArchive,
@@ -728,6 +771,7 @@ class ViewActions {
 
 	public getUncommittedChangesContextMenuActions(target: DialogTarget & CommitTarget): ContextMenuActions {
 		let visibility = this.view.config.contextMenuActionsVisibility.uncommittedChanges;
+		const otherWorktrees = this.view.worktreeList.getWorktrees().filter((w) => !w.isCurrent);
 		return [[
 			{
 				title: t('Generate Commit Message with AI') + ELLIPSIS,
@@ -754,6 +798,26 @@ class ViewActions {
 				icon: MENU_ICONS.patchApply,
 				visible: visibility.applyPatch,
 				onClick: () => sendMessage({ command: 'checkPatch', repo: this.view.currentRepo })
+			}, {
+				title: t('Copy Uncommitted Changes to Worktree') + ELLIPSIS,
+				icon: MENU_ICONS.worktree,
+				visible: otherWorktrees.length > 0,
+				onClick: () => {
+					const opts = otherWorktrees.map((w) => ({
+						name: (w.branch ? w.branch + ' — ' : '') + w.path,
+						value: w.path
+					}));
+					dialog.showSelect(
+						t('Select the target worktree to copy your uncommitted changes into:'),
+						opts[0].value,
+						opts,
+						t('Copy Changes'),
+						(wtPath) => {
+							runAction({ command: 'copyWipToWorktree', repo: this.view.currentRepo, targetWorktreePath: wtPath }, t('Copying Uncommitted Changes'));
+						},
+						target
+					);
+				}
 			}
 		], [
 			{
@@ -962,6 +1026,14 @@ class ViewActions {
 		sendMessage({ command: 'copyToClipboard', type: subjects ? t('Commit Subjects') : t('Commit Hashes'), data: commits.map((commit) => subjects ? commit.message : commit.hash).join('\n') });
 	}
 
+	public openCreateBranchForCommit(hash: string, target: DialogTarget & CommitTarget) {
+		this.createBranchAction(hash, '', this.view.config.dialogDefaults.createBranch.checkout, target);
+	}
+
+	public openAddTagForCommit(hash: string, target: DialogTarget & CommitTarget) {
+		this.addTagAction(hash, '', this.view.config.dialogDefaults.addTag.type, '', null, target);
+	}
+
 	private createBranchAction(hash: string, initialName: string, initialCheckOut: boolean, target: DialogTarget & CommitTarget) {
 		dialog.showForm(t('Create branch at commit <b><i>{0}</i></b>:', abbrevCommit(hash)), [
 			{ type: DialogInputType.TextRef, name: t('Name'), default: initialName },
@@ -1028,6 +1100,74 @@ class ViewActions {
 				willUpdateBranchConfig: setUpstream && remotes.length > 0 && (this.view.gitConfig === null || typeof this.view.gitConfig.branches[refName] === 'undefined' || this.view.gitConfig.branches[refName].remote !== remotes[remotes.length - 1])
 			}, t('Pushing Branch'));
 		}, target);
+	}
+
+	public pushToCommitAction(hash: string, target: DialogTarget | null) {
+		if (this.view.gitRemotes.length === 0) return;
+		const defaultBranch = this.view.gitBranchHead || (this.view.gitBranches.length > 0 ? this.view.gitBranches[0] : 'main');
+		const inputs: DialogInput[] = [
+			{ type: DialogInputType.Select, name: t('Remote'), default: this.view.getPushRemote(defaultBranch), options: this.view.gitRemotes.map((r) => ({ name: r, value: r })) },
+			{ type: DialogInputType.TextRef, name: t('Target Remote Branch'), default: defaultBranch },
+			{
+				type: DialogInputType.Radio,
+				name: t('Push Mode'),
+				options: [
+					{ name: t('Normal'), value: GG.GitPushBranchMode.Normal },
+					{ name: t('Force With Lease'), value: GG.GitPushBranchMode.ForceWithLease },
+					{ name: t('Force'), value: GG.GitPushBranchMode.Force }
+				],
+				default: GG.GitPushBranchMode.Normal
+			}
+		];
+		dialog.showForm(t('Push commit <b><i>{0}</i></b> to remote branch:', abbrevCommit(hash)), inputs, t('Yes, push'), (values) => {
+			runAction({
+				command: 'pushToCommit',
+				repo: this.view.currentRepo,
+				commitHash: hash,
+				remote: <string>values[0],
+				branchName: <string>values[1],
+				mode: <GG.GitPushBranchMode>values[2]
+			}, t('Pushing to Commit'));
+		}, target);
+	}
+
+	public batchSquashCommitsAction(commits: ReadonlyArray<GG.GitCommit>, _target: DialogTarget | null) {
+		const check = validateTopologicalSelection(this.view.commits, this.view.commitLookup, commits.map((c) => c.hash));
+		if (!check.valid || check.baseHash === null) {
+			dialog.showError(t('Unable to Squash Selection'), check.reason || t('Selected commits must form a contiguous chain with a valid parent commit.'), null, null);
+			return;
+		}
+		const baseHash = check.baseHash;
+		const defaultMsg = commits.map((c) => c.message).join('\n\n');
+		dialog.showForm(t('Squash <b>{0}</b> selected commits into one commit onto <b><i>{1}</i></b>?', commits.length, abbrevCommit(baseHash)), [
+			{ type: DialogInputType.Text, name: t('Squashed Commit Message'), default: defaultMsg, placeholder: null }
+		], t('Yes, squash commits'), (values) => {
+			const msg = (<string>values[0]).trim() || commits[0].message;
+			runAction({
+				command: 'batchSquashCommits',
+				repo: this.view.currentRepo,
+				baseHash: baseHash,
+				commitHashes: commits.map((c) => c.hash),
+				message: msg
+			}, t('Squashing Selected Commits'));
+		}, _target);
+	}
+
+	public batchDropCommitsAction(commits: ReadonlyArray<GG.GitCommit>, _target: DialogTarget | null) {
+		const check = validateTopologicalSelection(this.view.commits, this.view.commitLookup, commits.map((c) => c.hash));
+		if (!check.valid || check.baseHash === null) {
+			dialog.showError(t('Unable to Drop Selection'), check.reason || t('Selected commits must form a contiguous chain with a valid parent commit.'), null, null);
+			return;
+		}
+		const baseHash = check.baseHash;
+		dialog.asDangerous().showConfirmation(t('Are you sure you want to permanently drop <b>{0}</b> selected commits onto <b><i>{1}</i></b>?', commits.length, abbrevCommit(baseHash)), t('Yes, drop commits'), () => {
+			runAction({
+				command: 'batchDropCommits',
+				repo: this.view.currentRepo,
+				baseHash: baseHash,
+				commitHashes: commits.map((c) => c.hash)
+			}, t('Dropping Selected Commits'));
+		}, _target);
 	}
 
 	/**

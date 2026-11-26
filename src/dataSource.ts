@@ -954,6 +954,18 @@ export class DataSource extends Disposable {
 	}
 
 	/**
+	 * Push up to a specific commit onto a remote branch.
+	 */
+	public pushToCommit(repo: string, commitHash: string, remote: string, branchName: string, mode: GitPushBranchMode) {
+		if (!/^[0-9a-f]{7,64}$/i.test(commitHash) || branchName.startsWith('-') || branchName === '' || remote.startsWith('-')) {
+			return Promise.resolve(t('Invalid arguments for pushing commit.'));
+		}
+		const args = ['push', remote, commitHash + ':refs/heads/' + branchName];
+		if (mode !== GitPushBranchMode.Normal) args.push('--' + mode);
+		return this.runGitCommand(args, repo);
+	}
+
+	/**
 	 * Push a branch to multiple remotes.
 	 * @param repo The path of the repository.
 	 * @param branchName The name of the branch to push.

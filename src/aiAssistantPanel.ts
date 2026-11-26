@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { setApiKey } from './aiProviders';
+import { appendCustomInstructions, filterDiffByExcludeGlobs, setApiKey } from './aiProviders';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { getLanguageModels, runCustomAiPrompt, wrapUntrustedBlock } from './explainCommit';
@@ -10,7 +10,7 @@ import { runGit } from './historyRewrite';
 import { Language, getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
-import { LanguageModelInfo } from './types';
+import { AiTaskKey, LanguageModelInfo } from './types';
 import { copyToClipboard, getNonce, getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 import { Disposable } from './utils/disposable';
 
@@ -260,13 +260,13 @@ export class AiAssistantPanel extends Disposable {
 		});
 	}
 
-	private async ensureModelAndConsent(repo: string): Promise<LanguageModelInfo | null> {
-		let modelsResult = await getLanguageModels();
+	private async ensureModelAndConsent(repo: string, aiTaskKey: AiTaskKey): Promise<LanguageModelInfo | null> {
+		let modelsResult = await getLanguageModels(aiTaskKey);
 		if (modelsResult.needsApiKey) {
 			const setKeyLabel = t('Set API Key...');
 			const choice = await vscode.window.showErrorMessage(modelsResult.error || t('Set an API key first.'), setKeyLabel);
 			if (choice !== setKeyLabel || !(await setApiKey())) return null;
-			modelsResult = await getLanguageModels();
+			modelsResult = await getLanguageModels(aiTaskKey);
 		}
 		if (modelsResult.error !== null || modelsResult.models.length === 0) {
 			showErrorMessage(modelsResult.error || t('No language model is available.'));
@@ -318,11 +318,17 @@ export class AiAssistantPanel extends Disposable {
 
 	public async startTask(task: AiWorkflowTask) {
 		this.cancelActive();
-		const model = await this.ensureModelAndConsent(task.repo);
+		const aiTaskKey: AiTaskKey = task.kind === 'review-uncommitted' || task.kind === 'review-commit' || task.kind === 'review-range'
+			? 'reviewChanges'
+			: 'explainAndSearch';
+		const model = await this.ensureModelAndConsent(task.repo, aiTaskKey);
 		if (model === null) return;
 
 		let prompt = '';
 		const lang = getLanguage();
+		const repoCfg = getConfig(task.repo);
+		const excludes = repoCfg.aiExcludeFiles;
+		const custom = repoCfg.aiCustomInstructions;
 		if (task.kind === 'review-uncommitted') {
 			const changes = await this.gitFeatures.getChangesForCommitMessage(task.repo);
 			if (changes.error !== null) {
@@ -333,21 +339,21 @@ export class AiAssistantPanel extends Disposable {
 				showInformationMessage(t('There are no uncommitted changes in "{0}" to review.', getRepoName(task.repo)));
 				return;
 			}
-			prompt = buildAiCodeReviewPrompt(task.label, changes.text, lang);
+			prompt = appendCustomInstructions(buildAiCodeReviewPrompt(task.label, filterDiffByExcludeGlobs(changes.text, excludes).filtered, lang), custom.reviewChanges);
 		} else if (task.kind === 'review-commit') {
 			const commitData = await this.gitFeatures.getCommitForExplanation(task.repo, task.commitHash);
 			if (commitData.error !== null) {
 				showErrorMessage(commitData.error);
 				return;
 			}
-			prompt = buildAiCodeReviewPrompt(task.label, commitData.text, lang);
+			prompt = appendCustomInstructions(buildAiCodeReviewPrompt(task.label, filterDiffByExcludeGlobs(commitData.text, excludes).filtered, lang), custom.reviewChanges);
 		} else if (task.kind === 'bisect-explain') {
 			const commitData = await this.gitFeatures.getCommitForExplanation(task.repo, task.commitHash);
 			if (commitData.error !== null) {
 				showErrorMessage(commitData.error);
 				return;
 			}
-			prompt = buildAiRegressionPrompt(task.label, commitData.text, lang);
+			prompt = appendCustomInstructions(buildAiRegressionPrompt(task.label, filterDiffByExcludeGlobs(commitData.text, excludes).filtered, lang), custom.explainChanges);
 		} else if (task.kind === 'review-range') {
 			const rangeData = await this.gitFeatures.getRangeForReviewOrReleaseNotes(task.repo, task.fromRef, task.toRef);
 			if (rangeData.error !== null) {
@@ -358,7 +364,7 @@ export class AiAssistantPanel extends Disposable {
 				showInformationMessage(t('There are no differences between the selected revisions.'));
 				return;
 			}
-			prompt = buildAiCodeReviewPrompt(task.label, (rangeData.commitsText !== '' ? rangeData.commitsText + '\n\n' : '') + rangeData.diffText, lang);
+			prompt = appendCustomInstructions(buildAiCodeReviewPrompt(task.label, (rangeData.commitsText !== '' ? rangeData.commitsText + '\n\n' : '') + filterDiffByExcludeGlobs(rangeData.diffText, excludes).filtered, lang), custom.reviewChanges);
 		} else {
 			const rangeData = await this.gitFeatures.getRangeForReviewOrReleaseNotes(task.repo, task.fromRef, task.toRef);
 			if (rangeData.error !== null) {
@@ -369,7 +375,7 @@ export class AiAssistantPanel extends Disposable {
 				showInformationMessage(t('There are no differences between the selected revisions.'));
 				return;
 			}
-			prompt = buildAiReleaseNotesPrompt(task.label, rangeData.commitsText, rangeData.diffText, lang);
+			prompt = appendCustomInstructions(buildAiReleaseNotesPrompt(task.label, rangeData.commitsText, filterDiffByExcludeGlobs(rangeData.diffText, excludes).filtered, lang), custom.generateChangelog);
 		}
 
 		this.currentTask = task;
@@ -427,7 +433,7 @@ export class AiAssistantPanel extends Disposable {
 					lastSent = now;
 					postUpdate(partial, usedModel, false, null);
 				}
-			}, cancellation.token);
+			}, cancellation.token, aiTaskKey);
 			if (!cancellation.token.isCancellationRequested) {
 				postUpdate(res.text, res.model || model.name, true, res.error);
 			} else {

@@ -4,8 +4,9 @@ import { DataSource } from './dataSource';
 import { ExtensionState } from './extensionState';
 import { runGit } from './historyRewrite';
 import { t } from './l10n';
+import { matchCustomRemote } from './remoteLinks';
 import { RepoManager } from './repoManager';
-import { PullRequestBadgeInfo, PullRequestDetailsInfo } from './types';
+import { CustomRemoteConfig, PullRequestBadgeInfo, PullRequestDetailsInfo } from './types';
 import { getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 
 export interface ParsedHostingRemote {
@@ -34,7 +35,7 @@ export function clearPrStatusCache() {
 	inFlightPrRequests.clear();
 }
 
-export function parseHostingRemoteUrl(remoteName: string, rawUrl: string): ParsedHostingRemote | null {
+export function parseHostingRemoteUrl(remoteName: string, rawUrl: string, customRemotes?: ReadonlyArray<CustomRemoteConfig>): ParsedHostingRemote | null {
 	const trimmed = rawUrl.trim();
 	// Azure DevOps HTTPS: https://[user@]dev.azure.com/org/project/_git/repo or https://org.visualstudio.com/[DefaultCollection/]project/_git/repo
 	let azMatch = trimmed.match(/^https?:\/\/(?:[^@/]+@)?dev\.azure\.com\/([^/]+)\/([^/]+)\/_git\/([^/?#]+?)(?:\.git)?\/?$/i);
@@ -66,6 +67,11 @@ export function parseHostingRemoteUrl(remoteName: string, rawUrl: string): Parse
 		return null;
 	}
 	if (host === '' || repoPath === '' || !repoPath.includes('/')) return null;
+
+	const custom = matchCustomRemote(trimmed, host, customRemotes);
+	if (custom !== null && custom.type !== 'custom') {
+		return { provider: custom.type, host: host, ownerRepo: repoPath, remoteName: remoteName };
+	}
 	if (host.includes('github')) {
 		return { provider: 'github', host: host, ownerRepo: repoPath, remoteName: remoteName };
 	}
@@ -143,18 +149,28 @@ async function fetchJson(url: string, headers: { [k: string]: string }): Promise
 async function detectHostingRemote(dataSource: DataSource, repo: string): Promise<ParsedHostingRemote | null> {
 	const res = await runGit(dataSource, repo, ['remote', '-v']);
 	if (res.code !== 0) return null;
+	const customRemotes = getConfig(repo).customRemotes;
 	const lines = res.stdout.toString().split(/\r?\n/);
 	let fallback: ParsedHostingRemote | null = null;
 	for (const line of lines) {
 		const m = line.match(/^(\S+)\s+(\S+)\s+\(fetch\)$/);
 		if (m === null) continue;
-		const parsed = parseHostingRemoteUrl(m[1], m[2]);
+		const parsed = parseHostingRemoteUrl(m[1], m[2], customRemotes);
 		if (parsed !== null) {
 			if (parsed.remoteName === 'origin') return parsed;
 			if (fallback === null) fallback = parsed;
 		}
 	}
 	return fallback;
+}
+
+/**
+ * Return cached Pull Request badges for a repository without triggering a network request.
+ */
+export function getCachedRepoPullRequestBadges(repo: string): { readonly [branch: string]: PullRequestBadgeInfo } | null {
+	const cached = prCache.get(repo);
+	if (typeof cached === 'undefined') return null;
+	return cached.badges;
 }
 
 export async function fetchRepoPullRequestBadges(dataSource: DataSource, repo: string, force: boolean = false): Promise<{ [branch: string]: PullRequestBadgeInfo }> {
@@ -219,6 +235,10 @@ async function performFetchRepoPullRequestBadges(dataSource: DataSource, repo: s
 					state: pr.draft ? 'draft' : 'open',
 					ciStatus: ci,
 					baseBranch: pr.base && typeof pr.base.ref === 'string' ? pr.base.ref : '',
+					author: pr.user && typeof pr.user.login === 'string' ? pr.user.login : undefined,
+					updatedAt: typeof pr.updated_at === 'string' ? pr.updated_at : undefined,
+					reviewDecision: Array.isArray(pr.requested_reviewers) && pr.requested_reviewers.length > 0 ? 'review_required' : 'none',
+					mergeable: typeof pr.mergeable === 'boolean' ? pr.mergeable : (pr.mergeable_state === 'dirty' || pr.mergeable_state === 'blocked' ? false : null),
 					mergeQueueState: mergeQueueState
 				};
 			}));

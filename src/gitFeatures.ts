@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GitProcessRunner, runGit } from './historyRewrite';
-import { GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileChange, GitFileStatus, GitFileTimelineCommit, GitPatchInfo, GitStashableFile, ReviewSessionScope } from './types';
+import { ContributorSummary, GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileChange, GitFileStatus, GitFileTimelineCommit, GitPatchInfo, GitStashableFile, ReviewSessionScope } from './types';
 
 const FIELD = '\x1f';
 const RECORD = '\x1e';
@@ -1251,6 +1251,100 @@ export class GitFeatures {
 			return 'The checked-out branch "' + branchName + '" must be moved with Reset instead.';
 		}
 		return this.change(repo, ['branch', '-f', '--', branchName, targetHash]);
+	}
+
+	/**
+	 * Load repository contributors ranked by commit count for Co-authored-by and tree inspection.
+	 */
+	public async getContributors(repo: string): Promise<{ contributors: ContributorSummary[], error: GitFeatureError }> {
+		const res = await this.run(repo, ['shortlog', '-sne', 'HEAD']);
+		if (res.code !== 0) return { contributors: [], error: errorOf(res) };
+		const contributors: ContributorSummary[] = [];
+		const lines = splitLines(res.stdout);
+		for (let i = 0; i < lines.length && contributors.length < 100; i++) {
+			const m = lines[i].match(/^\s*(\d+)\t(.+?)\s+<([^>]+)>\s*$/);
+			if (m !== null) {
+				contributors.push({
+					commits: parseInt(m[1], 10) || 0,
+					name: m[2].trim(),
+					email: m[3].trim()
+				});
+			}
+		}
+		return { contributors: contributors, error: null };
+	}
+
+	/**
+	 * Append unique relative file paths to the repository's `.gitignore` file safely.
+	 */
+	public async addToGitignore(repo: string, relPaths: ReadonlyArray<string>): Promise<{ addedCount: number, error: GitFeatureError }> {
+		const repoRoot = path.resolve(repo);
+		const safeEntries: string[] = [];
+		for (let i = 0; i < relPaths.length; i++) {
+			const raw = (relPaths[i] || '').replace(/\\/g, '/').trim();
+			if (raw === '' || raw.startsWith('-') || raw.includes('\n') || raw.includes('\r')) continue;
+			const abs = path.resolve(repoRoot, raw);
+			const rel = path.relative(repoRoot, abs).replace(/\\/g, '/');
+			if (rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel) && !safeEntries.includes(rel)) {
+				safeEntries.push(rel);
+			}
+		}
+		if (safeEntries.length === 0) return { addedCount: 0, error: 'No valid repository paths were provided.' };
+		const gitignorePath = path.join(repoRoot, '.gitignore');
+		try {
+			const existingRaw = fs.existsSync(gitignorePath) ? await fs.promises.readFile(gitignorePath, 'utf8') : '';
+			const existingSet = new Set(existingRaw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '' && !l.startsWith('#')));
+			const toAppend = safeEntries.filter((p) => !existingSet.has(p));
+			if (toAppend.length === 0) return { addedCount: 0, error: null };
+			const prefix = existingRaw !== '' && !existingRaw.endsWith('\n') ? '\n' : '';
+			await fs.promises.writeFile(gitignorePath, existingRaw + prefix + toAppend.join('\n') + '\n', 'utf8');
+			return { addedCount: toAppend.length, error: null };
+		} catch (err) {
+			return { addedCount: 0, error: err instanceof Error ? err.message : String(err) };
+		}
+	}
+
+	/**
+	 * Copy uncommitted tracked and untracked changes from `sourceRepo` into `targetWorktreePath`.
+	 */
+	public async copyWipToWorktree(sourceRepo: string, targetWorktreePath: string): Promise<{ copiedFiles: number, error: GitFeatureError }> {
+		const srcRoot = path.resolve(sourceRepo);
+		const dstRoot = path.resolve(targetWorktreePath);
+		if (srcRoot === dstRoot) {
+			return { copiedFiles: 0, error: 'Source and target worktrees are identical.' };
+		}
+		if (!fs.existsSync(dstRoot)) {
+			return { copiedFiles: 0, error: 'Target worktree directory does not exist.' };
+		}
+		let copiedFiles = 0;
+		const diffRes = await this.run(srcRoot, ['diff', 'HEAD', '--binary']);
+		if (diffRes.code === 0 && diffRes.stdout.length > 0) {
+			const patchStr = diffRes.stdout.toString('utf8');
+			const applyRes = await runGit(this.git, dstRoot, ['apply', '--3way', '-'], patchStr);
+			if (applyRes.code !== 0) {
+				const fallbackRes = await runGit(this.git, dstRoot, ['apply', '-'], patchStr);
+				if (fallbackRes.code !== 0) {
+					return { copiedFiles: 0, error: errorOf(fallbackRes) };
+				}
+			}
+			const namesRes = await this.run(srcRoot, ['diff', 'HEAD', '--name-only']);
+			copiedFiles += splitLines(namesRes.stdout).length;
+		}
+		const untrackedRes = await this.run(srcRoot, ['ls-files', '--others', '--exclude-standard', '-z']);
+		if (untrackedRes.code === 0 && untrackedRes.stdout.length > 0) {
+			const relPaths = untrackedRes.stdout.toString('utf8').split('\0').filter((p) => p !== '');
+			for (let i = 0; i < relPaths.length; i++) {
+				const rel = relPaths[i];
+				const absSrc = path.resolve(srcRoot, rel);
+				const absDst = path.resolve(dstRoot, rel);
+				if (!absSrc.startsWith(srcRoot + path.sep) || !absDst.startsWith(dstRoot + path.sep)) continue;
+				if (!fs.existsSync(absSrc) || !fs.statSync(absSrc).isFile()) continue;
+				await fs.promises.mkdir(path.dirname(absDst), { recursive: true });
+				await fs.promises.copyFile(absSrc, absDst);
+				copiedFiles++;
+			}
+		}
+		return { copiedFiles: copiedFiles, error: null };
 	}
 
 	/**

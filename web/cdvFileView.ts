@@ -720,6 +720,12 @@ class CdvFileView {
 						onClick: () => this.view.openHunkStagingModal(file.newFilePath, false)
 					},
 					{
+						title: t('Add to .gitignore'),
+						icon: MENU_ICONS.clear,
+						visible: isUncommitted && expandedCommit.compareWithHash === null && file.type === GG.GitFileStatus.Untracked,
+						onClick: () => runAction({ command: 'addToGitignore', repo: this.view.currentRepo, paths: [file.newFilePath] }, t('Adding to .gitignore'))
+					},
+					{
 						title: t('Discard File Changes') + ELLIPSIS,
 						icon: MENU_ICONS.trash,
 						visible: isUncommitted && expandedCommit.compareWithHash === null,
