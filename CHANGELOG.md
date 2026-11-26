@@ -1,5 +1,18 @@
 # Change Log
 
+## 2.8.0 - 2026-11-26
+* **Editor Annotations & Preset Modes**:
+    * Added **File Heatmap** (`git-map.toggleFileHeatmap`) and **File Changes** (`git-map.toggleFileChanges`, plus Next / Previous Change navigation) across gutter, line highlight, and overview ruler locations.
+    * Upgraded **Inline Blame**, **Status Bar Blame**, **File Blame**, **Rich Blame Hovers**, and **Multi-Scope Git CodeLens** (`document`, `containers`, `blocks`) with customizable `${...}` format templates, PR badges, debounced anti-flicker updates, and **Default / Zen / Review** editor annotation modes (`git-map.switchMode`).
+* **Autolinks, Custom Self-Hosted Remotes, Terminal Links & PR Launchpad**:
+    * Added configurable **Autolinks** (`git-map.autolinks`) across the Commit Graph, blame hovers, and terminal output, plus **Custom Remotes** (`git-map.remotes`) for self-hosted GitHub Enterprise, GitLab, Gitea, Bitbucket Server, and Azure DevOps URLs and avatars.
+    * Added **Terminal Git Link Detection** (clicking commit hashes, ranges, branches, tags, or tracked file paths opens diffs/commits in Git Map), **Follow Active Terminal Repository**, **Start Work** (`git-map.startWork`), and **Status Bar PR Launchpad** (`git-map.openLaunchpad`) grouping PRs into `Mergeable`, `Blocked`, `Needs Review`, and `Follow Up`.
+* **SCM 11-Section Tree View, Coding Agents MCP Server & Repository Health**:
+    * Added a grouped **Git Map SCM Tree View** (`git-map.scmView`) with 11 configurable sections (`Commits`, `Branches`, `Remotes`, `Stashes`, `Tags`, `Worktrees`, `Contributors`, `Repositories`, `Search & Compare`, `Launchpad PRs`, `File History`) and customizable node label/description templates.
+    * Added **Coding Agents Detection** (`Copilot Chat`, `Claude Code`, `Codex`, `GitHub Copilot CLI`, `OpenCode`), a standalone local **stdio MCP Server** (`out/mcpServerCli.js`), repository Git hook toggles, **Repository Health & Commit-Graph Optimization** (`git-map.checkRepoHealth`), and an **SSH Allowed Signers** helper (`git-map.editSshAllowedSigners`).
+* **Commit Graph, Interactive Rebase Custom Editor & Settings Live Previews**:
+    * Added a visual **`git-rebase-todo` Custom Editor**, **Auto-Rebase** conflict workflow (`git-map.ai.autoRebase`), per-task model routing & custom instructions, **Graph Overview Bar**, **`+N` Reference Capsule Folding**, **Solo Branch / Tag** mode, **Multi-Commit Batch Squash / Drop / Push to Commit**, **Copy Uncommitted Changes to Worktree**, **`?` Keyboard Shortcuts Cheatsheet**, and live interactive previews across the categorized Settings drawer.
+
 ## 2.7.0 - 2026-11-22
 * **Design System & Workbench Craftsmanship**:
     * Introduced a unified semantic CSS token layer (`--gm-surface`, `--gm-border`, `--gm-radius-*`, `--gm-ring`, `--gm-shadow-*`), consistent `:focus-visible` keyboard focus rings, sliding active navigation indicators, and global `prefers-reduced-motion` support across Dark & Light VS Code themes.
