@@ -667,5 +667,8 @@
 	"config.menus.scm.reflogExplorer.description": "向源代码管理视图标题菜单添加“可视化引用日志浏览器”。",
 	"config.menus.scm.view.description": "向源代码管理视图标题添加“查看 Git Map”。",
 	"submenu.fileAnnotations.label": "文件注释",
-	"command.ai.switchModel.title": "切换 AI 提供程序/模型..."
+	"command.ai.switchModel.title": "切换 AI 提供程序/模型...",
+	"config.ui.iconColorStyle.description": "选择 Git Map 视图、设置页、状态栏与 SCM 树视图中的图标采用语义彩色还是跟随主题前景色。AI 与编码代理图标在两种模式下始终保持彩色。",
+	"config.ui.iconColorStyle.enumDescriptions.0": "单色图标，跟随 Visual Studio Code 主题前景色（AI 图标始终保持彩色）。",
+	"config.ui.iconColorStyle.enumDescriptions.1": "彩色图标，为 Git Map 视图、设置页、状态栏与 SCM 树视图中的图标赋予语义配色。"
 }

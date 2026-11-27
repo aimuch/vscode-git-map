@@ -667,5 +667,8 @@
 	"config.menus.scm.reflogExplorer.description": "Add \"Visual Reflog Explorer\" to the title menu of the Source Control view.",
 	"config.menus.scm.view.description": "Add \"View Git Map\" to the title of the Source Control view.",
 	"submenu.fileAnnotations.label": "File Annotations",
-	"command.ai.switchModel.title": "Switch AI Provider / Model..."
+	"command.ai.switchModel.title": "Switch AI Provider / Model...",
+	"config.ui.iconColorStyle.description": "Choose whether icons across the Git Map View, Settings, Status Bar, and SCM Tree View use semantic colours or follow the theme foreground. AI & Coding Agent icons remain colourful in both modes.",
+	"config.ui.iconColorStyle.enumDescriptions.0": "Monochrome icons following the Visual Studio Code theme foreground (AI icons stay colourful).",
+	"config.ui.iconColorStyle.enumDescriptions.1": "Semantic colourful icons across the Git Map View, Settings, Status Bar, and SCM Tree View."
 }

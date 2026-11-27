@@ -397,6 +397,8 @@
 	gap:6px;
 	height:22px;
 	padding:0 8px;
+	box-sizing:border-box;
+	border:1px solid var(--vscode-statusBar-border, var(--gm-border-strong));
 	border-radius:4px;
 	background-color:var(--vscode-statusBar-background, #007acc);
 	color:var(--vscode-statusBar-foreground, #ffffff);

@@ -1,5 +1,12 @@
 # Change Log
 
+## 2.9.2 - 2026-11-27
+* **Live Previews Across Settings & Modals**:
+    * Added a full simulated Status Bar live preview and inline item preview badges across the **Status Bar**, **Launchpad**, and **Editor Modes** categories, synced with item toggles and `Icon & Text / Icon Only / Text Only` styles.
+    * Enriched the **Commit Graph** live preview (SVG lane curves/elbows, overview bar, minimap, scroll markers, `+N` ref folding, upstream counters, and split tags) and added live previews to **Terminal Links**, **Start Work**, **Git Map SCM**, **Commits View**, **Stashes View**, **Dates & Times**, **Menus & Toolbars**, and **Custom Remotes**, plus a live preview bar inside the **Customize Commit Details Action Buttons** modal.
+* **2-Mode Global Icon Colour Style (`git-map.ui.iconColorStyle`)**:
+    * Added a `Monochrome` / `Colorful` switcher (`monochrome` default) synchronized between the **Commit Graph** and **Status Bar** settings, updating Webview icons, native VS Code Status Bar items, and Git Map SCM tree view icons live without reload while keeping AI & Coding Agent icons colourful in both modes.
+
 ## 2.9.1 - 2026-11-27
 * The Status Bar category of the Settings panel has a switch for each item Git Map adds to the Status Bar: the Git Map item (`git-map.showStatusBarItem`), the Status Bar Blame (`git-map.blame.statusBar`), the Launchpad indicator (`git-map.launchpad.indicator.enabled`) and the active editor mode (`git-map.mode.statusBar.enabled`), kept in sync with the switches in their own categories.
 * Fixed: the controls of the Settings categories were centred, the format inputs were squeezed beside their token menus, the tips were split into columns, and the examples of the date formats without a value showed their description formatted as a date.

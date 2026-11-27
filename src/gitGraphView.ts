@@ -1535,6 +1535,7 @@ export class GitGraphView extends Disposable {
 				dialogDefaults: config.dialogDefaults,
 				editorAnnotations: config.editorAnnotationsSnapshot,
 				settingValues: config.allSettingValues,
+				iconColorStyle: config.iconColorStyle,
 				enhancedAccessibility: config.enhancedAccessibility,
 				explainCommit: config.explainCommit,
 				fetchAndPrune: config.fetchAndPrune,

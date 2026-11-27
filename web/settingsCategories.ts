@@ -7,6 +7,8 @@
 
 type SettingsCategoryGroup = 'integrations' | 'views' | 'editor' | 'general';
 
+type SettingsStatusBarBadgeKind = 'statusBarBlame' | 'statusBarLaunchpad' | 'statusBarMode';
+
 interface SettingsControlBase {
 	readonly label: string;
 	readonly hint?: string; // Shown below the control
@@ -14,6 +16,7 @@ interface SettingsControlBase {
 	readonly visibleWhen?: string; // The control is hidden unless this is true
 	readonly indent?: number; // Shown indented below the control above it (1 or 2 levels)
 	readonly field?: keyof GG.EditorAnnotationsSnapshot; // The state of the live previews of the Editor Annotations updated by the control
+	readonly previewBadge?: SettingsStatusBarBadgeKind; // Inline Status Bar item preview shown beside the switch
 }
 
 type SettingsControl =
@@ -130,7 +133,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			controls: [{ kind: 'custom', id: 'autolinks', label: t('Autolinks') }]
 		},
 		{
-			id: 'launchpad', name: t('Launchpad'), group: 'integrations', icon: 'pullRequest', search: 'git-map.launchpad',
+			id: 'launchpad', name: t('Launchpad'), group: 'integrations', icon: 'rocket', search: 'git-map.launchpad', preview: 'launchpad',
 			hint: t('Adds a Status Bar indicator of the pull requests needing your attention, grouped by the action they need'),
 			master: { key: 'launchpad.indicator.enabled', label: t('Launchpad Indicator') },
 			command: { title: t('Git Map: Open Pull Request Launchpad...'), command: 'git-map.openLaunchpad' },
@@ -150,7 +153,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'terminal-links', name: t('Terminal Links'), group: 'integrations', icon: 'terminal', search: 'git-map.terminalLinks',
+			id: 'terminal-links', name: t('Terminal Links'), group: 'integrations', icon: 'terminal', search: 'git-map.terminalLinks', preview: 'terminalLinks',
 			hint: t('Adds links to the branches, tags, commits and ranges of commits in the integrated terminal'),
 			master: { key: 'terminalLinks.enabled', label: t('Terminal Links') },
 			controls: [
@@ -161,7 +164,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'start-work', name: t('Start Work'), group: 'integrations', icon: 'branch', search: 'git-map.startWork',
+			id: 'start-work', name: t('Start Work'), group: 'integrations', icon: 'branch', search: 'git-map.startWork', preview: 'startWork',
 			hint: t('Customize the names of the branches created when starting work on an issue'),
 			command: { title: t('Git Map: Start Work (Create Branch from Issue)...'), command: 'git-map.startWork' },
 			controls: [{ kind: 'text', key: 'startWork.branchNameFormat', label: t('Branch name format'), hint: t('Use ${id} for the issue ID and ${title} for its title. Branch names are normalized for Git.'), placeholder: '${id}-${title}', example: 'branch', exampleDefault: '${id}-${title}', tokens: 'branch' }]
@@ -173,6 +176,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			hint: t('The Git Map View visualizes, explores and manages the history of a repository'),
 			controls: [
 				{ kind: 'custom', id: 'graphAppearance', label: t('Appearance') },
+				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] },
 				{ kind: 'number', key: 'repository.commits.initialLoad', label: t('Show this many rows at first'), min: 1 },
 				{ kind: 'number', key: 'repository.commits.loadMore', label: t('Then load this many more rows'), min: 1 },
 				{ kind: 'check', key: 'repository.commits.loadMoreAutomatically', label: t('Load more rows automatically when scrolling to the bottom') },
@@ -196,13 +200,13 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'scm-views', name: t('Git Map SCM'), group: 'views', icon: 'scm', search: 'git-map.views.scm',
+			id: 'scm-views', name: t('Git Map SCM'), group: 'views', icon: 'scm', search: 'git-map.views.scm', preview: 'scmViews',
 			hint: t('Folds the views of Git Map into one Git Map SCM view, alongside the built-in Source Control view'),
 			master: { key: 'views.scm.grouped.enabled', label: t('Git Map SCM View') },
 			controls: [{ kind: 'custom', id: 'scmViews', label: t('Sections') }]
 		},
 		{
-			id: 'commits-view', name: t('Commits View'), group: 'views', icon: 'commit', search: 'git-map.views',
+			id: 'commits-view', name: t('Commits View'), group: 'views', icon: 'commit', search: 'git-map.views', preview: 'commitsView',
 			hint: t('The commits of the Git Map SCM view'),
 			controls: [
 				{ kind: 'text', key: 'views.commits.labelFormat', label: t('Commit label format'), placeholder: '${message}', example: 'commit', exampleDefault: '${message}', tokens: 'commit' },
@@ -213,7 +217,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'stashes-view', name: t('Stashes View'), group: 'views', icon: 'stash', search: 'git-map.views.stashes',
+			id: 'stashes-view', name: t('Stashes View'), group: 'views', icon: 'stash', search: 'git-map.views.stashes', preview: 'stashesView',
 			hint: t('The stashes of the Git Map SCM view'),
 			controls: [
 				{ kind: 'text', key: 'views.stashes.labelFormat', label: t('Stash label format'), placeholder: '${message}', example: 'stash', exampleDefault: '${message}', tokens: 'stash' },
@@ -327,7 +331,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'editor-modes', name: t('Editor Modes'), group: 'editor', icon: 'palette', search: 'git-map.mode',
+			id: 'editor-modes', name: t('Editor Modes'), group: 'editor', icon: 'palette', search: 'git-map.mode', preview: 'editorModes',
 			hint: t('Switch between sets of editor annotations: Zen hides them, Review shows them all'),
 			command: { title: t('Git Map: Switch Editor Annotation Mode...'), command: 'git-map.switchMode' },
 			controls: [
@@ -338,7 +342,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 
 		// General
 		{
-			id: 'dates', name: t('Dates & Times'), group: 'general', icon: 'calendar', search: 'git-map.default',
+			id: 'dates', name: t('Dates & Times'), group: 'general', icon: 'calendar', search: 'git-map.default', preview: 'dates',
 			hint: t('Controls how dates and times are formatted and shown throughout Git Map'),
 			controls: [
 				{ kind: 'check', key: 'defaultDateStyle', field: 'dateStyle', label: t('Allow relative date formatting'), valueOn: 'relative', valueOff: 'absolute' },
@@ -352,7 +356,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			]
 		},
 		{
-			id: 'menus', name: t('Menus & Toolbars'), group: 'general', icon: 'menus', search: 'git-map.menus',
+			id: 'menus', name: t('Menus & Toolbars'), group: 'general', icon: 'menus', search: 'git-map.menus', preview: 'menus',
 			hint: t('Adds many helpful commands to the built-in menus & toolbars'),
 			master: { key: '#menus', label: t('Menus & Toolbars') },
 			controls: [
@@ -395,14 +399,15 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			controls: [{ kind: 'custom', id: 'language', label: t('Language') }]
 		},
 		{
-			id: 'status-bar-item', name: t('Status Bar'), group: 'general', icon: 'layout', search: 'git-map.statusBarItem',
+			id: 'status-bar-item', name: t('Status Bar'), group: 'general', icon: 'layout', search: 'git-map.statusBarItem', preview: 'statusBarItems',
 			hint: t('The items Git Map adds to the Status Bar'),
 			controls: [
 				{ kind: 'check', key: 'showStatusBarItem', label: t('Show the Git Map item, which opens the Git Map View') },
 				{ kind: 'custom', id: 'statusBarItem', label: t('Status Bar Item') },
-				{ kind: 'check', key: 'blame.statusBar', label: t('Show the blame of the current line (Status Bar Blame)') },
-				{ kind: 'check', key: 'launchpad.indicator.enabled', label: t('Show the Launchpad indicator of the pull requests needing your attention'), hint: t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on') },
-				{ kind: 'check', key: 'mode.statusBar.enabled', label: t('Show the active editor mode') }
+				{ kind: 'check', key: 'blame.statusBar', field: 'statusBarEnabled', label: t('Show the blame of the current line (Status Bar Blame)'), previewBadge: 'statusBarBlame' },
+				{ kind: 'check', key: 'launchpad.indicator.enabled', label: t('Show the Launchpad indicator of the pull requests needing your attention'), hint: t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on'), previewBadge: 'statusBarLaunchpad' },
+				{ kind: 'check', key: 'mode.statusBar.enabled', label: t('Show the active editor mode'), previewBadge: 'statusBarMode' },
+				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] }
 			]
 		}
 	];

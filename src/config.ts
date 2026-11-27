@@ -1386,6 +1386,13 @@ class Config {
 	}
 
 	/**
+	 * Get the value of the `git-map.ui.iconColorStyle` Extension Setting.
+	 */
+	get iconColorStyle(): 'monochrome' | 'colorful' {
+		return this.config.get<string>('ui.iconColorStyle', 'monochrome') === 'colorful' ? 'colorful' : 'monochrome';
+	}
+
+	/**
 	 * Get the value of the `git-map.tabIconColourTheme` Extension Setting.
 	 */
 	get tabIconColourTheme() {

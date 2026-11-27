@@ -2049,11 +2049,13 @@
 				mouse(customizeItem, 'click');
 
 				const modal = await waitFor('the Customize Commit Action Buttons modal', () => document.getElementById('cdvActionsModal'));
+				assert(modal.querySelector('.cdvActionsModalPreview .cdvActionsPreviewBar') !== null && modal.querySelectorAll('.cdvActionsPreviewChip').length === 4, 'Expected live action bar preview in customizer modal');
 				const savePatchRow = modal.querySelector('.cdvActionsModalItem[data-action-id="savePatch"]');
 				assert(savePatchRow !== null, 'Missing savePatch in action customizer');
 				const savePatchInput = savePatchRow.querySelector('input[type="checkbox"]');
 				savePatchInput.checked = true;
 				savePatchInput.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(modal.querySelectorAll('.cdvActionsPreviewChip').length === 5, 'Live action bar preview did not update after checking savePatch');
 
 				// Move savePatch up from #4 to #1 using the Up arrow button, then swap #2 and #3 via drag-and-drop
 				for (let step = 0; step < 3; step++) {
@@ -2383,23 +2385,58 @@
 				const dateExamples = ['blame.currentLine.dateFormat', 'blame.statusBar.dateFormat', 'codeLens.dateFormat', 'defaultDateFormat', 'defaultDateShortFormat', 'defaultTimeFormat'].map((k) => [k, (widget.querySelector('.settingsExample[data-example-for="' + k + '"]') || { textContent: '' }).textContent]);
 				const badDates = dateExamples.filter((example) => example[1] === '' || /defa|value|locale|\{0\}/.test(example[1]));
 				assert(badDates.length === 0, 'The examples of empty date formats should be dates: ' + JSON.stringify(badDates));
-				// The Status Bar category has a switch for each item Git Map adds to the Status Bar, kept in sync with the switch of its own category
+				// The Status Bar category has a live preview of all Git Map Status Bar items plus an inline preview pill beside each switch, kept in sync with the switch of its own category
 				const statusBarSec = document.getElementById('settingsCategory-status-bar-item');
+				const sbLivePreview = document.getElementById('settingsPreview-statusBarItems');
+				assert(sbLivePreview !== null && sbLivePreview.querySelector('[data-sb-item="gitMap"]') !== null, 'Status Bar category is missing its live preview strip');
+				assert(statusBarSec.querySelectorAll('.settingsStatusBarItemPreview[data-sb-badge]').length === 3, 'Expected inline Status Bar preview pills for Blame, Launchpad & Editor Mode');
+				assert(document.getElementById('settingsPreview-launchpad') !== null && document.getElementById('settingsPreview-editorModes') !== null, 'Launchpad & Editor Modes categories should have live Status Bar previews');
+				['terminalLinks', 'startWork', 'scmViews', 'commitsView', 'stashesView', 'dates', 'menus'].forEach((pid) => {
+					assert(document.getElementById('settingsPreview-' + pid) !== null, 'Missing Settings live preview #' + pid);
+				});
+				assert(document.getElementById('settingsRemotesLivePreview') !== null, 'Missing #settingsRemotesLivePreview');
+
+				// Two-mode global icon colour style switcher (monochrome vs colorful; AI icons stay colorful in both modes)
+				const graphColorSeg = document.querySelector('#settingsCategory-commit-graph .settingsSegmentedCtl[data-skey="ui.iconColorStyle"] .settingsSegment[data-value="colorful"]');
+				const sbMonoSeg = statusBarSec.querySelector('.settingsSegmentedCtl[data-skey="ui.iconColorStyle"] .settingsSegment[data-value="monochrome"]');
+				const sbColorSeg = statusBarSec.querySelector('.settingsSegmentedCtl[data-skey="ui.iconColorStyle"] .settingsSegment[data-value="colorful"]');
+				assert(graphColorSeg !== null && sbMonoSeg !== null && sbColorSeg !== null, 'Missing ui.iconColorStyle segmented controls');
+				const lastSave = () => requestsOf('saveExtendedSettings').slice(-1)[0];
+				mouse(graphColorSeg, 'click');
+				await waitFor('ui.iconColorStyle=colorful saved', () => {
+					const s = lastSave();
+					return s && s.settings['ui.iconColorStyle'] === 'colorful';
+				});
+				assert(document.body.dataset.iconStyle === 'colorful' && sbColorSeg.classList.contains('selected'), 'ui.iconColorStyle=colorful did not update body data attribute and synced Status Bar switch');
+				mouse(sbMonoSeg, 'click');
+				await waitFor('ui.iconColorStyle=monochrome saved', () => {
+					const s = lastSave();
+					return s && s.settings['ui.iconColorStyle'] === 'monochrome';
+				});
+				assert(document.body.dataset.iconStyle === 'monochrome' && widget.querySelectorAll('svg.aiColorIcon').length >= 2, 'Monochrome mode should keep AI icons colorful');
+
+				const commitsInput = document.querySelector('#settingsCategory-commits-view input[data-skey="views.commits.labelFormat"]');
+				commitsInput.value = '[${sha}] ${message}';
+				commitsInput.dispatchEvent(new Event('input', { bubbles: true }));
+				assert(document.getElementById('settingsPreview-commitsView').textContent.includes('[fe26af4] feat: optimize parser'), 'Commits View live preview did not update');
 				const itemKeys = Array.from(statusBarSec.querySelectorAll('input[data-kind="check"]')).map((input) => input.dataset.skey);
 				assert(JSON.stringify(itemKeys) === JSON.stringify(['showStatusBarItem', 'blame.statusBar', 'launchpad.indicator.enabled', 'mode.statusBar.enabled']), 'Unexpected switches of the Status Bar items: ' + JSON.stringify(itemKeys));
 				const modeHere = statusBarSec.querySelector('input[data-skey="mode.statusBar.enabled"]'), modeThere = document.querySelector('#settingsCategory-editor-modes input[data-skey="mode.statusBar.enabled"]');
 				const launchpadHere = statusBarSec.querySelector('input[data-skey="launchpad.indicator.enabled"]'), launchpadThere = document.querySelector('#settingsCategory-launchpad .settingsControl.master input[data-skey="launchpad.indicator.enabled"]');
-				for (const [here, there, k] of [[modeHere, modeThere, 'mode.statusBar.enabled'], [launchpadHere, launchpadThere, 'launchpad.indicator.enabled']]) {
+				for (const [here, there, k, sbItem, badgeKey] of [[modeHere, modeThere, 'mode.statusBar.enabled', 'mode', 'statusBarMode'], [launchpadHere, launchpadThere, 'launchpad.indicator.enabled', 'launchpad', 'statusBarLaunchpad']]) {
 					const initial = here.checked, saveBefore = requestsOf('saveExtendedSettings').length;
 					assert(there !== null && there.checked === initial, 'The switch of ' + k + ' should match its own category');
 					here.checked = !initial;
 					here.dispatchEvent(new Event('change', { bubbles: true }));
 					const saved = await waitFor('saveExtendedSettings(' + k + ')', () => requestsOf('saveExtendedSettings').length > saveBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
 					assert(saved.settings[k] === !initial && there.checked === !initial, 'Turning ' + k + ' off from the Status Bar category should save it, and update the switch of its own category: ' + JSON.stringify(saved));
+					assert((sbLivePreview.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === !initial, 'Status Bar live preview did not reflect ' + k + '=' + !initial);
+					assert(statusBarSec.querySelector('[data-sb-badge="' + badgeKey + '"]').classList.contains('off') === initial, 'Inline Status Bar badge did not update active state for ' + k);
 					there.checked = initial;
 					there.dispatchEvent(new Event('change', { bubbles: true }));
 					await waitFor('saveExtendedSettings(' + k + ' back)', () => requestsOf('saveExtendedSettings').slice(-1)[0].settings[k] === initial);
 					assert(here.checked === initial, 'Turning ' + k + ' back on from its own category should update the Status Bar category');
+					assert((sbLivePreview.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === initial, 'Status Bar live preview did not restore ' + k + '=' + initial);
 				}
 				for (const id of ['commits-view', 'file-heatmap', 'current-line', 'menus', 'status-bar-item']) {
 					document.getElementById('settingsCategory-' + id).scrollIntoView({ block: 'start' });

@@ -193,10 +193,19 @@ export enum TreeItemCollapsibleState {
 	Expanded = 2
 }
 
-export class ThemeIcon {
+export class ThemeColor {
 	public readonly id: string;
 	constructor(id: string) {
 		this.id = id;
+	}
+}
+
+export class ThemeIcon {
+	public readonly id: string;
+	public readonly color?: ThemeColor;
+	constructor(id: string, color?: ThemeColor) {
+		this.id = id;
+		this.color = color;
 	}
 }
 

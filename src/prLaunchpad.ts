@@ -70,7 +70,7 @@ export class PrLaunchpad extends Disposable {
 			this.statusBarItem,
 			vscode.commands.registerCommand('git-map.openLaunchpad', () => this.openLaunchpad()),
 			vscode.workspace.onDidChangeConfiguration((e) => {
-				if (e.affectsConfiguration('git-map.launchpad') || e.affectsConfiguration('git-map.integrations.pullRequestStatus')) {
+				if (e.affectsConfiguration('git-map.launchpad') || e.affectsConfiguration('git-map.integrations.pullRequestStatus') || e.affectsConfiguration('git-map.ui.iconColorStyle')) {
 					this.configurePolling();
 					void this.refresh(false);
 				}
@@ -158,7 +158,10 @@ export class PrLaunchpad extends Disposable {
 			: cfg.label === 'counts' ? [blocked > 0 && enabledSet.has('blocked') ? '$(error) ' + blocked : '', needsReview > 0 && enabledSet.has('needsReview') ? '$(comment-unresolved) ' + needsReview : '', mergeable > 0 && enabledSet.has('mergeable') ? '$(check) ' + mergeable : '', followUp > 0 && enabledSet.has('followUp') ? '$(report) ' + followUp : ''].filter((s) => s !== '').join('  ') || t('PRs: 0')
 				: top !== null ? top.label : t('PRs: 0');
 		this.statusBarItem.text = icon + (label !== '' ? ' ' + label : '');
-		this.statusBarItem.color = cfg.useColors && top !== null ? new vscode.ThemeColor(top.group === 'blocked' ? 'errorForeground' : top.group === 'needsReview' ? 'editorWarning.foreground' : top.group === 'mergeable' ? 'gitDecoration.addedResourceForeground' : 'foreground') : undefined;
+		const colorfulIcons = getConfig().iconColorStyle === 'colorful';
+		this.statusBarItem.color = (cfg.useColors || colorfulIcons) && top !== null
+			? new vscode.ThemeColor(top.group === 'blocked' ? 'errorForeground' : top.group === 'needsReview' ? 'editorWarning.foreground' : top.group === 'mergeable' ? 'gitDecoration.addedResourceForeground' : 'charts.blue')
+			: colorfulIcons ? new vscode.ThemeColor('charts.orange') : undefined;
 		if (visible.length === 0) this.statusBarItem.tooltip = t('Git Map Launchpad: Click to inspect Pull Requests needing attention');
 		this.statusBarItem.tooltip = [
 			t('Mergeable: {0}', mergeable),

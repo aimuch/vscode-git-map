@@ -113,6 +113,7 @@ export class LineBlame extends Disposable {
 					event.affectsConfiguration('git-map.blame') ||
 					event.affectsConfiguration('git-map.hovers') ||
 					event.affectsConfiguration('git-map.autolinks') ||
+					event.affectsConfiguration('git-map.ui.iconColorStyle') ||
 					event.affectsConfiguration('git-map.language')
 				) {
 					this.applyConfig();
@@ -256,6 +257,7 @@ export class LineBlame extends Disposable {
 				? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary + (prInfo !== null ? ' (PR #' + prInfo.number + ')' : '')
 				: t('This line has uncommitted changes.');
 		this.statusBarItem.command = getStatusBarCommand(cfg.blameStatusBarCommand, repo, blame, uri, line);
+		this.statusBarItem.color = cfg.iconColorStyle === 'colorful' ? new vscode.ThemeColor('charts.purple') : undefined;
 		this.statusBarItem.show();
 		this.statusBarVisible = true;
 	}

@@ -790,6 +790,7 @@ export interface GitGraphViewConfig {
 	readonly dialogDefaults: DialogDefaults;
 	readonly editorAnnotations?: EditorAnnotationsSnapshot;
 	readonly settingValues?: { readonly [key: string]: unknown }; // The value of every Git Map Extension Setting (for the Settings panel)
+	readonly iconColorStyle?: 'monochrome' | 'colorful';
 	readonly enhancedAccessibility: boolean;
 	readonly explainCommit: boolean;
 	readonly fetchAndPrune: boolean;

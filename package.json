@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.9.1",
+	"version": "2.9.2",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -2599,6 +2599,19 @@
 					],
 					"default": "colour",
 					"description": "%config.tabIconColourTheme.description%"
+				},
+				"git-map.ui.iconColorStyle": {
+					"type": "string",
+					"enum": [
+						"monochrome",
+						"colorful"
+					],
+					"enumDescriptions": [
+						"%config.ui.iconColorStyle.enumDescriptions.0%",
+						"%config.ui.iconColorStyle.enumDescriptions.1%"
+					],
+					"default": "monochrome",
+					"description": "%config.ui.iconColorStyle.description%"
 				},
 				"git-map.autoCenterCommitDetailsView": {
 					"type": "boolean",

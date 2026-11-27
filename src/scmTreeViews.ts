@@ -107,6 +107,23 @@ const SECTION_DEFS: ReadonlyArray<{ readonly id: ScmSectionId, readonly labelKey
 	{ id: 'fileHistory', labelKey: 'File History', iconId: 'history' }
 ];
 
+const SCM_ICON_COLORS: { readonly [iconId: string]: string } = {
+	'git-commit': 'charts.blue',
+	'git-branch': 'charts.purple',
+	'cloud': 'charts.blue',
+	'archive': 'charts.yellow',
+	'tag': 'charts.orange',
+	'list-tree': 'charts.green',
+	'organization': 'charts.blue',
+	'repo': 'charts.blue',
+	'search': 'charts.purple',
+	'rocket': 'charts.orange',
+	'history': 'charts.green',
+	'file': 'charts.blue',
+	'diff': 'charts.blue',
+	'account': 'charts.purple'
+};
+
 /**
  * Native VS Code Source Control grouped Tree View provider (`git-map.scmView`).
  */
@@ -148,7 +165,7 @@ export class ScmTreeViewProvider extends Disposable implements vscode.TreeDataPr
 		this.registerDisposable(repoManager.onDidChangeRepos(() => this.refresh()));
 		onDidChangeGitState(() => this.refresh());
 		onDidChangeConfiguration((e) => {
-			if (e.affectsConfiguration('git-map.views')) this.refresh();
+			if (e.affectsConfiguration('git-map.views') || e.affectsConfiguration('git-map.ui.iconColorStyle')) this.refresh();
 		});
 	}
 
@@ -161,7 +178,8 @@ export class ScmTreeViewProvider extends Disposable implements vscode.TreeDataPr
 		item.id = element.id;
 		item.description = element.description;
 		item.tooltip = element.tooltip;
-		item.iconPath = new vscode.ThemeIcon(element.iconId);
+		const iconColor = getConfig().iconColorStyle === 'colorful' ? SCM_ICON_COLORS[element.iconId] : undefined;
+		item.iconPath = iconColor ? new vscode.ThemeIcon(element.iconId, new vscode.ThemeColor(iconColor)) : new vscode.ThemeIcon(element.iconId);
 		if (element.command) item.command = element.command;
 		return item;
 	}

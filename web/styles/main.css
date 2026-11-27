@@ -4799,10 +4799,23 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .settingsGutterMark.local{background:#cca700}
 .settingsFileBlameLabel{display:inline-block;width:150px;flex:0 0 150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--vscode-descriptionForeground);border-left:3px solid transparent;border-right:3px solid transparent;padding:0 6px;margin-right:4px;font-family:var(--vscode-font-family)}
 .settingsStatusBarPreviewEditor{height:54px;display:flex;align-items:center;justify-content:center;color:var(--vscode-descriptionForeground);font-size:12px}
-.settingsStatusBarPreviewStrip{display:flex;align-items:center;gap:12px;padding:2px 8px;background:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);font-size:11.5px}
-.settingsStatusBarPreviewStrip span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.settingsStatusBarPreviewStrip svg{width:12px;height:12px;fill:currentColor}
-.settingsStatusBarPreviewStrip .grow{flex:1}
+.settingsStatusBarPreviewStrip{display:flex;align-items:center;gap:10px;padding:2px 8px;min-height:22px;border-top:1px solid var(--vscode-statusBar-border,var(--gm-border));background:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);font-size:11.5px;overflow:hidden}
+.settingsStatusBarPreviewStrip > span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.settingsStatusBarPreviewStrip svg{width:12px;height:12px;flex:0 0 auto;fill:currentColor}
+.settingsStatusBarPreviewStrip .grow{flex:1 1 auto;min-width:8px}
+.settingsStatusBarPreviewStrip .settingsSbHost{opacity:.78}
+.settingsStatusBarPreviewStrip .settingsSbItem{padding:1px 5px;border-radius:3px;background:rgba(255,255,255,.12)}
+.settingsStatusBarPreviewStrip .settingsSbItem.dimmed{opacity:.55;border:1px dashed rgba(255,255,255,.45);background:transparent}
+.settingsStatusBarPreviewStrip .settingsSbItem.settingsStatusBarBlame{min-width:0;max-width:220px;overflow:hidden}
+.settingsStatusBarPreviewStrip .settingsSbItem.settingsStatusBarBlame > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.settingsStatusBarPreviewStrip .settingsSbItem.sbColorBlocked{color:#ff9b96}
+.settingsStatusBarPreviewStrip .settingsSbItem.sbColorReview{color:#ffd666}
+.settingsStatusBarPreviewStrip .settingsSbItem.sbColorMergeable{color:#8be9a8}
+.settingsCheckWithPreview{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;width:100%}
+.settingsStatusBarItemPreview{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;box-sizing:border-box;border:1px solid var(--vscode-statusBar-border,var(--gm-border-strong));border-radius:4px;background-color:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);fill:var(--vscode-statusBar-foreground,#fff);font-size:11.5px;line-height:20px;white-space:nowrap;max-width:100%;overflow:hidden}
+.settingsStatusBarItemPreview > span{overflow:hidden;text-overflow:ellipsis}
+.settingsStatusBarItemPreview svg{width:12px;height:12px;flex:0 0 auto;fill:currentColor}
+.settingsStatusBarPreview.off,.settingsStatusBarItemPreview.off{opacity:.4;filter:grayscale(.45)}
 .settingsHoverPreview{margin:12px auto;max-width:380px;border:1px solid var(--vscode-editorHoverWidget-border,var(--gm-border-strong));border-radius:6px;background:var(--vscode-editorHoverWidget-background,var(--vscode-editor-background));font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .settingsHoverHead{display:flex;gap:10px;padding:10px 12px;line-height:1.5}
 .settingsHoverAvatar{width:28px;height:28px;border-radius:50%;background:#1f6feb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto}
@@ -4875,3 +4888,99 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .settingsIntegrationRow:not(.connected) .settingsIntegrationText b{opacity:.8}
 .settingsIntegrationStatus{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--vscode-gitDecoration-addedResourceForeground,#2da44e)}
 .settingsIntegrationStatus svg{width:12px;height:12px;fill:currentColor}
+
+/* Two-mode global icon colour style: monochrome (default) vs semantic colorful (AI & Agent icons always stay colorful) */
+body[data-icon-style="colorful"]{
+	--gm-icon-blue:#60a5fa;
+	--gm-icon-purple:#c084fc;
+	--gm-icon-cyan:#22d3ee;
+	--gm-icon-green:#4ade80;
+	--gm-icon-amber:#fbbf24;
+	--gm-icon-red:#f87171;
+	--gm-icon-indigo:#818cf8;
+}
+body.vscode-light[data-icon-style="colorful"]{
+	--gm-icon-blue:#2563eb;
+	--gm-icon-purple:#9333ea;
+	--gm-icon-cyan:#0891b2;
+	--gm-icon-green:#16a34a;
+	--gm-icon-amber:#d97706;
+	--gm-icon-red:#dc2626;
+	--gm-icon-indigo:#4f46e5;
+}
+body[data-icon-style="colorful"] svg.iconTone-blue{stroke:var(--gm-icon-blue) !important}
+body[data-icon-style="colorful"] svg.iconTone-purple{stroke:var(--gm-icon-purple) !important}
+body[data-icon-style="colorful"] svg.iconTone-cyan{stroke:var(--gm-icon-cyan) !important}
+body[data-icon-style="colorful"] svg.iconTone-green{stroke:var(--gm-icon-green) !important}
+body[data-icon-style="colorful"] svg.iconTone-amber{stroke:var(--gm-icon-amber) !important}
+body[data-icon-style="colorful"] svg.iconTone-red{stroke:var(--gm-icon-red) !important}
+body[data-icon-style="colorful"] svg.iconTone-indigo{stroke:var(--gm-icon-indigo) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-blue{fill:var(--gm-icon-blue) !important}
+body[data-icon-style="colorful"] .settingsNavIcon,
+body[data-icon-style="colorful"] .contextMenuItemIcon{opacity:1}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="gitMap"],
+body[data-icon-style="colorful"] .settingsStatusBarPreview{color:#7cc4ff;fill:#7cc4ff}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="blame"],
+body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarBlame"]{color:#d8b4fe;fill:#d8b4fe}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="launchpad"],
+body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarLaunchpad"]{color:#fcd34d;fill:#fcd34d}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="mode"],
+body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarMode"]{color:#86efac;fill:#86efac}
+
+/* Rich interactive Settings & Customizer previews */
+.settingsGraphPreviewOverview{display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11px}
+.settingsGraphOverviewChip{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:999px;border:1px solid var(--gm-border);background:var(--vscode-editor-background)}
+.settingsGraphMinimapStrip{display:flex;align-items:flex-end;gap:3px;height:18px;padding:4px 10px;border-bottom:1px solid var(--gm-border);background:rgba(128,128,128,.04)}
+.settingsGraphMinimapBar{flex:1 1 0;border-radius:1.5px 1.5px 0 0;opacity:.85}
+.settingsGraphCanvas{position:relative;display:flex;gap:8px;padding:6px 10px 8px}
+.settingsGraphSvg{flex:0 0 28px;width:28px;height:66px}
+.settingsGraphPreviewRows{flex:1 1 auto;min-width:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:12px}
+.settingsGraphPreviewRow{display:flex;align-items:center;gap:6px;min-height:20px;min-width:0}
+.settingsGraphPreviewRow.compact{min-height:17px;font-size:11px;line-height:1.2}
+.settingsGraphPreviewRow.muted{opacity:.52}
+.settingsGraphPreviewMsg{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsGraphScrollRuler{flex:0 0 8px;display:flex;flex-direction:column;justify-content:space-around;padding:2px 0 2px 3px;border-left:1px solid var(--gm-border)}
+.settingsGraphScrollRuler span{display:block;width:6px;height:3px;border-radius:1px}
+.settingsUpstreamBadge{font-family:var(--vscode-editor-font-family);font-size:10.5px;color:var(--vscode-descriptionForeground);padding:0 4px;border-radius:3px;background:var(--gm-surface-muted)}
+
+.settingsTerminalPreviewBody{padding:8px 10px;font-family:var(--vscode-editor-font-family);font-size:11.5px;line-height:1.55;background:var(--vscode-terminal-background,var(--vscode-editor-background))}
+.settingsTerminalCmd{color:var(--vscode-descriptionForeground)}
+.settingsTerminalLink{color:var(--vscode-textLink-foreground,#3794ff);text-decoration:underline;text-underline-offset:2px}
+.settingsTerminalOff{opacity:.7;text-decoration:none;color:var(--vscode-foreground)}
+.settingsTerminalHint{margin-top:4px;font-size:11px;color:var(--vscode-descriptionForeground);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.settingsPreviewPill{display:inline-flex;align-items:center;gap:4px;padding:1px 6px;border-radius:999px;border:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:10.5px;color:var(--vscode-foreground)}
+
+.settingsStartWorkBody{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:10px 12px;font-size:12px}
+.settingsTreeBody{padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.settingsTreeRow{display:flex;align-items:center;gap:6px;font-size:12px;min-width:0}
+.settingsTreeRow.child{padding-left:18px}
+.settingsTreeRow svg{width:13px;height:13px;flex:0 0 auto}
+.settingsTreeDesc{color:var(--vscode-descriptionForeground);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsTreeTooltip{margin-top:4px;padding:5px 8px;border-radius:var(--gm-radius-sm);border:1px solid var(--vscode-editorHoverWidget-border,var(--gm-border));background:var(--vscode-editorHoverWidget-background,var(--gm-surface-muted));font-size:11px;color:var(--vscode-descriptionForeground);white-space:pre-line}
+
+.settingsScmAccGrid{display:flex;flex-direction:column;padding:6px 8px;gap:3px;font-size:11.5px}
+.settingsScmAccHead{display:flex;align-items:center;gap:6px;padding:2px 4px;border-radius:3px;font-weight:600}
+.settingsScmAccHead.expanded{background:var(--gm-surface-muted)}
+.settingsScmAccBody{padding-left:18px;display:flex;flex-direction:column;gap:2px;font-size:11px;color:var(--vscode-descriptionForeground)}
+
+.settingsDatesBody{padding:8px 10px;display:flex;flex-direction:column;gap:6px;font-size:12px}
+.settingsDatesRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.settingsMenusBody{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;padding:8px 10px}
+.settingsMenusCol{padding:6px 8px;border:1px solid var(--gm-border);border-radius:var(--gm-radius-sm);background:var(--gm-surface-muted);display:flex;flex-direction:column;gap:5px;font-size:11px}
+.settingsMenusColTitle{font-weight:600;color:var(--vscode-foreground)}
+.settingsMenusPills{display:flex;flex-wrap:wrap;gap:4px}
+
+.cdvActionsModalPreview{padding:8px 16px 10px;border-bottom:1px solid var(--vscode-panel-border,rgba(128,128,128,.25));background:var(--gm-surface-muted)}
+.cdvActionsPreviewLabel{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--vscode-descriptionForeground);margin-bottom:6px}
+.cdvActionsRowPreview{display:flex;align-items:center;gap:8px;padding:5px 10px;border-radius:var(--gm-radius-sm);border:1px solid var(--gm-border);background:var(--vscode-editor-background);font-size:12px;min-height:28px}
+.cdvActionsRowMsg{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cdvActionsRowPreview.pos-pointer .cdvActionsPreviewPill{margin-right:18%}
+.cdvActionsRowPreview.pos-description .cdvActionsPreviewPill{margin-right:auto}
+.cdvActionsPreviewPill{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:999px;border:1px solid var(--gm-border-strong);background:var(--gm-surface-elevated);box-shadow:var(--gm-shadow-sm)}
+.cdvActionsPreviewBtn{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px}
+.cdvActionsPreviewBtn svg{width:13px;height:13px}
+.cdvActionsPreviewBar{display:flex;flex-wrap:wrap;align-items:center;gap:5px}
+.cdvActionsPreviewChip{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 8px;border-radius:4px;border:1px solid var(--gm-border-strong);background:var(--vscode-editor-background);font-size:11.5px}
+.cdvActionsPreviewChip.primary{border-color:var(--vscode-focusBorder);background:var(--vscode-button-background);color:var(--vscode-button-foreground)}
+.cdvActionsPreviewChip.primary svg{stroke:currentColor}
+.cdvActionsPreviewChip svg{width:12px;height:12px}

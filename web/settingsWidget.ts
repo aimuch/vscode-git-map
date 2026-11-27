@@ -460,9 +460,10 @@ class SettingsWidget {
 				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
 				'</div>';
 
+			const showGitMapItem = this.getSettingValue('showStatusBarItem') !== false;
 			const statusBarItemHtml = '<div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
-				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
+				'<span class="settingsStatusBarPreview' + (showGitMapItem ? '' : ' off') + '" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div>';
 
 
@@ -587,7 +588,8 @@ class SettingsWidget {
 					'<div class="settingsRuleChip"><span class="mono">[' + escapeHtml(cr.type) + '] ' + escapeHtml(cr.domain || cr.regex || '') + (cr.avatarUrl ? ' · ' + escapeHtml(cr.avatarUrl) : '') + '</span>' +
 					'<button type="button" class="settingsBtn removeBtn settingsRemoveCustomRemoteBtn" data-cr-idx="' + idx + '" tabindex="-1">&times;</button></div>'
 				).join('');
-			const remotesHtml = '<div class="settingsRuleList">' + customRemotesListHtml + '</div>' +
+			const remotesHtml = '<div class="settingsLivePreview" id="settingsRemotesLivePreview">' + this.renderRemotesPreviewHtml() + '</div>' +
+					'<div class="settingsRuleList">' + customRemotesListHtml + '</div>' +
 					'<div class="settingsRuleRow">' +
 					'<select id="settingsNewCustomRemoteType" class="settingsSelect" style="width:120px">' +
 					['github', 'gitlab', 'gitea', 'bitbucket', 'azure', 'custom'].map((tp) => '<option value="' + tp + '">' + tp + '</option>').join('') +
@@ -1068,6 +1070,7 @@ class SettingsWidget {
 					} else if (setting === 'diff.hideUnchangedRegions') {
 						this.view.setHideUnchangedRegions(value === 'true', true);
 					} else {
+						this.settingValues[setting] = value;
 						update(<GG.RequestUpdateExtensionSetting['key']>setting, value);
 					}
 					group.querySelectorAll<HTMLElement>('.settingsSegment').forEach((segment) => {
@@ -1075,6 +1078,7 @@ class SettingsWidget {
 						segment.setAttribute('aria-checked', segment === elem ? 'true' : 'false');
 					});
 					if (setting === 'statusBarItemDisplay') this.render();
+					else this.updateLivePreviews();
 				});
 			});
 		});
@@ -1306,6 +1310,7 @@ class SettingsWidget {
 				saveExt({
 					'views.scm.grouped.hiddenSections': this.extState.scmHiddenSections
 				});
+				this.updateLivePreviews();
 			});
 		});
 
@@ -1314,6 +1319,7 @@ class SettingsWidget {
 				if (!rad.checked) return;
 				this.extState.scmDefaultSection = rad.value;
 				saveExt({ 'views.scm.grouped.defaultSection': rad.value });
+				this.updateLivePreviews();
 			});
 		});
 
@@ -1359,6 +1365,10 @@ class SettingsWidget {
 			});
 		});
 
+		const newCrType = <HTMLSelectElement | null>document.getElementById('settingsNewCustomRemoteType');
+		const newCrDomain = <HTMLInputElement | null>document.getElementById('settingsNewCustomRemoteDomain');
+		if (newCrType !== null) newCrType.addEventListener('change', () => this.updateLivePreviews());
+		if (newCrDomain !== null) newCrDomain.addEventListener('input', () => this.updateLivePreviews());
 		const addCrBtn = document.getElementById('settingsAddCustomRemoteBtn');
 		if (addCrBtn !== null) {
 			addCrBtn.addEventListener('click', () => {
@@ -1405,29 +1415,72 @@ class SettingsWidget {
 		const gp = document.getElementById('settingsGraphLivePreview');
 		if (gp !== null) {
 			const presetColours = (this.appearance.colourPresets.find((p) => p.name === this.appearance.colourPreset) || { colours: initialState.config.graph.colours }).colours;
+			const styleVal = this.getSettingValue('graph.style');
+			const densityVal = this.getSettingValue('graph.density');
+			const nodeVal = this.getSettingValue('graph.nodeStyle');
 			gp.innerHTML = this.renderGraphPreviewHtml(
 				presetColours,
-				initialState.config.graph.density === GG.GraphDensity.Compact ? 'Compact' : 'Comfortable',
-				initialState.config.graph.nodeStyle === GG.GraphNodeStyle.Avatar ? 'Avatar' : 'Dot',
-				this.extState.showGhostRefs
+				typeof densityVal === 'string' ? densityVal : (initialState.config.graph.density === GG.GraphDensity.Compact ? 'Compact' : 'Comfortable'),
+				typeof nodeVal === 'string' ? nodeVal : (initialState.config.graph.nodeStyle === GG.GraphNodeStyle.Avatar ? 'Avatar' : 'Dot'),
+				this.extState.showGhostRefs,
+				typeof styleVal === 'string' ? styleVal : (initialState.config.graph.style === GG.GraphStyle.Angular ? 'angular' : 'rounded')
 			);
 		}
 		this.updateEditorPreviews();
 		const ap = document.getElementById('settingsAutolinkLivePreview');
 		if (ap !== null) ap.innerHTML = this.renderAutolinkPreviewHtml(this.extState.autolinks, this.extState.startWorkBranchFormat);
+		const rp = document.getElementById('settingsRemotesLivePreview');
+		if (rp !== null) rp.innerHTML = this.renderRemotesPreviewHtml();
 	}
 
-	private renderGraphPreviewHtml(colours: ReadonlyArray<string>, density: string, nodeStyle: string, ghostRefs: boolean) {
+	private renderGraphPreviewHtml(colours: ReadonlyArray<string>, density: string, nodeStyle: string, ghostRefs: boolean, style: string = 'rounded') {
 		const c0 = colours[0] || '#3b82f6', c1 = colours[1 % colours.length] || '#10b981';
 		const rowCls = 'settingsGraphPreviewRow' + (density === 'Compact' ? ' compact' : '');
+		const showOverview = this.getSettingValue('graph.overviewBar.enabled') !== false;
+		const showMinimap = this.getSettingValue('graph.minimap') !== false;
+		const showMarkers = this.getSettingValue('graph.scrollMarkers.enabled') !== false;
+		const showUpstream = this.getSettingValue('graph.showUpstreamStatus') !== false;
+		const muteMerge = this.getSettingValue('repository.commits.mute.mergeCommits') === true;
+		const muteNotHead = this.getSettingValue('repository.commits.mute.commitsThatAreNotAncestorsOfHead') === true;
+		const maxRefsRaw = Number(this.getSettingValue('graph.maxVisibleRefsPerCommit') || 0);
+		const refAlign = String(this.getSettingValue('referenceLabels.alignment') || 'Branches & Tags (in a separate column)');
 		const node = (c: string, init: string) => nodeStyle === 'Avatar'
 			? '<span class="settingsGraphNodeAvatar" style="background:' + escapeHtml(c) + '">' + init + '</span>'
 			: '<span class="settingsGraphNodeDot" style="background:' + escapeHtml(c) + '"></span>';
-		return '<div class="settingsLivePreviewHeader"><span>' + t('Live Preview: Commit Graph') + '</span><span>' + escapeHtml(density + ' · ' + nodeStyle) + '</span></div>' +
-			'<div class="settingsGraphPreviewRows">' +
-			'<div class="' + rowCls + '">' + node(c0, 'A') + '<span class="gitRef head">main</span><span>feat: integrate terminal &amp; editor suite</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Branch</span>' : '') + '</div>' +
-			'<div class="' + rowCls + '">' + node(c1, 'B') + '<span>fix: preserve topological multiselect</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Tag</span>' : '') + '</div>' +
-			'</div>';
+		const pathD = style === 'angular' ? 'M8 10 L8 22 L20 33 L20 56' : 'M8 10 C8 22 20 22 20 33 L20 56';
+		const svg = '<svg class="settingsGraphSvg" viewBox="0 0 28 66" aria-hidden="true">' +
+			'<path d="M8 10 L8 56" stroke="' + escapeHtml(c0) + '" stroke-width="2" fill="none"/>' +
+			'<path d="' + pathD + '" stroke="' + escapeHtml(c1) + '" stroke-width="2" fill="none"/>' +
+			'<circle cx="8" cy="10" r="3.4" fill="' + escapeHtml(c0) + '"/>' +
+			'<circle cx="20" cy="33" r="3.4" fill="' + escapeHtml(c1) + '"/>' +
+			'<circle cx="8" cy="56" r="3.4" fill="' + escapeHtml(c0) + '"/>' +
+			'</svg>';
+		const refsList = ['main', 'release', 'v2.9'];
+		const visibleRefs = maxRefsRaw > 0 && maxRefsRaw < refsList.length ? refsList.slice(0, maxRefsRaw) : refsList;
+		const foldedCount = maxRefsRaw > 0 && maxRefsRaw < refsList.length ? refsList.length - maxRefsRaw : 0;
+		const refBadgesHtml = visibleRefs.map((r, i) => '<span class="gitRef ' + (i === 0 ? 'head' : 'tag') + '">' + escapeHtml(r) + '</span>').join('') +
+			(foldedCount > 0 ? '<span class="settingsPreviewPill">+' + foldedCount + '</span>' : '') +
+			(showUpstream ? '<span class="settingsUpstreamBadge">↑2 ↓1</span>' : '');
+		const overviewHtml = showOverview
+			? '<div class="settingsGraphPreviewOverview"><span class="settingsGraphOverviewChip">' + MENU_ICONS.branch + '<b>main</b> · origin/main ↑2 ↓1</span><span class="settingsPreviewPill">WIP: 1</span></div>'
+			: '';
+		const minimapHeights = [4, 9, 13, 7, 11, 15, 6, 10, 14, 8, 5, 12];
+		const minimapHtml = showMinimap
+			? '<div class="settingsGraphMinimapStrip">' + minimapHeights.map((h, i) => '<span class="settingsGraphMinimapBar" style="height:' + h + 'px;background:' + escapeHtml(i % 3 === 0 ? c1 : c0) + '"></span>').join('') + '</div>'
+			: '';
+		const markersHtml = showMarkers
+			? '<div class="settingsGraphScrollRuler"><span style="background:' + escapeHtml(c0) + '"></span><span style="background:' + escapeHtml(c1) + '"></span><span style="background:#fbbf24"></span></div>'
+			: '';
+		const splitTag = refAlign.includes('on the right');
+		const row1Refs = splitTag ? '<span class="gitRef head">main</span>' + (showUpstream ? '<span class="settingsUpstreamBadge">↑2 ↓1</span>' : '') : refBadgesHtml;
+		const row1RightTag = splitTag ? '<span class="gitRef tag">v2.9</span>' : '';
+		return '<div class="settingsLivePreviewHeader"><span>' + t('Live Preview: Commit Graph') + '</span><span>' + escapeHtml(density + ' · ' + style + ' · ' + nodeStyle) + '</span></div>' +
+			overviewHtml + minimapHtml +
+			'<div class="settingsGraphCanvas">' + svg + '<div class="settingsGraphPreviewRows">' +
+			'<div class="' + rowCls + '">' + node(c0, 'A') + row1Refs + '<span class="settingsGraphPreviewMsg">feat: integrate terminal &amp; editor suite</span>' + row1RightTag + '</div>' +
+			'<div class="' + rowCls + (muteMerge ? ' muted' : '') + '">' + node(c1, 'M') + '<span class="settingsGraphPreviewMsg">Merge pull request #42 into main</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Branch</span>' : '') + '</div>' +
+			'<div class="' + rowCls + (muteNotHead ? ' muted' : '') + '">' + node(c0, 'B') + '<span class="settingsGraphPreviewMsg">fix: preserve topological multiselect</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Tag</span>' : '') + '</div>' +
+			'</div>' + markersHtml + '</div>';
 	}
 
 	private formatSampleTemplate(template: string, includePr: boolean = true): string {
@@ -1516,8 +1569,116 @@ class SettingsWidget {
 			case 'inlineBlame':
 				return lines((i) => i === 2 ? { cls: 'current', after: ed.currentLineEnabled ? '<span class="settingsEditorInlineBlame">' + escapeHtml(this.formatSampleBlame(ed.currentLineFormat, ed.currentLinePullRequests, ed.currentLineDateFormat)) + '</span>' : '' } : {});
 			case 'statusBar': {
-				const blame = ed.statusBarEnabled ? '<span class="settingsStatusBarBlame">' + MENU_ICONS.commit + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>' : '';
-				return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div><div class="settingsStatusBarPreviewStrip"><span>' + MENU_ICONS.branch + 'main</span>' + (ed.statusBarAlignment === 'left' ? blame : '') + '<span class="grow"></span>' + (ed.statusBarAlignment === 'right' ? blame : '') + '<span>' + t('Ln 3, Col 12') + '</span><span>UTF-8</span></div>';
+				const blameOn = this.getSettingValue('blame.statusBar') !== false && ed.statusBarEnabled;
+				const blame = blameOn ? '<span class="settingsStatusBarBlame">' + MENU_ICONS.commit + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>' : '';
+				return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div><div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + (ed.statusBarAlignment === 'left' ? blame : '') + '<span class="grow"></span>' + (ed.statusBarAlignment === 'right' ? blame : '') + '<span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
+			}
+			case 'statusBarItems':
+				return this.renderStatusBarItemsPreview(ed);
+			case 'launchpad':
+				return this.renderLaunchpadPreview();
+			case 'editorModes':
+				return this.renderEditorModesPreview();
+			case 'terminalLinks': {
+				const enabled = this.getSettingValue('terminalLinks.enabled') !== false;
+				const showIn = String(this.getSettingValue('terminalLinks.showIn') || 'graph');
+				const showDetails = this.getSettingValue('terminalLinks.showDetailsView') !== false;
+				const followTerm = this.getSettingValue('graph.followTerminal.enabled') === true;
+				const linkCls = enabled ? 'settingsTerminalLink' : 'settingsTerminalOff';
+				const targetLabel = showIn === 'inspect' ? t('Inspect') : showIn === 'quickpick' ? t('Quick Pick') : t('Git Map') + (showDetails ? ' + ' + t('Details') : '');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.terminal + 'zsh · workspace</span><span>' + (followTerm ? '<span class="settingsPreviewPill">' + escapeHtml(t('Follow Terminal')) + '</span>' : '') + '</span></div>' +
+					'<div class="settingsTerminalPreviewBody">' +
+					'<div class="settingsTerminalCmd">$ git log -n 1 --stat</div>' +
+					'<div><span class="' + linkCls + '">fe26af4</span> (<span class="' + linkCls + '">main</span>) feat: optimize parser · <span class="' + linkCls + '">src/core/parser.ts</span></div>' +
+					'<div class="settingsTerminalHint"><span>' + escapeHtml(enabled ? t('Opens commit & ref links in') + ': ' + targetLabel : t('Disabled')) + '</span></div>' +
+					'</div>';
+			}
+			case 'startWork': {
+				const fmt = String(this.getSettingValue('startWork.branchNameFormat') || this.extState.startWorkBranchFormat || '${id}-${title}');
+				const branchName = this.getSettingExample('branch', 'startWork.branchNameFormat', fmt, '${id}-${title}');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.issue + 'ABC-123 · update-login-flow</span><span>' + escapeHtml(t('Start Work')) + '</span></div>' +
+					'<div class="settingsStartWorkBody"><span class="settingsPreviewPill">' + MENU_ICONS.issue + 'ABC-123</span><span>&rarr;</span><span class="gitRef head">' + escapeHtml(branchName) + '</span></div>';
+			}
+			case 'scmViews': {
+				const enabled = this.getSettingValue('views.scm.grouped.enabled') !== false;
+				if (!enabled) return '<div class="settingsFeatureEmpty">' + escapeHtml(t('Git Map SCM View') + ': ' + t('Disabled')) + '</div>';
+				const defs: ReadonlyArray<[string, string, string]> = [
+					['commits', t('Commits'), MENU_ICONS.commit],
+					['branches', t('Branches'), MENU_ICONS.branch],
+					['remotes', t('Remotes'), MENU_ICONS.cloud],
+					['stashes', t('Stashes'), MENU_ICONS.stash],
+					['tags', t('Tags'), MENU_ICONS.tag],
+					['worktrees', t('Worktrees'), MENU_ICONS.worktree],
+					['contributors', t('Contributors'), MENU_ICONS.person],
+					['repositories', t('Repositories'), MENU_ICONS.repo],
+					['searchAndCompare', t('Search & Compare'), MENU_ICONS.compare],
+					['launchpad', t('Launchpad PRs'), MENU_ICONS.rocket],
+					['fileHistory', t('File History'), MENU_ICONS.history]
+				];
+				const visibleSecs = defs.filter((d) => !this.extState.scmHiddenSections.includes(d[0]));
+				const defSec = this.extState.scmDefaultSection || 'commits';
+				const accRows = visibleSecs.slice(0, 6).map((s) => {
+					const expanded = s[0] === defSec;
+					return '<div class="settingsScmAccHead' + (expanded ? ' expanded' : '') + '"><span>' + (expanded ? '▾' : '▸') + '</span>' + s[2] + '<span>' + escapeHtml(s[1]) + '</span></div>' +
+						(expanded ? '<div class="settingsScmAccBody"><span>fe26af4 · feat: optimize parser</span><span>2f4c1a9 · docs: changelog</span></div>' : '');
+				}).join('');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.scm + escapeHtml(t('Git Map SCM')) + '</span><span>' + visibleSecs.length + '/' + defs.length + '</span></div>' +
+					'<div class="settingsScmAccGrid">' + accRows + (visibleSecs.length > 6 ? '<div class="settingsTreeDesc">+' + (visibleSecs.length - 6) + ' ' + escapeHtml(t('Sections')) + '</div>' : '') + '</div>';
+			}
+			case 'commitsView': {
+				const cLabel = this.getSettingExample('commit', 'views.commits.labelFormat', String(this.getSettingValue('views.commits.labelFormat') || ''), '${message}');
+				const cDesc = this.getSettingExample('commit', 'views.commits.descriptionFormat', String(this.getSettingValue('views.commits.descriptionFormat') || ''), '${author, }${agoOrDate}');
+				const cTip = this.getSettingExample('tooltip', 'views.commits.tooltipFormat', String(this.getSettingValue('views.commits.tooltipFormat') || ''), '__${author}__, ${agoAndDate}\\n\\n${message}');
+				const fLabel = this.getSettingExample('file', 'views.files.labelFormat', String(this.getSettingValue('views.files.labelFormat') || ''), '${file}');
+				const fDesc = this.getSettingExample('file', 'views.files.descriptionFormat', String(this.getSettingValue('views.files.descriptionFormat') || ''), '${directory}');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.commit + escapeHtml(t('Commits View')) + '</span><span>Tree View</span></div>' +
+					'<div class="settingsTreeBody">' +
+					'<div class="settingsTreeRow">' + MENU_ICONS.commit + '<span>' + escapeHtml(cLabel) + '</span><span class="settingsTreeDesc">' + escapeHtml(cDesc) + '</span></div>' +
+					'<div class="settingsTreeRow child">' + MENU_ICONS.file + '<span>' + escapeHtml(fLabel) + '</span><span class="settingsTreeDesc">' + escapeHtml(fDesc) + '</span></div>' +
+					'<div class="settingsTreeTooltip">' + escapeHtml(cTip) + '</div>' +
+					'</div>';
+			}
+			case 'stashesView': {
+				const sLabel = this.getSettingExample('stash', 'views.stashes.labelFormat', String(this.getSettingValue('views.stashes.labelFormat') || ''), '${message}');
+				const sDesc = this.getSettingExample('stash', 'views.stashes.descriptionFormat', String(this.getSettingValue('views.stashes.descriptionFormat') || ''), '${stashOnRef, }${agoOrDate}');
+				const sTip = this.getSettingExample('tooltip', 'views.stashes.tooltipFormat', String(this.getSettingValue('views.stashes.tooltipFormat') || ''), '${sha}${\' on \'stashOnRef}\\n\\n${agoAndDate} ${message}');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.stash + escapeHtml(t('Stashes View')) + '</span><span>Tree View</span></div>' +
+					'<div class="settingsTreeBody">' +
+					'<div class="settingsTreeRow">' + MENU_ICONS.stash + '<span>' + escapeHtml(sLabel) + '</span><span class="settingsTreeDesc">' + escapeHtml(sDesc) + '</span></div>' +
+					'<div class="settingsTreeTooltip">' + escapeHtml(sTip) + '</div>' +
+					'</div>';
+			}
+			case 'dates': {
+				const dateStyle = String(this.getSettingValue('defaultDateStyle') || 'relative');
+				const dateType = String(this.getSettingValue('date.type') || 'Author Date');
+				const dateVal = dateStyle === 'relative'
+					? t('{0} ' + 'days' + ' ago', 2)
+					: this.getSettingExample('date', 'defaultDateFormat', String(this.getSettingValue('defaultDateFormat') || ''), '');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.calendar + escapeHtml(t('Dates & Times')) + '</span><span>' + escapeHtml(dateType === 'Commit Date' ? t('Committed') : t('Authored')) + '</span></div>' +
+					'<div class="settingsDatesBody">' +
+					'<div class="settingsDatesRow"><span>' + MENU_ICONS.branch + escapeHtml(t('Commit Graph')) + '</span><span class="mono">' + escapeHtml(dateVal) + '</span></div>' +
+					'<div class="settingsDatesRow"><span>' + MENU_ICONS.eye + escapeHtml(t('Inline Blame')) + '</span><span class="settingsTreeDesc">' + escapeHtml('You, ' + dateVal + ' • feat: optimize parser') + '</span></div>' +
+					'</div>';
+			}
+			case 'menus': {
+				const edOn = this.getSettingValue('menus.editor.enabled') !== false;
+				const edPos = (<{ [k: string]: string }>(this.getSettingValue('editorContextMenu') || {})).viewLineHistory || 'Submenu';
+				const grpOn = this.getSettingValue('menus.editorGroup.enabled') !== false;
+				const annCmd = String(this.getSettingValue('fileAnnotations.command') || 'submenu');
+				const scmOn = this.getSettingValue('menus.scm.enabled') !== false;
+				const scmLoc = String(this.getSettingValue('sourceCodeProviderIntegrationLocation') || 'Inline');
+				return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.menus + escapeHtml(t('Menus & Toolbars')) + '</span><span>VS Code</span></div>' +
+					'<div class="settingsMenusBody">' +
+					'<div class="settingsMenusCol"><div class="settingsMenusColTitle">' + escapeHtml(t('Editor Menu')) + '</div><div class="settingsMenusPills">' +
+					(edOn ? '<span class="settingsPreviewPill">' + MENU_ICONS.history + escapeHtml(edPos === 'Hidden' ? t('Menu Hidden') : edPos === 'Context Menu' ? t('Inline Context Menu') : t('Git Map Menu (Submenu)')) + '</span>' : '<span class="settingsTreeDesc">' + escapeHtml(t('Disabled')) + '</span>') +
+					'</div></div>' +
+					'<div class="settingsMenusCol"><div class="settingsMenusColTitle">' + escapeHtml(t('Editor Toolbar')) + '</div><div class="settingsMenusPills">' +
+					(grpOn ? '<span class="settingsPreviewPill">' + MENU_ICONS.blame + escapeHtml(annCmd) + '</span><span class="settingsPreviewPill">' + MENU_ICONS.compare + '</span>' : '<span class="settingsTreeDesc">' + escapeHtml(t('Disabled')) + '</span>') +
+					'</div></div>' +
+					'<div class="settingsMenusCol"><div class="settingsMenusColTitle">' + escapeHtml(t('SCM Title')) + '</div><div class="settingsMenusPills">' +
+					(scmOn ? '<span class="settingsPreviewPill">' + MENU_ICONS.sparkle + escapeHtml(scmLoc) + '</span><span class="settingsPreviewPill">' + MENU_ICONS.branch + '</span>' : '<span class="settingsTreeDesc">' + escapeHtml(t('Disabled')) + '</span>') +
+					'</div></div>' +
+					'</div>';
 			}
 			case 'hovers':
 				if (!ed.hoversEnabled) return '<div class="settingsFeatureEmpty">' + t('Blame hovers are turned off.') + '</div>';
@@ -1562,12 +1723,128 @@ class SettingsWidget {
 	}
 
 	/**
-	 * Update the live previews & examples of the Editor Annotations.
+	 * Render the inner HTML of an inline Status Bar item preview pill (for Status Bar Blame, Launchpad, or Editor Mode).
+	 */
+	private renderStatusBarBadgeContent(kind: SettingsStatusBarBadgeKind, sampleWithPrs: boolean = false) {
+		switch (kind) {
+			case 'statusBarBlame': {
+				const ed = this.extState.editor;
+				return MENU_ICONS.commit + '<span>' + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>';
+			}
+			case 'statusBarLaunchpad': {
+				const labelMode = String(this.getSettingValue('launchpad.indicator.label') || 'item');
+				const iconMode = String(this.getSettingValue('launchpad.indicator.icon') || 'default');
+				const groups = Array.isArray(this.getSettingValue('launchpad.indicator.groups')) ? <string[]>this.getSettingValue('launchpad.indicator.groups') : ['mergeable', 'blocked', 'needsReview', 'followUp'];
+				let icon = MENU_ICONS.rocket;
+				let text = t('PRs: 0');
+				if (sampleWithPrs && groups.length > 0) {
+					const top = groups.includes('blocked') ? 'blocked' : groups.includes('needsReview') ? 'needsReview' : groups.includes('mergeable') ? 'mergeable' : 'followUp';
+					if (iconMode === 'group') icon = top === 'blocked' ? MENU_ICONS.warning : top === 'needsReview' ? MENU_ICONS.pullRequest : MENU_ICONS.rocket;
+					text = labelMode === 'counts'
+						? [groups.includes('blocked') ? '1' : '', groups.includes('needsReview') ? '2' : '', groups.includes('mergeable') ? '1' : ''].filter((s) => s !== '').join(' · ') || t('PRs: 0')
+						: top === 'blocked' ? t('{0} Blocked PR(s)', 1) : top === 'needsReview' ? t('{0} Review PR(s)', 2) : top === 'mergeable' ? t('{0} Mergeable PR(s)', 1) : t('{0} PR(s)', 1);
+				} else if (labelMode === 'counts') {
+					text = t('PRs: 0');
+				}
+				return icon + (labelMode === 'false' ? '' : '<span>' + escapeHtml(text) + '</span>');
+			}
+			case 'statusBarMode': {
+				const activeMode = String(this.getSettingValue('mode.active') || this.extState.editor.activeMode || 'default');
+				return MENU_ICONS.eye + '<span>' + escapeHtml(t('Mode: {0}', activeMode)) + '</span>';
+			}
+		}
+	}
+
+	/**
+	 * Render a full VS Code Status Bar preview showing all Git Map items currently enabled in the Status Bar category.
+	 */
+	private renderStatusBarItemsPreview(ed: GG.Writeable<GG.EditorAnnotationsSnapshot>) {
+		const showGitMap = this.getSettingValue('showStatusBarItem') !== false;
+		const showBlame = this.getSettingValue('blame.statusBar') !== false;
+		const showLaunchpad = this.getSettingValue('launchpad.indicator.enabled') !== false;
+		const cloudEnabled = this.getSettingValue('integrations.pullRequestStatus.enabled') !== false;
+		const showMode = this.getSettingValue('mode.statusBar.enabled') === true;
+		const modeAlign = this.getSettingValue('mode.statusBar.alignment') === 'right' ? 'right' : 'left';
+		const display = this.appearance.statusBarItemDisplay;
+
+		const gitMapHtml = showGitMap
+			? '<span class="settingsSbItem" data-sb-item="gitMap">' + (display !== GG.StatusBarItemDisplay.Text ? SVG_ICONS.logo : '') + (display !== GG.StatusBarItemDisplay.Icon ? '<span>Git Map</span>' : '') + '</span>'
+			: '';
+		const blameHtml = showBlame
+			? '<span class="settingsSbItem settingsStatusBarBlame" data-sb-item="blame">' + this.renderStatusBarBadgeContent('statusBarBlame') + '</span>'
+			: '';
+		const launchpadHtml = showLaunchpad
+			? '<span class="settingsSbItem' + (cloudEnabled ? '' : ' dimmed') + '" data-sb-item="launchpad"' + (cloudEnabled ? '' : ' title="' + escapeHtml(t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on')) + '"') + '>' + this.renderStatusBarBadgeContent('statusBarLaunchpad') + '</span>'
+			: '';
+		const modeHtml = showMode
+			? '<span class="settingsSbItem" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>'
+			: '';
+
+		const leftItems = gitMapHtml + (ed.statusBarAlignment !== 'right' ? blameHtml : '') + launchpadHtml + (modeAlign !== 'right' ? modeHtml : '');
+		const rightItems = (ed.statusBarAlignment === 'right' ? blameHtml : '') + (modeAlign === 'right' ? modeHtml : '');
+
+		return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div>' +
+			'<div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' +
+			leftItems + '<span class="grow"></span>' + rightItems +
+			'<span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
+	}
+
+	/**
+	 * Render a live Status Bar preview for the Launchpad category (icon, label mode, groups, and status color).
+	 */
+	private renderLaunchpadPreview() {
+		const enabled = this.getSettingValue('launchpad.indicator.enabled') !== false;
+		const useColors = this.getSettingValue('launchpad.indicator.useColors') !== false;
+		const groups = Array.isArray(this.getSettingValue('launchpad.indicator.groups')) ? <string[]>this.getSettingValue('launchpad.indicator.groups') : ['mergeable', 'blocked', 'needsReview', 'followUp'];
+		const colorCls = !useColors || groups.length === 0 ? '' : groups.includes('blocked') ? ' sbColorBlocked' : groups.includes('needsReview') ? ' sbColorReview' : groups.includes('mergeable') ? ' sbColorMergeable' : '';
+		const item = enabled ? '<span class="settingsSbItem' + colorCls + '" data-sb-item="launchpad">' + this.renderStatusBarBadgeContent('statusBarLaunchpad', true) + '</span>' : '';
+		return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div>' +
+			'<div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + item + '<span class="grow"></span><span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
+	}
+
+	/**
+	 * Render a live Status Bar preview for the Editor Modes category.
+	 */
+	private renderEditorModesPreview() {
+		const enabled = this.getSettingValue('mode.statusBar.enabled') === true;
+		const align = this.getSettingValue('mode.statusBar.alignment') === 'right' ? 'right' : 'left';
+		const item = enabled ? '<span class="settingsSbItem" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>' : '';
+		return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div>' +
+			'<div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + (align !== 'right' ? item : '') + '<span class="grow"></span>' + (align === 'right' ? item : '') + '<span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
+	}
+
+	private renderRemotesPreviewHtml() {
+		const tpEl = <HTMLSelectElement | null>document.getElementById('settingsNewCustomRemoteType');
+		const dmEl = <HTMLInputElement | null>document.getElementById('settingsNewCustomRemoteDomain');
+		const typedDomain = dmEl ? dmEl.value.trim() : '';
+		const active = typedDomain !== ''
+			? { type: tpEl ? tpEl.value : 'gitlab', domain: typedDomain }
+			: this.extState.customRemotes.length > 0
+				? { type: this.extState.customRemotes[0].type, domain: this.extState.customRemotes[0].domain || this.extState.customRemotes[0].regex || 'git.corp.example.com' }
+				: { type: 'gitlab', domain: 'git.corp.example.com' };
+		const cleanDomain = active.domain.replace(/^https?:\/\//, '').replace(/\/+$/, '') || 'git.corp.example.com';
+		const commitPath = active.type === 'gitlab' ? '/org/repo/-/commit/fe26af4' : active.type === 'bitbucket' ? '/projects/ORG/repos/repo/commits/fe26af4' : '/org/repo/commit/fe26af4';
+		return '<div class="settingsLivePreviewHeader"><span>' + MENU_ICONS.cloud + escapeHtml(t('Live Preview: Custom Remotes')) + '</span><span class="settingsPreviewPill">' + escapeHtml(active.type.toUpperCase()) + '</span></div>' +
+			'<div class="settingsEditorPreviewCode"><span class="mono">' + escapeHtml('https://' + cleanDomain + commitPath) + '</span><div class="settingsTreeDesc">' + escapeHtml(t('Opens commit & pull request links on this host')) + '</div></div>';
+	}
+
+	/**
+	 * Update the live previews & examples of the Editor Annotations and Status Bar items.
 	 */
 	private updateEditorPreviews() {
-		['inlineBlame', 'statusBar', 'hovers', 'fileBlame', 'fileChanges', 'fileHeatmap', 'codeLens'].forEach((id) => {
+		['inlineBlame', 'statusBar', 'statusBarItems', 'launchpad', 'editorModes', 'terminalLinks', 'startWork', 'scmViews', 'commitsView', 'stashesView', 'dates', 'menus', 'hovers', 'fileBlame', 'fileChanges', 'fileHeatmap', 'codeLens'].forEach((id) => {
 			const elem = document.getElementById('settingsPreview-' + id);
 			if (elem !== null) elem.innerHTML = this.renderEditorFeaturePreview(id, this.extState.editor);
+		});
+		const gitMapPill = this.contentsElem.querySelector<HTMLElement>('.settingsStatusBarPreview');
+		if (gitMapPill !== null) alterClass(gitMapPill, 'off', this.getSettingValue('showStatusBarItem') === false);
+		this.contentsElem.querySelectorAll<HTMLElement>('.settingsStatusBarItemPreview[data-sb-badge]').forEach((badge) => {
+			const kind = <SettingsStatusBarBadgeKind>badge.dataset.sbBadge!;
+			const on = kind === 'statusBarBlame' ? this.getSettingValue('blame.statusBar') !== false
+				: kind === 'statusBarLaunchpad' ? this.getSettingValue('launchpad.indicator.enabled') !== false
+					: this.getSettingValue('mode.statusBar.enabled') === true;
+			badge.innerHTML = this.renderStatusBarBadgeContent(kind);
+			alterClass(badge, 'off', !on);
 		});
 		this.updateEditorExamples();
 	}
@@ -2104,9 +2381,13 @@ class SettingsWidget {
 		switch (control.kind) {
 			case 'check': {
 				const checked = typeof control.valueOn !== 'undefined' ? value === control.valueOn : !!value;
-				return wrap('<label class="settingsFeatureCheck"><input type="checkbox" class="settingsCtl" data-kind="check"' + attrs +
+				const labelHtml = '<label class="settingsFeatureCheck"><input type="checkbox" class="settingsCtl" data-kind="check"' + attrs +
 					(typeof control.valueOn !== 'undefined' ? ' data-value-on="' + escapeHtml(JSON.stringify(control.valueOn)) + '" data-value-off="' + escapeHtml(JSON.stringify(control.valueOff)) + '"' : '') +
-					(checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' + escapeHtml(control.label) + '</label>');
+					(checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' + escapeHtml(control.label) + '</label>';
+				if (control.previewBadge) {
+					return wrap('<div class="settingsCheckWithPreview">' + labelHtml + '<span class="settingsStatusBarItemPreview' + (checked ? '' : ' off') + '" data-sb-badge="' + control.previewBadge + '" title="' + escapeHtml(t('Preview')) + '">' + this.renderStatusBarBadgeContent(control.previewBadge) + '</span></div>');
+				}
+				return wrap(labelHtml);
 			}
 			case 'select':
 				return wrap('<div class="settingsFeatureLabel">' + escapeHtml(control.label) + '</div><select class="settingsSelect settingsCtl" data-kind="select"' + attrs + (control.numeric ? ' data-numeric="1"' : '') + ' tabindex="-1">' +
@@ -2262,6 +2543,10 @@ class SettingsWidget {
 				stored = Object.assign({}, current !== null && typeof current === 'object' ? current : {}, { [path]: value });
 			}
 			if (elem.dataset.field) (<{ [field: string]: unknown }>this.extState.editor)[elem.dataset.field] = value;
+			if (key === 'blame.statusBar') this.extState.editor.statusBarEnabled = !!value;
+			if (key === 'blame.currentLine') this.extState.editor.currentLineEnabled = !!value;
+			if (key === 'codeLens.enabled') this.extState.editor.codeLensEnabled = !!value;
+			if (key === 'hovers.enabled') this.extState.editor.hoversEnabled = !!value;
 			if (key === 'startWork.branchNameFormat') this.extState.startWorkBranchFormat = typeof value === 'string' && value !== '' ? value : '${id}-${title}';
 			if (key === 'graph.showGhostRefsOnRowHover') this.extState.showGhostRefs = !!value;
 			if (key === '#menus') {
@@ -2274,11 +2559,19 @@ class SettingsWidget {
 				if (save) saveExt(patch);
 			} else {
 				this.settingValues[key] = stored;
+				if (key === 'ui.iconColorStyle') applyIconColorStyle(String(stored));
 				if (save) saveExt({ [key]: stored });
-				// A setting can have a switch in more than one category (e.g. the items of the Status Bar), so keep them all in sync
+				// A setting can have a switch or segmented control in more than one category (e.g. Status Bar items, Icon colour style), so keep them all in sync
 				if (typeof path !== 'string') {
 					this.contentsElem.querySelectorAll<HTMLInputElement>('input[data-kind="check"][data-skey="' + key + '"]').forEach((other) => {
 						if (other !== elem && typeof other.dataset.path !== 'string') other.checked = typeof other.dataset.valueOn === 'string' ? other.dataset.valueOn === JSON.stringify(value) : !!value;
+					});
+					this.contentsElem.querySelectorAll<HTMLElement>('.settingsSegmentedCtl[data-skey="' + key + '"]').forEach((ctl) => {
+						ctl.querySelectorAll<HTMLElement>('.settingsSegment').forEach((seg) => {
+							const selected = seg.dataset.value === String(value);
+							alterClass(seg, CLASS_SELECTED, selected);
+							seg.setAttribute('aria-checked', selected ? 'true' : 'false');
+						});
 					});
 				}
 			}
