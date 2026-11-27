@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { t } from './l10n';
+import { BlameDateOptions, getBlameDateOptions } from './lineBlame';
 import { RepoManager } from './repoManager';
-import { GitFileBlame } from './types';
-import { getPathFromUri, getRelativeTimeDiff } from './utils';
+import { CodeLensCommand, GitFileBlame } from './types';
+import { formatDatePattern, getPathFromUri, getRelativeTimeDiff } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 
@@ -126,19 +127,30 @@ export class GitCodeLens extends Disposable implements vscode.CodeLensProvider {
 		if (token.isCancellationRequested || blame === null) return [];
 
 		const lenses: vscode.CodeLens[] = [];
-		const makeAction = (cmdType: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit', start: number, end: number, commitHash: string | null) => {
-			if (cmdType === 'toggleFileBlame') {
-				return { command: 'git-map.toggleFileBlame', arguments: [] };
+		const makeAction = (cmdType: CodeLensCommand, start: number, end: number, commitHash: string | null): { command: string, arguments: unknown[] } => {
+			switch (cmdType) {
+				case 'none': return { command: '', arguments: [] };
+				case 'toggleFileBlame': return { command: 'git-map.toggleFileBlame', arguments: [] };
+				case 'toggleFileHeatmap': return { command: 'git-map.toggleFileHeatmap', arguments: [] };
+				case 'toggleFileChanges': return { command: 'git-map.toggleFileChanges', arguments: [] };
+				case 'viewFileHistory': return { command: 'git-map.viewFileHistory', arguments: [document.uri] };
 			}
-			if (cmdType === 'viewCommit' && commitHash !== null) {
-				return { command: 'git-map.viewCommitInGitMap', arguments: [file.repo, commitHash] };
+			if (commitHash !== null) {
+				if (cmdType === 'viewCommit') return { command: 'git-map.viewCommitInGitMap', arguments: [file.repo, commitHash] };
+				if (cmdType === 'inspect') return { command: 'git-map.inspect', arguments: [file.repo, commitHash] };
+				if (cmdType === 'openLineChanges') {
+					const line = blame.lines[start];
+					const commit = typeof line !== 'undefined' && line.hash === commitHash ? blame.commits[line.hash] : blame.commits[commitHash];
+					return { command: 'git-map.openLineChanges', arguments: [file.repo, commitHash, commit.filePath, typeof line !== 'undefined' && line.hash === commitHash ? line.originalLine : 1] };
+				}
 			}
 			return { command: 'git-map.viewLineHistory', arguments: [{ uri: document.uri, start: start + 1, end: end + 1 }] };
 		};
+		const dates = getBlameDateOptions(file.repo, lensCfg.dateFormat);
 
 		for (let i = 0; i < targetRanges.length; i++) {
 			const range = targetRanges[i];
-			const summary = analyzeRangeBlame(blame, range.start.line, range.end.line);
+			const summary = analyzeRangeBlame(blame, range.start.line, range.end.line, dates);
 			if (summary === null) continue;
 			const anchorRange = new vscode.Range(range.start.line, 0, range.start.line, 0);
 			if (lensCfg.recentChangeEnabled && lensCfg.authorsEnabled && lensCfg.recentChangeCommand === lensCfg.authorsCommand) {
@@ -228,7 +240,7 @@ function getSymbolRanges(
 	return ranges;
 }
 
-function analyzeRangeBlame(blame: GitFileBlame, start: number, end: number): { recentText: string, authorsText: string, topAuthor: string, latestHash: string | null } | null {
+function analyzeRangeBlame(blame: GitFileBlame, start: number, end: number, dates: BlameDateOptions | null = null): { recentText: string, authorsText: string, topAuthor: string, latestHash: string | null } | null {
 	const authorCounts = new Map<string, number>();
 	let latest: string | null = null, uncommitted = false;
 	for (let i = start; i <= end && i < blame.lines.length; i++) {
@@ -244,7 +256,8 @@ function analyzeRangeBlame(blame: GitFileBlame, start: number, end: number): { r
 		if (latest === null || commit.authorDate > blame.commits[latest].authorDate) latest = line.hash;
 	}
 	if (latest === null && !uncommitted) return null;
-	const recentText = uncommitted || latest === null ? t('You, Uncommitted changes') : blame.commits[latest].author + ', ' + getRelativeTimeDiff(blame.commits[latest].authorDate);
+	const recentText = uncommitted || latest === null ? t('You, Uncommitted changes')
+		: blame.commits[latest].author + ', ' + (dates !== null && dates.style === 'absolute' ? formatDatePattern(blame.commits[latest].authorDate, dates.format, dates.locale || '') : getRelativeTimeDiff(blame.commits[latest].authorDate));
 	let authorsText = '';
 	let topAuthor = '';
 	if (authorCounts.size > 0) {

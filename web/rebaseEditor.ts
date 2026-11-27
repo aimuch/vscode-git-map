@@ -15,6 +15,10 @@ class RebaseEditor {
 	private loading: boolean = false;
 	private error: GG.ErrorInfo = null;
 	private dragIndex: number = -1;
+	private conflicts: { [hash: string]: GG.GitRebaseConflictPrediction } = {}; // The predicted conflicts of the current todo list
+	private conflictState: 'idle' | 'checking' | 'done' | 'unsupported' | 'error' = 'idle';
+	private conflictRequestId: number = 0;
+	private conflictTimeout: number | null = null;
 
 	/**
 	 * Construct a new RebaseEditor instance.
@@ -37,6 +41,8 @@ class RebaseEditor {
 		this.items = [];
 		this.loading = true;
 		this.error = null;
+		this.conflicts = {};
+		if (this.conflictState !== 'unsupported') this.conflictState = 'idle';
 		const elem = document.createElement('div');
 		elem.id = 'rebaseEditor';
 		elem.innerHTML = '<div class="rebaseEditorPanel" role="dialog" aria-modal="true"></div>';
@@ -72,6 +78,61 @@ class RebaseEditor {
 		this.error = msg.error;
 		this.items = msg.commits.map((commit) => ({ commit: commit, action: 'pick', message: commit.message }));
 		this.render();
+		this.scheduleConflictCheck();
+	}
+
+	/**
+	 * Predict the conflicts of the todo list shortly after it last changed (so that they're shown before the rebase is started).
+	 */
+	private scheduleConflictCheck() {
+		if (this.conflictTimeout !== null) clearTimeout(this.conflictTimeout);
+		this.conflicts = {};
+		if (this.base === null || this.loading || this.error !== null || this.items.length === 0 || this.conflictState === 'unsupported') return;
+		this.conflictState = 'checking';
+		const requestId = ++this.conflictRequestId, base = this.base;
+		this.conflictTimeout = setTimeout(() => {
+			this.conflictTimeout = null;
+			sendMessage({ command: 'predictRebaseConflicts', repo: this.view.currentRepo, base: base, todo: this.items.map((item) => ({ action: item.action, hash: item.commit.hash })), requestId: requestId });
+		}, 400);
+	}
+
+	/**
+	 * Process the predicted conflicts of the todo list.
+	 * @param msg The message containing the prediction.
+	 */
+	public processPredictRebaseConflictsResponse(msg: GG.ResponsePredictRebaseConflicts) {
+		if (msg.base !== this.base || msg.requestId !== this.conflictRequestId) return;
+		this.conflicts = {};
+		msg.results.forEach((result) => this.conflicts[result.hash] = result);
+		this.conflictState = msg.unsupported ? 'unsupported' : msg.error !== null ? 'error' : 'done';
+		this.render();
+	}
+
+	/**
+	 * Get the HTML of the predicted result of applying a commit.
+	 */
+	private getConflictHtml(hash: string, action: GG.GitRebaseTodoItem['action']) {
+		const result = this.conflicts[hash];
+		if (action === 'drop' || this.conflictState !== 'done' || typeof result === 'undefined') return '';
+		if (result.state === 'conflict') {
+			const files = result.files.slice(0, 5).join(', ') + (result.files.length > 5 ? ' …' : '');
+			return '<span class="rebaseEditorConflict conflict" title="' + escapeHtml(t('Will conflict in: {0}', result.files.join(', '))) + '">' + SVG_ICONS.alert + escapeHtml(t('Conflicts: {0}', files)) + '</span>';
+		}
+		if (result.state === 'unknown') return '<span class="rebaseEditorConflict unknown" title="' + escapeHtml(t('Not checked: it depends on how the earlier conflict is resolved.')) + '">?</span>';
+		return '<span class="rebaseEditorConflict clean" title="' + escapeHtml(t('Applies without conflicts')) + '">' + SVG_ICONS.check + '</span>';
+	}
+
+	/**
+	 * Get the summary of the predicted conflicts (shown in the footer).
+	 */
+	private getConflictSummaryHtml() {
+		if (this.conflictState === 'checking') return '<span class="rebaseEditorConflictSummary">' + SVG_ICONS.loading + t('Checking for conflicts') + ELLIPSIS + '</span>';
+		if (this.conflictState === 'unsupported') return '<span class="rebaseEditorConflictSummary" title="' + escapeHtml(t('Predicting conflicts requires Git 2.40 or later.')) + '">' + t('Conflicts can\'t be predicted with this version of Git.') + '</span>';
+		if (this.conflictState !== 'done') return '';
+		const conflicting = Object.keys(this.conflicts).filter((hash) => this.conflicts[hash].state === 'conflict');
+		return conflicting.length > 0
+			? '<span class="rebaseEditorConflictSummary conflict">' + SVG_ICONS.alert + t('Commit {0} will conflict', abbrevCommit(conflicting[0])) + '</span>'
+			: '<span class="rebaseEditorConflictSummary clean">' + SVG_ICONS.check + t('No conflicts expected') + '</span>';
 	}
 
 	/**
@@ -117,6 +178,7 @@ class RebaseEditor {
 				(item.action === 'reword'
 					? '<textarea class="rebaseEditorMessageInput" data-index="' + index + '" rows="' + Math.min(Math.max(item.message.split('\n').length, 2), 6) + '" tabindex="-1">' + escapeHtml(item.message) + '</textarea>'
 					: '<span class="rebaseEditorSubject" title="' + escapeHtml(item.commit.message) + '">' + escapeHtml(item.commit.subject) + '</span>') +
+				this.getConflictHtml(item.commit.hash, item.action) +
 				'<span class="rebaseEditorMeta">' + escapeHtml(item.commit.author) + ' · ' + escapeHtml(formatRelativeDate(item.commit.date)) + '</span>' +
 				'<span class="rebaseEditorMove"><span class="rebaseEditorMoveBtn' + (index === 0 ? ' ' + CLASS_DISABLED : '') + '" data-move="-1" data-index="' + index + '" title="' + t('Move Up') + '">' + SVG_ICONS.arrowUp + '</span><span class="rebaseEditorMoveBtn' + (index === this.items.length - 1 ? ' ' + CLASS_DISABLED : '') + '" data-move="1" data-index="' + index + '" title="' + t('Move Down') + '">' + SVG_ICONS.arrowDown + '</span></span>' +
 				'</div>').join('') + '</div>';
@@ -125,6 +187,7 @@ class RebaseEditor {
 			'<div class="rebaseEditorHint">' + t('The commits are rebased from the top (oldest) to the bottom (newest). Drag them to reorder them, and choose how each commit is rebased.') + '</div>' +
 			body +
 			'<div class="rebaseEditorFooter"><span id="rebaseEditorTerminal" class="rebaseEditorLink" title="' + t('Run the interactive rebase in a terminal (editing the todo list in the editor configured for Git)') + '">' + MENU_ICONS.terminal + t('Open in Terminal') + ELLIPSIS + '</span>' +
+			this.getConflictSummaryHtml() +
 			'<span class="rebaseEditorProblem">' + (problem !== null ? escapeHtml(problem) : '') + '</span>' +
 			'<button type="button" id="rebaseEditorCancel" class="rebaseEditorBtn" tabindex="-1">' + t('Cancel') + '</button>' +
 			'<button type="button" id="rebaseEditorStart" class="rebaseEditorBtn primary' + (this.loading || this.error !== null || this.items.length === 0 || problem !== null ? ' ' + CLASS_DISABLED : '') + '" tabindex="-1">' + MENU_ICONS.rebase + t('Start Rebase') + '</button></div>';
@@ -157,6 +220,7 @@ class RebaseEditor {
 			const target = <HTMLElement>e.target;
 			if (target.classList.contains('rebaseEditorAction')) {
 				this.items[parseInt(target.dataset.index!)].action = <GG.GitRebaseTodoItem['action']>(<HTMLSelectElement>target).value;
+				this.scheduleConflictCheck();
 				this.render();
 			}
 		});
@@ -214,6 +278,7 @@ class RebaseEditor {
 		}
 		const item = this.items.splice(from, 1)[0];
 		this.items.splice(to, 0, item);
+		this.scheduleConflictCheck();
 		this.render();
 	}
 

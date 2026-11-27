@@ -4722,3 +4722,132 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .settingsFormatField{display:flex;flex-direction:column;gap:4px}
 .settingsFormatExample{font-size:11px;color:var(--vscode-descriptionForeground);font-style:italic}
 .settingsEditorStatusBarStrip{margin-top:6px;padding-top:4px;border-top:1px dashed var(--gm-border);font-size:11px;color:var(--vscode-descriptionForeground)}
+
+/* Predicted conflicts of the Rebase Editor */
+.rebaseEditorConflict{
+	display:inline-flex;
+	align-items:center;
+	gap:3px;
+	flex-shrink:0;
+	max-width:40%;
+	overflow:hidden;
+	white-space:nowrap;
+	text-overflow:ellipsis;
+	font-size:11px;
+	margin-right:6px;
+}
+.rebaseEditorConflict svg, .rebaseEditorConflictSummary svg{
+	width:12px;
+	height:12px;
+	fill:currentColor;
+	flex-shrink:0;
+}
+.rebaseEditorConflict.conflict, .rebaseEditorConflictSummary.conflict{
+	color:var(--vscode-editorWarning-foreground, #cca700);
+}
+.rebaseEditorConflict.clean, .rebaseEditorConflictSummary.clean{
+	color:var(--vscode-gitDecoration-addedResourceForeground, #2da44e);
+}
+.rebaseEditorConflict.unknown{
+	color:var(--vscode-descriptionForeground);
+}
+.rebaseEditorConflictSummary{
+	display:inline-flex;
+	align-items:center;
+	gap:4px;
+	font-size:12px;
+	margin-right:8px;
+	color:var(--vscode-descriptionForeground);
+}
+
+/* Settings: Editor Annotations feature cards (inline blame, Status Bar blame, hovers, File Blame, File Changes, File Heatmap, CodeLens) */
+.settingsFeature{margin:12px 0;border:1px solid var(--gm-border);border-radius:var(--gm-radius-md);padding:12px 14px;background:var(--gm-surface-muted,transparent)}
+.settingsFeatureHeader{display:flex;align-items:flex-start;gap:10px}
+.settingsFeatureIcon{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:6px;background:var(--vscode-toolbar-hoverBackground,rgba(128,128,128,.16));flex:0 0 auto}
+.settingsFeatureIcon svg{width:16px;height:16px}
+.settingsFeatureHeading{display:flex;flex-direction:column;gap:2px;min-width:0}
+.settingsFeatureTitle{font-weight:600;font-size:13px}
+.settingsFeatureDesc{font-size:12px;color:var(--vscode-descriptionForeground)}
+.settingsFeatureHint{margin-top:8px;font-size:11.5px;color:var(--vscode-descriptionForeground)}
+.settingsFeaturePreviewLabel{margin-top:10px;font-size:11px;color:var(--vscode-descriptionForeground)}
+.settingsFeaturePreview{margin-top:4px}
+.settingsFeatureBody{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.settingsFeatureBody .settingsRow{margin:0}
+.settingsFeatureCheck{display:inline-flex;align-items:center;gap:6px;cursor:pointer}
+.settingsFeatureGroup{display:flex;flex-direction:column;gap:8px;padding-left:22px}
+.settingsFeatureField{display:flex;flex-direction:column;gap:4px;max-width:560px}
+.settingsFeatureLabel{font-weight:600;font-size:12px}
+.settingsFeatureExample{font-size:11.5px;color:var(--vscode-descriptionForeground)}
+.settingsFeatureExample span{font-style:italic;color:var(--vscode-foreground)}
+.settingsFeatureInfo{display:flex;align-items:flex-start;gap:6px;font-size:11.5px;color:var(--vscode-descriptionForeground)}
+.settingsFeatureInfo svg{width:12px;height:12px;flex:0 0 auto;margin-top:2px;fill:currentColor}
+.settingsFeatureInfo.boxed{padding:8px 10px;border:1px solid var(--vscode-focusBorder);border-radius:var(--gm-radius-sm);background:rgba(56,139,253,.08);color:var(--vscode-foreground)}
+.settingsFeatureEmpty{padding:14px;text-align:center;color:var(--vscode-descriptionForeground)}
+.settingsLocationCards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;max-width:620px}
+.settingsLocationCard{display:flex;align-items:flex-start;gap:8px;padding:8px 10px;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-sm);cursor:pointer}
+.settingsLocationCard.selected{border-color:var(--vscode-focusBorder);background:rgba(56,139,253,.08)}
+.settingsLocationCardText{display:flex;flex-direction:column;gap:2px}
+.settingsLocationCardText span{font-size:11px;color:var(--vscode-descriptionForeground)}
+.settingsEditorPreviewGrid{position:relative;padding-right:18px}
+.settingsEditorLine.current{background:var(--vscode-editor-lineHighlightBackground,rgba(128,128,128,.12))}
+.settingsEditorLine.changedLocal{background:rgba(204,167,0,.14)}
+.settingsEditorScrollbar{position:absolute;top:4px;bottom:4px;right:4px;width:8px;border-left:1px solid var(--gm-border)}
+.settingsEditorScrollbar span{position:absolute;left:1px;width:6px;height:4px;background:var(--vscode-focusBorder)}
+.settingsEditorScrollbar span.local{background:#cca700}
+.settingsGutterMark{display:inline-block;width:3px;align-self:stretch;margin-right:2px;border-radius:1px}
+.settingsGutterMark.same{background:var(--vscode-focusBorder)}
+.settingsGutterMark.local{background:#cca700}
+.settingsFileBlameLabel{display:inline-block;width:150px;flex:0 0 150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--vscode-descriptionForeground);border-left:3px solid transparent;border-right:3px solid transparent;padding:0 6px;margin-right:4px;font-family:var(--vscode-font-family)}
+.settingsStatusBarPreviewEditor{height:54px;display:flex;align-items:center;justify-content:center;color:var(--vscode-descriptionForeground);font-size:12px}
+.settingsStatusBarPreviewStrip{display:flex;align-items:center;gap:12px;padding:2px 8px;background:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);font-size:11.5px}
+.settingsStatusBarPreviewStrip span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.settingsStatusBarPreviewStrip svg{width:12px;height:12px;fill:currentColor}
+.settingsStatusBarPreviewStrip .grow{flex:1}
+.settingsHoverPreview{margin:12px auto;max-width:380px;border:1px solid var(--vscode-editorHoverWidget-border,var(--gm-border-strong));border-radius:6px;background:var(--vscode-editorHoverWidget-background,var(--vscode-editor-background));font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
+.settingsHoverHead{display:flex;gap:10px;padding:10px 12px;line-height:1.5}
+.settingsHoverAvatar{width:28px;height:28px;border-radius:50%;background:#1f6feb;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;flex:0 0 auto}
+.settingsHoverLink{color:var(--vscode-textLink-foreground)}
+.settingsHoverActions{display:flex;align-items:center;gap:12px;padding:6px 12px;border-top:1px solid var(--gm-border);font-family:var(--vscode-editor-font-family);font-size:11px}
+.settingsHoverActions svg{width:12px;height:12px;fill:var(--vscode-textLink-foreground)}
+.settingsHoverDiff{display:flex;flex-direction:column;padding:6px 12px;border-top:1px solid var(--gm-border);font-family:var(--vscode-editor-font-family);font-size:11px}
+.settingsHoverDiff .del{color:var(--vscode-gitDecoration-deletedResourceForeground,#f85149)}
+.settingsHoverDiff .add{color:var(--vscode-gitDecoration-addedResourceForeground,#3fb950)}
+.settingsLivePreviewHeader svg{width:12px;height:12px;margin-right:4px;vertical-align:-2px;fill:currentColor}
+
+/* Settings categories (like the Settings page of GitLens): a header, a tip, a live preview, the controls and "More options" */
+.settingsCategory{padding-bottom:6px}
+.settingsCategoryHeader{display:flex;align-items:flex-start;gap:10px;margin:4px 0 6px;font-size:inherit;font-weight:normal}
+.settingsCategoryHeader .settingsFeatureTitle{font-size:14px}
+.settingsCategoryTip{display:flex;align-items:center;gap:6px;margin:4px 0 8px;font-size:11.5px;color:var(--vscode-descriptionForeground)}
+.settingsCategoryTip svg{width:12px;height:12px;fill:var(--vscode-editorWarning-foreground,#cca700);flex:0 0 auto}
+.settingsCategoryTip a,.settingsCategoryFooter a{color:var(--vscode-textLink-foreground);cursor:pointer}
+.settingsCategoryTip a:hover,.settingsCategoryFooter a:hover{text-decoration:underline}
+.settingsCategoryBody{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.settingsCategoryFooter{display:flex;align-items:center;gap:6px;margin-top:14px;padding-top:10px;border-top:1px solid var(--gm-border);font-size:11.5px;color:var(--vscode-descriptionForeground)}
+.settingsCategoryFooter svg{width:12px;height:12px;flex:0 0 auto}
+.settingsCategoryFooter a{font-family:var(--vscode-editor-font-family)}
+.settingsControl{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin:0;max-width:640px}
+.settingsControl.master{padding-bottom:8px;border-bottom:1px solid var(--gm-border);max-width:none;width:100%}
+.settingsControl.master .settingsFeatureCheck{font-weight:600}
+.settingsControl.indent1{margin-left:24px}
+.settingsControl.indent2{margin-left:48px}
+.settingsControl > .settingsLabel{font-weight:600;font-size:12px}
+.settingsControl.settingsControlDisabled{opacity:.5}
+.settingsControl .settingsSelect{min-width:260px;max-width:100%}
+.settingsControl .settingsFeatureInfo{margin-top:2px}
+.settingsFeatureInfo span{flex:1}
+.settingsSegmentedCtl{display:inline-flex;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-sm);overflow:hidden}
+.settingsSegmentedCtl .settingsSegment{border:0;border-radius:0}
+.settingsTextRow{display:flex;align-items:center;gap:6px;width:100%}
+.settingsTextRow .settingsInput{flex:1;min-width:0}
+.settingsTokenSelect{flex:0 0 auto;min-width:0 !important;width:auto}
+.settingsCustomBlock{display:flex;flex-direction:column;gap:8px}
+.settingsAiModelRows,.settingsIntegrationRows{display:flex;flex-direction:column;gap:8px;max-width:640px}
+.settingsAiModelRow,.settingsIntegrationRow{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-md)}
+.settingsAiModelIcon,.settingsIntegrationIcon{display:inline-flex;flex:0 0 auto}
+.settingsAiModelIcon svg,.settingsIntegrationIcon svg{width:14px;height:14px}
+.settingsAiModelText,.settingsIntegrationText{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.settingsAiModelText span,.settingsIntegrationText span{font-size:11.5px;color:var(--vscode-descriptionForeground);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.settingsIntegrationRow:not(.connected) .settingsIntegrationText b{opacity:.8}
+.settingsIntegrationStatus{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--vscode-gitDecoration-addedResourceForeground,#2da44e)}
+.settingsIntegrationStatus svg{width:12px;height:12px;fill:currentColor}

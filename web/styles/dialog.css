@@ -503,3 +503,14 @@ body.vscode-high-contrast .customSelectOptions > .customSelectOption.focussed{
 .dialogNote.warning svg{
 	fill:var(--vscode-editorWarning-foreground, #cca700);
 }
+
+.mergeTargetLanded {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var(--vscode-gitDecoration-addedResourceForeground, #2da44e);
+}
+
+.mergeTargetLanded svg {
+	fill: currentColor;
+}

@@ -3,7 +3,7 @@ import { getConfig } from './config';
 import { DataSource } from './dataSource';
 import { EscapeStack } from './escapeStack';
 import { getLanguage, t } from './l10n';
-import { getBlameHover } from './lineBlame';
+import { formatBlameTemplate, getBlameHover } from './lineBlame';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { AnnotationLocation, GitFileBlame } from './types';
@@ -294,8 +294,9 @@ export class FileBlame extends Disposable {
 			const blame = await this.dataSource.getFileBlame(file.repo, file.filePath, document.isDirty ? document.getText() : null, cancellation.token);
 			if (cancellation.token.isCancellationRequested || this.files.get(key) !== file || document.version !== version) return true; // The file stopped being blamed, or was changed again
 			if (blame === null) return false;
-			const cfg = getConfig().fileBlameConfig;
-			file.annotations = getAnnotations(blame, cfg.compact);
+			const repoCfg = getConfig(file.repo), cfg = repoCfg.fileBlameConfig, hoverCfg = repoCfg.hoversConfig, hoversEnabled = hoverCfg.enabled && hoverCfg.annotationsEnabled;
+			const dateFormat = cfg.dateFormat !== '' ? cfg.dateFormat : repoCfg.defaultDateShortFormat;
+			file.annotations = getAnnotations(blame, cfg.compact, cfg.format !== '' || dateFormat !== '' || repoCfg.blameDateStyle === 'absolute' ? { format: cfg.format, dateFormat: dateFormat, dateStyle: repoCfg.blameDateStyle, locale: repoCfg.defaultDateLocale } : null);
 			file.decorations = file.annotations.map((annotation) => {
 				const line = blame.lines[annotation.line], commit = blame.commits[line.hash];
 				const before: vscode.ThemableDecorationAttachmentRenderOptions = {
@@ -305,9 +306,11 @@ export class FileBlame extends Disposable {
 					before.backgroundColor = annotation.colour;
 					before.border = '2px solid ' + annotation.colour;
 				}
+				// The hover is shown over the annotation (only on the first line of a block), or over every line (`git-map.hovers.annotations.over`)
+				const hovered = hoversEnabled && (annotation.label !== '' || hoverCfg.annotationsOver === 'line');
 				return {
-					range: new vscode.Range(annotation.line, 0, annotation.line, 0),
-					hoverMessage: annotation.label !== '' ? getBlameHover(file.repo, { hash: line.hash, committed: commit.committed, author: commit.author, authorEmail: commit.authorEmail, authorDate: commit.authorDate, summary: commit.summary, originalLine: line.originalLine, originalFilePath: commit.filePath }, document.uri, annotation.line + 1, null) : undefined,
+					range: hoverCfg.annotationsOver === 'line' ? new vscode.Range(annotation.line, 0, annotation.line, Number.MAX_SAFE_INTEGER) : new vscode.Range(annotation.line, 0, annotation.line, 0),
+					hoverMessage: hovered ? getBlameHover(file.repo, { hash: line.hash, committed: commit.committed, author: commit.author, authorEmail: commit.authorEmail, authorDate: commit.authorDate, summary: commit.summary, originalLine: line.originalLine, originalFilePath: commit.filePath }, document.uri, annotation.line + 1, null, { includeDetails: hoverCfg.annotationsDetails, includeChanges: false, autolinks: hoverCfg.autolinksEnabled ? repoCfg.autolinks : [], prInfo: null }) : undefined,
 					renderOptions: { before: before }
 				};
 			});
@@ -387,7 +390,7 @@ function createSameCommitDecorationType(locations: ReadonlyArray<AnnotationLocat
  * @param compact When true (default), hide repeated author labels on contiguous lines from the same commit.
  * @returns The annotations.
  */
-export function getAnnotations(blame: GitFileBlame, compact: boolean = true): FileBlameAnnotation[] {
+export function getAnnotations(blame: GitFileBlame, compact: boolean = true, template: FileBlameTemplate | null = null): FileBlameAnnotation[] {
 	const dates = Object.keys(blame.commits).filter((hash) => blame.commits[hash].committed).map((hash) => blame.commits[hash].authorDate);
 	const oldest = Math.min(...dates), newest = Math.max(...dates);
 	const annotations: FileBlameAnnotation[] = [];
@@ -399,12 +402,35 @@ export function getAnnotations(blame: GitFileBlame, compact: boolean = true): Fi
 		annotations.push({
 			line: index,
 			hash: line.hash,
-			label: first ? getLabel(commit.committed ? formatShortDate(commit.authorDate) : t('Uncommitted'), commit.committed ? commit.author : t('You')) : '',
+			label: !first ? ''
+				: template !== null
+					? getTemplateLabel(template, line.hash, commit, line.originalLine)
+					: getLabel(commit.committed ? formatShortDate(commit.authorDate) : t('Uncommitted'), commit.committed ? commit.author : t('You')),
 			heat: heat,
 			colour: getHeatColour(heat)
 		});
 	});
 	return annotations;
+}
+
+/**
+ * The format of the labels of File Blame (`git-map.fileBlame.format` & `git-map.fileBlame.dateFormat`).
+ */
+export interface FileBlameTemplate {
+	readonly format: string; // The template of the label (empty => the date & author)
+	readonly dateFormat: string; // The format of `${date}` (empty => YYYY-MM-DD)
+	readonly dateStyle: 'relative' | 'absolute';
+	readonly locale: string;
+}
+
+/**
+ * Get the label of a block of lines from the template of File Blame.
+ */
+function getTemplateLabel(template: FileBlameTemplate, hash: string, commit: GitFileBlame['commits'][string], originalLine: number) {
+	const format = template.format !== '' ? template.format : '${date} ${author|' + AUTHOR_LENGTH + '?}';
+	const blame = { hash: hash, committed: commit.committed, author: commit.author, authorEmail: commit.authorEmail, authorDate: commit.authorDate, summary: commit.summary, originalLine: originalLine, originalFilePath: commit.filePath };
+	if (!commit.committed) return t('Uncommitted') + ' ' + t('You');
+	return formatBlameTemplate(format, blame, null, { style: template.dateStyle, format: template.dateFormat !== '' ? template.dateFormat : (getLanguage() === 'zh-cn' ? 'YYYY/MM/DD' : 'YYYY-MM-DD'), locale: template.locale });
 }
 
 /**

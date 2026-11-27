@@ -180,6 +180,39 @@ describe('getBranchCleanupCandidates', () => {
 		expect(result.candidates[0].author).toBe('Test Author');
 	});
 
+	it('Should list the branches that were rebased or squashed into the default branch', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'a\n' });
+		git('branch', '-M', 'main');
+
+		git('checkout', '-q', '-b', 'squashed');
+		commit('Squashed 1', { 's.txt': '1\n' });
+		commit('Squashed 2', { 's.txt': '2\n', 't.txt': 't\n' });
+
+		git('checkout', '-q', '-b', 'rebased', 'main');
+		commit('Rebased 1', { 'r.txt': 'r\n' });
+
+		git('checkout', '-q', '-b', 'open', 'main');
+		commit('Open 1', { 'o.txt': 'o\n' });
+
+		// Land "squashed" (as one commit) & "rebased" (as an equivalent commit) on main, after another commit
+		git('checkout', '-q', 'main');
+		commit('Other', { 'b.txt': 'b\n' });
+		git('merge', '-q', '--squash', 'squashed');
+		git('commit', '-q', '-m', 'Squashed (#1)');
+		git('cherry-pick', 'rebased');
+
+		// Run
+		const result = await features.getBranchCleanupCandidates(repo);
+
+		// Assert
+		expect(result.error).toBeNull();
+		expect(result.candidates.map((candidate) => ({ name: candidate.name, merged: candidate.merged, landed: candidate.landed, unmergedCommits: candidate.unmergedCommits })).sort((a, b) => a.name.localeCompare(b.name))).toStrictEqual([
+			{ name: 'rebased', merged: true, landed: 'rebased', unmergedCommits: 0 },
+			{ name: 'squashed', merged: true, landed: 'squashed', unmergedCommits: 0 }
+		]);
+	});
+
 	it('Should use the branch that origin/HEAD refers to as the default branch', async () => {
 		// Setup
 		commit('Base');
@@ -204,6 +237,153 @@ describe('getBranchCleanupCandidates', () => {
 
 		// Assert
 		expect(result).toStrictEqual({ defaultBranch: null, candidates: [], error: null });
+	});
+});
+
+describe('Merge targets', () => {
+	it('Should use the default branch, or the merge target chosen for the branch, and report how far it is from it', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'a\n' });
+		git('branch', '-M', 'main');
+		git('branch', 'develop');
+		git('checkout', '-q', '-b', 'feature');
+		commit('Feature 1', { 'f.txt': '1\n' });
+		commit('Feature 2', { 'f.txt': '2\n' });
+		git('checkout', '-q', 'main');
+		commit('Main 1', { 'm.txt': '1\n' });
+
+		// Run & Assert: the default branch
+		expect(await features.getMergeTarget(repo, 'feature')).toStrictEqual({ target: 'main', chosen: false });
+		let status = (await features.getMergeTargetStatus(repo, 'feature')).status!;
+		expect({ target: status.target, chosen: status.chosen, ahead: status.ahead, behind: status.behind, landed: status.landed }).toStrictEqual({ target: 'main', chosen: false, ahead: 2, behind: 1, landed: null });
+
+		// Run & Assert: a merge target chosen for the branch
+		expect(await features.setMergeTarget(repo, 'feature', 'develop')).toBeNull();
+		expect(git('config', '--get', 'branch.feature.gitMapMergeTarget').trim()).toBe('develop');
+		status = (await features.getMergeTargetStatus(repo, 'feature')).status!;
+		expect({ target: status.target, chosen: status.chosen, ahead: status.ahead, behind: status.behind }).toStrictEqual({ target: 'develop', chosen: true, ahead: 2, behind: 0 });
+
+		// Run & Assert: its range to explain starts where it diverged from the merge target
+		const range = await features.getBranchRangeForExplanation(repo, 'feature', null);
+		expect(range.error).toBeNull();
+		expect(range.base).toBe('develop');
+		expect(range.fromRef).toBe(git('rev-parse', 'develop').trim());
+
+		// Run & Assert: once its work has landed in the merge target
+		git('checkout', '-q', 'develop');
+		git('merge', '-q', '--ff-only', 'feature');
+		status = (await features.getMergeTargetStatus(repo, 'feature')).status!;
+		expect(status.landed).toBe('merged');
+
+		// Run & Assert: invalid names are refused, and clearing it returns to the default branch
+		expect(await features.setMergeTarget(repo, 'feature', '--upload-pack=x')).toBe('Invalid merge target: --upload-pack=x');
+		expect(await features.setMergeTarget(repo, 'feature', 'feature')).toBe('Invalid merge target: feature');
+		expect(await features.setMergeTarget(repo, 'feature', null)).toBeNull();
+		expect(await features.setMergeTarget(repo, 'feature', null)).toBeNull();
+		expect(await features.getMergeTarget(repo, 'feature')).toStrictEqual({ target: 'main', chosen: false });
+	});
+});
+
+describe('predictRebaseConflicts', () => {
+	it('Should predict the first commit that conflicts, without changing the repository', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'base\n' });
+		git('checkout', '-q', '-b', 'feature');
+		const clean = commit('Clean', { 'b.txt': 'b\n' });
+		const conflicting = commit('Conflicting', { 'a.txt': 'feature\n' });
+		const after = commit('After', { 'c.txt': 'c\n' });
+		git('checkout', '-q', 'main');
+		commit('Main', { 'a.txt': 'main\n' });
+		git('checkout', '-q', 'feature');
+		const head = git('rev-parse', 'HEAD'), status = git('status', '--porcelain');
+
+		// Run
+		const result = await features.predictRebaseConflicts(repo, 'main', [
+			{ action: 'pick', hash: clean },
+			{ action: 'pick', hash: conflicting },
+			{ action: 'squash', hash: after }
+		]);
+
+		// Assert
+		expect(result.error).toBeNull();
+		if (result.unsupported) return; // Git before 2.40
+		expect(result.results).toStrictEqual([
+			{ hash: clean, state: 'clean', files: [] },
+			{ hash: conflicting, state: 'conflict', files: ['a.txt'] },
+			{ hash: after, state: 'unknown', files: [] }
+		]);
+		expect(git('rev-parse', 'HEAD')).toBe(head);
+		expect(git('status', '--porcelain')).toBe(status);
+
+		// Run & Assert: dropping the conflicting commit
+		const dropped = await features.predictRebaseConflicts(repo, 'main', [
+			{ action: 'pick', hash: clean },
+			{ action: 'drop', hash: conflicting },
+			{ action: 'pick', hash: after }
+		]);
+		expect(dropped.results.map((r) => r.state)).toStrictEqual(['clean', 'clean']);
+	});
+});
+
+describe('Explaining changes', () => {
+	it('Should get the working changes, including untracked files, compared with HEAD', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'a\n' });
+		write('a.txt', 'a\nstaged\n');
+		git('add', 'a.txt');
+		write('a.txt', 'a\nstaged\nunstaged\n');
+		write('new.txt', 'brand new\n');
+
+		// Run
+		const result = await features.getWorkingChangesForExplanation(repo);
+
+		// Assert
+		expect(result.error).toBeNull();
+		expect(result.text).toContain('+staged');
+		expect(result.text).toContain('+unstaged');
+		expect(result.text).toContain('Untracked files (1): new.txt');
+		expect(result.text).toContain('+brand new');
+	});
+
+	it('Should return no working changes when there are none', async () => {
+		commit('Base', { 'a.txt': 'a\n' });
+		expect(await features.getWorkingChangesForExplanation(repo)).toStrictEqual({ text: '', truncated: false, error: null });
+	});
+
+	it('Should get the changes of a stash, including its untracked files', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'a\n' });
+		write('a.txt', 'a\nchanged\n');
+		write('u.txt', 'untracked\n');
+		git('stash', 'push', '-q', '--include-untracked', '-m', 'Work in progress');
+		const hash = git('rev-parse', 'stash@{0}').trim();
+
+		// Run
+		const result = await features.getStashForExplanation(repo, hash);
+
+		// Assert
+		expect(result.error).toBeNull();
+		expect(result.text).toContain('Stash: On main: Work in progress');
+		expect(result.text).toContain('+changed');
+		expect(result.text).toContain('Untracked files of the stash:');
+		expect(result.text).toContain('+untracked');
+	});
+
+	it('Should get the range of the unpushed commits of a branch', async () => {
+		// Setup
+		commit('Base', { 'a.txt': 'a\n' });
+		git('branch', '-M', 'main');
+		expect((await features.getUnpushedRange(repo, null)).error).toBe('The branch "main" has no upstream branch.');
+		git('remote', 'add', 'origin', 'https://example.invalid/repo.git');
+		git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+		git('config', 'branch.main.remote', 'origin');
+		git('config', 'branch.main.merge', 'refs/heads/main');
+
+		// Run
+		const result = await features.getUnpushedRange(repo, null);
+
+		// Assert
+		expect(result).toStrictEqual({ fromRef: 'origin/main', toRef: 'refs/heads/main', branch: 'main', upstream: 'origin/main', error: null });
 	});
 });
 
@@ -626,6 +806,23 @@ describe('getFileTimeline', () => {
 			{ hash: added, subject: 'Add', additions: 3, deletions: 0, filePath: 'old.txt', added: true }
 		]);
 		expect(result.commits[0]).toMatchObject({ author: 'Test Author', email: 'author@example.com', date: 1704067200 });
+	});
+
+	it('Should return the commits that changed any file in a folder, adding up their lines', async () => {
+		// Setup
+		const first = commit('Add', { 'src/a.txt': '1\n', 'src/b.txt': '1\n2\n' });
+		commit('Unrelated', { 'other.txt': 'x\n' });
+		const second = commit('Change both', { 'src/a.txt': '1\n2\n', 'src/sub/c.txt': 'c\n' });
+
+		// Run
+		const result = await features.getFileTimeline(repo, 'src', 100);
+
+		// Assert
+		expect(result.error).toBeNull();
+		expect(result.commits.map((c) => ({ hash: c.hash, additions: c.additions, deletions: c.deletions }))).toStrictEqual([
+			{ hash: second, additions: 2, deletions: 0 },
+			{ hash: first, additions: 3, deletions: 0 }
+		]);
 	});
 
 	it('Should limit the number of commits', async () => {

@@ -50,26 +50,7 @@ class SettingsWidget {
 			fileLabel: string;
 			fileDesc: string;
 		};
-		editor: {
-			currentLineEnabled: boolean;
-			currentLinePullRequests: boolean;
-			currentLineScrollable: boolean;
-			currentLineFormat: string;
-			currentLineUncommittedFormat: string;
-			statusBarEnabled: boolean;
-			statusBarFormat: string;
-			statusBarReduceFlicker: boolean;
-			codeLensEnabled: boolean;
-			codeLensRecentChange: boolean;
-			codeLensAuthors: boolean;
-			hoversEnabled: boolean;
-			hoversAutolinks: boolean;
-			fileBlameCompact: boolean;
-			fileBlameHeatmap: boolean;
-			fileBlameHighlightSameCommit: boolean;
-			fileHeatmapFadeLines: boolean;
-			activeMode: string;
-		};
+		editor: GG.Writeable<GG.EditorAnnotationsSnapshot>;
 		menus: {
 			editor: boolean;
 			editorGroup: boolean;
@@ -78,6 +59,29 @@ class SettingsWidget {
 			editorTab: boolean;
 		};
 	} = SettingsWidget.buildInitialExtendedState();
+	private settingValues: { [key: string]: unknown } = Object.assign({}, initialState.config.settingValues || {}); // The value of every Git Map Extension Setting
+	private hostingIntegrations: ReadonlyArray<GG.HostingIntegrationStatus> | null = null; // The hosting services of Cloud Integrations (NULL => not loaded yet)
+
+	/**
+	 * Get the state of the Editor Annotations settings shown in the panel (the defaults of the settings, when they aren't known).
+	 */
+	private static buildEditorState(ed: GG.EditorAnnotationsSnapshot | undefined): GG.Writeable<GG.EditorAnnotationsSnapshot> {
+		const defaults: GG.EditorAnnotationsSnapshot = {
+			currentLineEnabled: true, currentLinePullRequests: true, currentLineFormat: '${author, }${agoOrDate}${\' via \'pullRequest}${\' • \'message}',
+			currentLineUncommittedFormat: 'You, Uncommitted changes (${ago})', currentLineScrollable: true, currentLineDateFormat: '',
+			statusBarEnabled: true, statusBarAlignment: 'left', statusBarFormat: '${author}, ${agoOrDate}${\' via \'pullRequest}', statusBarReduceFlicker: true,
+			statusBarPullRequests: true, statusBarCommand: 'viewLineHistory', statusBarDateFormat: '', dateStyle: 'relative',
+			codeLensEnabled: false, codeLensRecentChange: true, codeLensAuthors: true, codeLensScopes: ['containers', 'blocks'],
+			hoversEnabled: true, hoversCurrentLineOver: 'line', hoversChanges: true, hoversAutolinks: true, hoversCurrentLineEnabled: true,
+			hoversDetails: true, hoversPullRequests: true, hoversAnnotations: true,
+			fileBlameToggleMode: 'file', fileBlameFormat: '', fileBlameDateFormat: '', fileBlameDelayAfterEdit: 5000, fileBlameSizeThresholdAfterEdit: 5000, fileChangesToggleMode: 'file', fileHeatmapToggleMode: 'file',
+			fileBlameHeatmap: true, fileBlameHeatmapLocation: 'right', fileBlameCompact: true, fileBlameHighlightSameCommit: true,
+			fileBlameHighlightLocations: ['gutter', 'line', 'overviewRuler'], fileChangesLocations: ['gutter', 'line', 'overviewRuler'],
+			fileHeatmapLocations: ['gutter', 'overviewRuler'], fileHeatmapFadeLines: true, fileHeatmapAgeThreshold: 90,
+			fileHeatmapHotColor: '#f66a0a', fileHeatmapColdColor: '#0a60f6', activeMode: 'default', customModes: []
+		};
+		return Object.assign({}, defaults, ed || {});
+	}
 
 	private static buildInitialExtendedState() {
 		const cfg = initialState.config;
@@ -111,26 +115,7 @@ class SettingsWidget {
 				fileLabel: scm ? scm.fileLabelFormat : '${file}',
 				fileDesc: scm ? scm.fileDescriptionFormat : '${directory}'
 			},
-			editor: {
-				currentLineEnabled: ed ? ed.currentLineEnabled : true,
-				currentLinePullRequests: ed ? ed.currentLinePullRequests : true,
-				currentLineScrollable: ed ? ed.currentLineScrollable : true,
-				currentLineFormat: ed ? ed.currentLineFormat : '${author, }${agoOrDate}${ via |pullRequest}${ • |message|50?}',
-				currentLineUncommittedFormat: ed ? ed.currentLineUncommittedFormat : '\u270E ${ago}',
-				statusBarEnabled: ed ? ed.statusBarEnabled : true,
-				statusBarFormat: ed ? ed.statusBarFormat : '${author}, ${ago}',
-				statusBarReduceFlicker: ed ? ed.statusBarReduceFlicker : false,
-				codeLensEnabled: ed ? ed.codeLensEnabled : false,
-				codeLensRecentChange: ed ? ed.codeLensRecentChange : true,
-				codeLensAuthors: ed ? ed.codeLensAuthors : true,
-				hoversEnabled: ed ? ed.hoversEnabled : true,
-				hoversAutolinks: ed ? ed.hoversAutolinks : true,
-				fileBlameCompact: ed ? ed.fileBlameCompact : false,
-				fileBlameHeatmap: ed ? ed.fileBlameHeatmap : true,
-				fileBlameHighlightSameCommit: ed ? ed.fileBlameHighlightSameCommit : true,
-				fileHeatmapFadeLines: ed ? ed.fileHeatmapFadeLines : false,
-				activeMode: ed ? ed.activeMode : 'default'
-			},
+			editor: SettingsWidget.buildEditorState(ed),
 			menus: {
 				editor: true,
 				editorGroup: true,
@@ -429,27 +414,8 @@ class SettingsWidget {
 			const graphStyle = initialState.config.graph.style === GG.GraphStyle.Angular ? 'angular' : 'rounded';
 			const graphDensity = initialState.config.graph.density === GG.GraphDensity.Compact ? 'Compact' : 'Comfortable';
 			const graphNodeStyle = initialState.config.graph.nodeStyle === GG.GraphNodeStyle.Avatar ? 'Avatar' : 'Dot';
-			const extBoolCount = (flags: boolean[]) => flags.filter(Boolean).length;
-			const extCheckbox = (id: string, key: string, checked: boolean, label: string, info?: string) =>
-				'<label id="' + id + '"><input type="checkbox" class="settingsExtCheckbox" id="' + id + 'Checkbox" data-ext-key="' + escapeHtml(key) + '"' + (checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' + label + '</label>' +
-				(info ? '<span class="settingsWidgetInfo" title="' + escapeHtml(info) + '">' + SVG_ICONS.info + '</span>' : '');
-			const extSegmented = (key: string, options: ReadonlyArray<[string, string]>, selected: string) =>
-				'<div class="settingsExtSegmented" role="radiogroup" data-ext-key="' + escapeHtml(key) + '">' +
-				options.map((o) => '<button type="button" role="radio" aria-checked="' + (o[0] === selected) + '" class="settingsSegment' + (o[0] === selected ? ' selected' : '') + '" data-value="' + escapeHtml(o[0]) + '" tabindex="-1">' + o[1] + '</button>').join('') +
-				'</div>';
 
-			const presetColours = (appearance.colourPresets.find((p) => p.name === appearance.colourPreset) || { colours: initialState.config.graph.colours }).colours;
-			const viewsEnabled = extBoolCount([ext.overviewBarEnabled, ext.scrollMarkersEnabled, ext.showGhostRefs, ext.multiselect !== 'off', ext.scmGroupedEnabled]);
-			const markerTypeOptions: ReadonlyArray<[GG.GraphMarkerType, string]> = [
-				['localBranches', t('Local Branches')],
-				['remoteBranches', t('Remote Branches')],
-				['pullRequests', t('Pull Requests')],
-				['stashes', t('Stashes')],
-				['tags', t('Tags')],
-				['worktrees', t('Worktrees')]
-			];
-			const commitGraphSectionHtml = '<div class="settingsSection" data-nav-group="views" data-nav-icon="branch" data-nav-label="' + escapeHtml(t('Commit Graph & Views')) + '" data-nav-enabled="' + viewsEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.palette + t('Appearance · All Repositories') + '</h3>' +
-				'<div class="settingsLivePreview" id="settingsGraphLivePreview">' + this.renderGraphPreviewHtml(presetColours, graphDensity, graphNodeStyle, ext.showGhostRefs) + '</div>' +
+			const graphAppearanceHtml =
 				'<div class="settingsLabel">' + t('Branch Line Colours') + '</div>' +
 				'<div class="settingsPresets">' + appearance.colourPresets.map((preset) => '<button type="button" class="settingsPreset' + (preset.name === appearance.colourPreset ? ' selected' : '') + '" data-preset="' + escapeHtml(preset.name) + '" aria-pressed="' + (preset.name === appearance.colourPreset) + '" tabindex="-1"><span class="settingsPresetColours">' + preset.colours.map((colour) => '<span style="background-color:' + escapeHtml(colour) + '"></span>').join('') + '</span><span class="settingsPresetName">' + escapeHtml(t(preset.name)) + '</span></button>').join('') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Line Style') + '</span>' + segmented('graph.style', [['rounded', t('Rounded')], ['angular', t('Angular')]], graphStyle) + '</div>' +
@@ -458,27 +424,13 @@ class SettingsWidget {
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Column Headers') + '</span>' + segmented('graph.freezeColumnHeaders', [['true', t('Frozen')], ['false', t('Scroll with the Commits')]], initialState.config.graph.freezeColumnHeaders ? 'true' : 'false') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Footer') + '</span>' + segmented('graph.freezeFooter', [['true', t('Frozen')], ['false', t('Scroll with the Commits')]], initialState.config.graph.freezeFooter ? 'true' : 'false') + '</div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Diff View') + '</span>' + segmented('diff.hideUnchangedRegions', [['false', t('Full File')], ['true', t('Changes Only')]], this.view.isHideUnchangedRegions() ? 'true' : 'false') + '</div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Multi-Commit Selection') + '</span>' + extSegmented('graph.multiselect', [['off', t('Off')], ['on', t('Free')], ['topological', t('Topological')]], ext.multiselect) + '</div>' +
-				'<div class="settingsCheckboxes two">' +
-				'<span>' + extCheckbox('settingsOverviewBar', 'graph.overviewBar.enabled', ext.overviewBarEnabled, t('Graph Overview Bar')) + '</span>' +
-				'<span>' + extCheckbox('settingsScrollMarkers', 'graph.scrollMarkers.enabled', ext.scrollMarkersEnabled, t('Scrollbar Markers')) + '</span>' +
-				'<span>' + extCheckbox('settingsGhostRefs', 'graph.showGhostRefsOnRowHover', ext.showGhostRefs, t('Ghost Refs on Row Hover')) + '</span>' +
-				'<span>' + extCheckbox('settingsScmGroupedView', 'views.scm.grouped.enabled', ext.scmGroupedEnabled, t('Git Map SCM View')) + '</span>' +
-				'</div>' +
-				'<div class="settingsSubGroup"><div class="settingsSubLabel">' + t('Scrollbar Marker Categories') + '</div><div class="settingsCheckboxes three">' +
-				markerTypeOptions.map((m) => '<span><label><input type="checkbox" class="settingsMarkerTypeCheckbox" data-marker-type="' + m[0] + '"' + (ext.scrollMarkersTypes.includes(m[0]) ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' + escapeHtml(m[1]) + '</label></span>').join('') +
-				'</div></div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Max Visible Refs (+N Folding)') + '</span><select id="settingsMaxVisibleRefs" class="settingsSelect" style="max-width:180px">' +
-				[[0, t('Unlimited')], [2, '2'], [3, '3'], [4, '4'], [5, '5'], [6, '6']].map((o) => '<option value="' + o[0] + '"' + (ext.maxVisibleRefsPerCommit === o[0] ? ' selected' : '') + '>' + escapeHtml(String(o[1])) + '</option>').join('') +
-				'</select></div>' +
 				'<div class="settingsRow"><span class="settingsLabel">' + t('Graph Shortcuts (Ctrl/Cmd + Key)') + '</span><div class="settingsShortcutOverrides">' +
 				(<const>[['find', t('Find'), initialState.config.keybindings.find || 'f'], ['refresh', t('Refresh'), initialState.config.keybindings.refresh || 'r'], ['scrollToHead', 'HEAD', initialState.config.keybindings.scrollToHead || 'h'], ['scrollToStash', t('Stash'), initialState.config.keybindings.scrollToStash || 's']]).map((sc) =>
 					'<label class="settingsShortcutChip"><span>' + escapeHtml(sc[1]) + '</span><input type="text" maxlength="1" class="settingsInput mono settingsShortcutOverrideInput" data-shortcut-act="' + sc[0] + '" value="' + escapeHtml(ext.shortcutOverrides[sc[0]] || '') + '" placeholder="' + escapeHtml(sc[2]) + '"></label>'
 				).join('') +
 				'<button type="button" id="settingsOpenShortcutsHelp" class="settingsBtn" tabindex="-1">? ' + t('Cheatsheet') + '</button>' +
 				'</div></div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Action Bar') + '</span>' + button('settingsCustomizeCdvActions', '', MENU_ICONS.settings + t('Customize Action Buttons') + ELLIPSIS) + '</div>' +
-				'</div>';
+				'<div class="settingsRow"><span class="settingsLabel">' + t('Action Bar') + '</span>' + button('settingsCustomizeCdvActions', '', MENU_ICONS.settings + t('Customize Action Buttons') + ELLIPSIS) + '</div>';
 
 			const scmSectionDefs: ReadonlyArray<[string, string]> = [
 				['commits', t('Commits')],
@@ -493,8 +445,7 @@ class SettingsWidget {
 				['launchpad', t('Launchpad PRs')],
 				['fileHistory', t('File History')]
 			];
-			const scmVisibleCount = scmSectionDefs.filter((s) => !ext.scmHiddenSections.includes(s[0])).length;
-			const scmSectionHtml = '<div class="settingsSection" id="settingsScmSection" data-nav-group="views" data-nav-icon="scm" data-nav-label="' + escapeHtml(t('Git Map SCM & Views')) + '" data-nav-enabled="' + scmVisibleCount + '" data-nav-total="' + scmSectionDefs.length + '"><h3>' + MENU_ICONS.scm + t('Git Map SCM & View Formats') + '</h3>' +
+			const scmMatrixHtml =
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Section') + '</th><th>' + t('Visible') + '</th><th>' + t('Default Expanded') + '</th></tr></thead><tbody>' +
 				scmSectionDefs.map((sec) => {
 					const vis = !ext.scmHiddenSections.includes(sec[0]);
@@ -503,35 +454,17 @@ class SettingsWidget {
 						'<td><label><input type="checkbox" class="settingsScmVisCheckbox" data-scm-sec="' + sec[0] + '"' + (vis ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span></label></td>' +
 						'<td><label><input type="radio" name="settingsScmDefaultSection" class="settingsScmDefaultRadio" value="' + sec[0] + '"' + (isDef ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span></label></td></tr>';
 				}).join('') +
-				'</tbody></table>' +
-				card(MENU_ICONS.commit + t('Commit, Stash & File View Formats'), '', '<div class="settingsFormatGrid">' +
-					this.renderScmFormatFieldHtml('commitLabel', 'views.commits.labelFormat', t('Commit Label Format'), ext.scmFormats.commitLabel) +
-					this.renderScmFormatFieldHtml('commitDesc', 'views.commits.descriptionFormat', t('Commit Description Format'), ext.scmFormats.commitDesc) +
-					this.renderScmFormatFieldHtml('stashLabel', 'views.stashes.labelFormat', t('Stash Label Format'), ext.scmFormats.stashLabel) +
-					this.renderScmFormatFieldHtml('stashDesc', 'views.stashes.descriptionFormat', t('Stash Description Format'), ext.scmFormats.stashDesc) +
-					this.renderScmFormatFieldHtml('fileLabel', 'views.files.labelFormat', t('File Label Format'), ext.scmFormats.fileLabel) +
-					this.renderScmFormatFieldHtml('fileDesc', 'views.files.descriptionFormat', t('File Description Format'), ext.scmFormats.fileDesc) +
-				'</div>') +
+				'</tbody></table>';
+
+			const languageHtml = '<div class="settingsChoices" data-setting="language">' +
+				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
 				'</div>';
 
-			const languageSectionHtml = '<div class="settingsSection" data-nav-group="general" data-nav-icon="globe" data-nav-label="' + escapeHtml(t('Language')) + '"><h3>' + MENU_ICONS.globe + t('Language · All Repositories') + '</h3><div class="settingsChoices" data-setting="language">' +
-				[['Auto', t('Follow Visual Studio Code (Current: {0})', escapeHtml(displayLanguage))], ['English', 'English'], ['Simplified Chinese', '简体中文']].map((option) => '<label class="settingsChoice' + (appearance.language === option[0] ? ' selected' : '') + '"><input type="radio" name="settingsLanguage" value="' + option[0] + '"' + (appearance.language === option[0] ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span>' + option[1] + '</label>').join('') +
-				'</div></div>';
-
-			const statusBarSectionHtml = '<div class="settingsSection" data-nav-group="general" data-nav-icon="layout" data-nav-label="' + escapeHtml(t('Status Bar')) + '" data-nav-enabled="1" data-nav-total="1"><h3>' + MENU_ICONS.layout + t('Status Bar · All Repositories') + '</h3><div class="settingsRow">' +
+			const statusBarItemHtml = '<div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
 				'<span class="settingsStatusBarPreview" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
-				'</div></div>';
+				'</div>';
 
-			const menusEnabled = extBoolCount([ext.menus.editor, ext.menus.editorGroup, ext.menus.explorer, ext.menus.scm, ext.menus.editorTab]);
-			const menusSectionHtml = '<div class="settingsSection" id="settingsMenusSection" data-nav-group="general" data-nav-icon="menus" data-nav-label="' + escapeHtml(t('Menus & Toolbars')) + '" data-nav-enabled="' + menusEnabled + '" data-nav-total="5"><h3>' + MENU_ICONS.menus + t('Menus & Toolbars') + '</h3>' +
-				'<div class="settingsCheckboxes two">' +
-				'<span>' + extCheckbox('settingsMenuEditor', 'menus.editor.enabled', ext.menus.editor, t('Editor Context Menu')) + '</span>' +
-				'<span>' + extCheckbox('settingsMenuEditorGroup', 'menus.editorGroup.enabled', ext.menus.editorGroup, t('Editor Title Toolbar')) + '</span>' +
-				'<span>' + extCheckbox('settingsMenuExplorer', 'menus.explorer.enabled', ext.menus.explorer, t('Explorer Context Menu')) + '</span>' +
-				'<span>' + extCheckbox('settingsMenuScm', 'menus.scm.enabled', ext.menus.scm, t('SCM Title & Repository Menu')) + '</span>' +
-				'<span>' + extCheckbox('settingsMenuEditorTab', 'menus.editorTab.enabled', ext.menus.editorTab, t('Editor Tab Context Menu')) + '</span>' +
-				'</div></div>';
 
 			const ai = this.ai;
 			const activePreset = ai.presets.find((p) => p.id === ai.provider) || ai.presets[0];
@@ -585,7 +518,6 @@ class SettingsWidget {
 					: ai.provider === 'Magpie' ? '<p class="settingsDescription">' + t('Requests go through the local gateway of Magpie, which calls the providers signed in to it. Keep Magpie running; leave Model blank to auto-detect or pick one above.') + '</p>'
 						: ai.provider === 'CC Switch' ? '<p class="settingsDescription">' + t('Requests go through the local routing of CC Switch to the provider currently selected for Codex. Turn on local routing in CC Switch; leave Model blank to use its active route or pick one above.') + '</p>'
 							: '');
-			const aiEnabledCount = (ai.commitMessage ? 1 : 0) + (ai.explainCommit ? 1 : 0);
 			const taskModels: GG.AiTaskModelsConfig = ai.taskModels || {};
 			const aiTaskRows = (<const>['commitMessage', 'reviewChanges', 'resolveConflicts', 'explainAndSearch']).map((task) => {
 				const cur = taskModels[task]?.model || '';
@@ -597,7 +529,7 @@ class SettingsWidget {
 				const cur = customInstr[taskKey] || '';
 				return '<label class="settingsKey">' + escapeHtml(taskKey) + ':</label><input type="text" class="settingsInput settingsAiInstructionInput" data-ai-instr-task="' + taskKey + '" value="' + escapeHtml(cur) + '" placeholder="' + escapeHtml(t('Optional custom prompt instructions…')) + '">';
 			}).join('');
-			const aiSectionHtml = '<div class="settingsSection" id="settingsAiSection" data-nav-group="integrations" data-nav-icon="sparkle" data-nav-label="' + escapeHtml(t('AI')) + '" data-nav-enabled="' + aiEnabledCount + '" data-nav-total="2"><h3>' + MENU_ICONS.sparkle + t('AI · All Repositories') + '</h3>' +
+			const aiPanelHtml =
 				'<div class="settingsCheckboxes two">' +
 				'<span>' + checkbox('settingsAiCommitMessage', t('Generate Commit Messages'), t('Adds an action to generate commit messages from uncommitted changes in the Source Control view and the Git Map View.')) + '</span>' +
 				'<span>' + checkbox('settingsAiExplainCommit', t('Explain Commits'), t('Shows an "Explain" tab in the Commit Details View, where a language model explains the selected commit.')) + '</span>' +
@@ -609,8 +541,7 @@ class SettingsWidget {
 					'<label class="settingsKey">' + t('Token Warning:') + '</label><input id="settingsAiTokenWarn" type="number" min="500" step="500" class="settingsInput mono" value="' + (ai.largePromptWarningThreshold || 6000) + '">' +
 					'<label class="settingsKey">' + t('Auto-Rebase Threshold:') + '</label><input id="settingsAiAutoRebaseThreshold" type="number" min="0.5" max="1" step="0.05" class="settingsInput mono" value="' + (ai.autoRebaseConfidenceThreshold || 0.85) + '">' +
 					'</div>') +
-				card(MENU_ICONS.sparkle + t('AI Custom Instructions'), '', '<div class="settingsGrid two">' + aiInstrRows + '</div>') +
-				'</div>';
+				card(MENU_ICONS.sparkle + t('AI Custom Instructions'), '', '<div class="settingsGrid two">' + aiInstrRows + '</div>');
 
 			const fallbackAgents: ReadonlyArray<GG.CodingAgentStatus> = [
 				{ id: 'copilot-chat', name: 'Copilot Chat', kind: 'chat', detected: false, isDefault: ext.defaultAgent === 'copilot-chat', mcpConfigured: false, hooksConfigured: false },
@@ -620,8 +551,7 @@ class SettingsWidget {
 				{ id: 'opencode', name: 'OpenCode', kind: 'cli', detected: false, isDefault: ext.defaultAgent === 'opencode', mcpConfigured: false, hooksConfigured: false }
 			];
 			const agentsList = this.codingAgents.length > 0 ? this.codingAgents : fallbackAgents;
-			const detectedAgentsCount = agentsList.filter((a) => a.detected || a.mcpConfigured).length;
-			const agentsSectionHtml = '<div class="settingsSection" id="settingsAgentsSection" data-nav-group="integrations" data-nav-icon="agent" data-nav-label="' + escapeHtml(t('Agents')) + '" data-nav-enabled="' + detectedAgentsCount + '" data-nav-total="' + agentsList.length + '"><h3>' + MENU_ICONS.agent + t('Coding Agents, MCP & Hooks') + '</h3>' +
+			const agentsHtml =
 				'<p class="settingsDescription">' + t('Choose a default coding agent and configure the local Git Map stdio MCP server and repository Git hooks.') + '</p>' +
 				'<table class="settingsMatrixTable"><thead><tr><th>' + t('Agent') + '</th><th>' + t('Default') + '</th><th>MCP</th><th>' + t('Hooks') + '</th></tr></thead><tbody>' +
 				agentsList.map((ag) => {
@@ -637,20 +567,18 @@ class SettingsWidget {
 						'<td><label><input type="radio" name="settingsDefaultAgent" class="settingsDefaultAgentRadio" value="' + ag.id + '"' + (isDef ? ' checked' : '') + ' tabindex="-1"><span class="customRadio"></span></label></td>' +
 						'<td>' + mcpBtn + '</td><td>' + hookCell + '</td></tr>';
 				}).join('') +
-				'</tbody></table></div>';
+				'</tbody></table>';
 
 			const autolinkListHtml = ext.autolinks.length === 0
 				? '<p class="settingsDescription">' + t('No autolink rules configured. Add a prefix such as "JIRA-" or "#" with a URL containing "<num>".') + '</p>'
 				: ext.autolinks.map((r, i) => '<div class="settingsRuleChip"><span class="mono">' + escapeHtml(r.prefix) + '&lt;num&gt; &rarr; ' + escapeHtml(r.url) + '</span><button type="button" class="settingsBtn removeBtn settingsRemoveAutolinkBtn" data-rule-idx="' + i + '" tabindex="-1">&times;</button></div>').join('');
-			const autolinksSectionHtml = '<div class="settingsSection" id="settingsAutolinksSection" data-nav-group="integrations" data-nav-icon="link" data-nav-label="' + escapeHtml(t('Autolinks & Start Work')) + '" data-nav-enabled="' + ext.autolinks.length + '" data-nav-total="' + Math.max(1, ext.autolinks.length) + '"><h3>' + MENU_ICONS.link + t('Autolinks & Start Work') + '</h3>' +
+			const autolinksHtml =
 				'<div class="settingsLivePreview" id="settingsAutolinkLivePreview">' + this.renderAutolinkPreviewHtml(ext.autolinks, ext.startWorkBranchFormat) + '</div>' +
 				'<div class="settingsRuleList">' + autolinkListHtml + '</div>' +
 				'<div class="settingsRuleRow">' +
 				'<input id="settingsNewAutolinkPrefix" type="text" class="settingsInput mono" placeholder="PROJ-" style="width:90px">' +
 				'<input id="settingsNewAutolinkUrl" type="text" class="settingsInput mono" placeholder="https://tracker.example.com/browse/PROJ-<num>" style="flex:1">' +
 				'<button type="button" id="settingsAddAutolinkBtn" class="settingsBtn addBtn" tabindex="-1">' + t('Add Rule') + '</button>' +
-				'</div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Start Work Branch Format') + '</span><input id="settingsStartWorkFormat" type="text" class="settingsInput mono" value="' + escapeHtml(ext.startWorkBranchFormat) + '" style="max-width:260px"></div>' +
 				'</div>';
 
 			const customRemotesListHtml = ext.customRemotes.length === 0
@@ -659,55 +587,15 @@ class SettingsWidget {
 					'<div class="settingsRuleChip"><span class="mono">[' + escapeHtml(cr.type) + '] ' + escapeHtml(cr.domain || cr.regex || '') + (cr.avatarUrl ? ' · ' + escapeHtml(cr.avatarUrl) : '') + '</span>' +
 					'<button type="button" class="settingsBtn removeBtn settingsRemoveCustomRemoteBtn" data-cr-idx="' + idx + '" tabindex="-1">&times;</button></div>'
 				).join('');
-			const integrationsEnabled = extBoolCount([ext.terminalLinksEnabled, ext.followTerminalEnabled, ext.launchpadEnabled]);
-			const integrationsSectionHtml = '<div class="settingsSection" id="settingsIntegrationsSection" data-nav-group="integrations" data-nav-icon="terminal" data-nav-label="' + escapeHtml(t('Terminal Links & Launchpad')) + '" data-nav-enabled="' + integrationsEnabled + '" data-nav-total="3"><h3>' + MENU_ICONS.terminal + t('Terminal Links, Launchpad & Custom Remotes') + '</h3>' +
-				'<div class="settingsCheckboxes two">' +
-				'<span>' + extCheckbox('settingsTerminalLinks', 'terminalLinks.enabled', ext.terminalLinksEnabled, t('Terminal Git Links')) + '</span>' +
-				'<span>' + extCheckbox('settingsTerminalDetails', 'terminalLinks.showDetailsView', ext.terminalLinksShowDetails, t('Open Details View on Link Click')) + '</span>' +
-				'<span>' + extCheckbox('settingsFollowTerminal', 'graph.followTerminal.enabled', ext.followTerminalEnabled, t('Follow Active Terminal Repo')) + '</span>' +
-				'<span>' + extCheckbox('settingsLaunchpad', 'launchpad.indicator.enabled', ext.launchpadEnabled, t('Status Bar PR Launchpad')) + '</span>' +
-				'<span>' + extCheckbox('settingsLaunchpadColors', 'launchpad.indicator.useColors', ext.launchpadUseColors, t('Use Launchpad Status Colors')) + '</span>' +
-				'</div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Launchpad Quick Triage') + '</span><button type="button" id="settingsOpenLaunchpadBtn" class="settingsBtn" tabindex="-1">' + t('Open Launchpad') + ELLIPSIS + '</button></div>' +
-				card(MENU_ICONS.cloud + t('Custom Remotes'), '', '<div class="settingsRuleList">' + customRemotesListHtml + '</div>' +
+			const remotesHtml = '<div class="settingsRuleList">' + customRemotesListHtml + '</div>' +
 					'<div class="settingsRuleRow">' +
 					'<select id="settingsNewCustomRemoteType" class="settingsSelect" style="width:120px">' +
 					['github', 'gitlab', 'gitea', 'bitbucket', 'azure', 'custom'].map((tp) => '<option value="' + tp + '">' + tp + '</option>').join('') +
 					'</select>' +
 					'<input id="settingsNewCustomRemoteDomain" type="text" class="settingsInput mono" placeholder="git.corp.example.com" style="flex:1">' +
 					'<button type="button" id="settingsAddCustomRemoteBtn" class="settingsBtn addBtn" tabindex="-1">+ ' + t('Add Remote') + '</button>' +
-					'</div>') +
-				'</div>';
+					'</div>';
 
-			const editorEnabledCount = extBoolCount([ext.editor.currentLineEnabled, ext.editor.statusBarEnabled, ext.editor.codeLensEnabled, ext.editor.hoversEnabled, ext.editor.fileBlameHeatmap, ext.editor.fileBlameHighlightSameCommit]);
-			const editorSectionHtml = '<div class="settingsSection" id="settingsEditorSection" data-nav-group="editor" data-nav-icon="blame" data-nav-label="' + escapeHtml(t('Editor Annotations')) + '" data-nav-enabled="' + editorEnabledCount + '" data-nav-total="6"><h3>' + MENU_ICONS.blame + t('Editor Annotations & Modes · All Repositories') + '</h3>' +
-				'<div class="settingsLivePreview" id="settingsEditorLivePreview">' + this.renderEditorPreviewHtml(ext.editor) + '</div>' +
-				'<div class="settingsRow"><span class="settingsLabel">' + t('Active Editor Mode') + '</span>' + extSegmented('mode.active', [['default', t('Default')], ['zen', t('Zen')], ['review', t('Review')]], ext.editor.activeMode) + '</div>' +
-				'<div class="settingsCheckboxes two">' +
-				'<span>' + extCheckbox('settingsEdCurrentLine', 'blame.currentLine', ext.editor.currentLineEnabled, t('Current Line Inline Blame')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdLinePr', 'blame.currentLine.pullRequests.enabled', ext.editor.currentLinePullRequests, t('Pull Request in Line Blame')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdLineScroll', 'blame.currentLine.scrollable', ext.editor.currentLineScrollable, t('Scrollable Inline Annotation')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdStatusBar', 'blame.statusBar', ext.editor.statusBarEnabled, t('Status Bar Blame')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdStatusFlicker', 'blame.statusBar.reduceFlicker', ext.editor.statusBarReduceFlicker, t('Reduce Status Bar Flicker')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdCodeLens', 'codeLens.enabled', ext.editor.codeLensEnabled, t('Git CodeLens')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdLensRecent', 'codeLens.recentChange.enabled', ext.editor.codeLensRecentChange, t('CodeLens: Recent Change')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdLensAuthors', 'codeLens.authors.enabled', ext.editor.codeLensAuthors, t('CodeLens: Authors')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdHovers', 'hovers.enabled', ext.editor.hoversEnabled, t('Rich Blame Hovers')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdHoverAutolinks', 'hovers.autolinks.enabled', ext.editor.hoversAutolinks, t('Autolinks in Hovers')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdFileBlameCompact', 'fileBlame.compact', ext.editor.fileBlameCompact, t('Compact File Blame')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdFileBlameHeatmap', 'fileBlame.heatmap.enabled', ext.editor.fileBlameHeatmap, t('File Blame Heatmap')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdSameCommit', 'fileBlame.highlight.enabled', ext.editor.fileBlameHighlightSameCommit, t('Highlight Same-Commit Lines')) + '</span>' +
-				'<span>' + extCheckbox('settingsEdHeatmapFade', 'fileHeatmap.fadeLines', ext.editor.fileHeatmapFadeLines, t('Fade Old Lines in Heatmap')) + '</span>' +
-				'</div>' +
-				card(MENU_ICONS.edit + t('Blame Annotation Format Templates'), '', '<div class="settingsGrid two">' +
-					'<label class="settingsKey" for="settingsBlameInlineFormat">' + t('Inline Blame Format:') + '</label>' +
-					'<input id="settingsBlameInlineFormat" type="text" class="settingsInput mono" value="' + escapeHtml(ext.editor.currentLineFormat) + '" spellcheck="false">' +
-					'<label class="settingsKey" for="settingsBlameUncommittedFormat">' + t('Uncommitted Blame Format:') + '</label>' +
-					'<input id="settingsBlameUncommittedFormat" type="text" class="settingsInput mono" value="' + escapeHtml(ext.editor.currentLineUncommittedFormat) + '" spellcheck="false">' +
-					'<label class="settingsKey" for="settingsBlameStatusBarFormat">' + t('Status Bar Blame Format:') + '</label>' +
-					'<input id="settingsBlameStatusBarFormat" type="text" class="settingsInput mono" value="' + escapeHtml(ext.editor.statusBarFormat) + '" spellcheck="false">' +
-					'</div>') +
-				'</div>';
 
 			let html = '<div class="settingsSection" data-nav-group="views" data-nav-icon="repo" data-nav-label="' + escapeHtml(t('This Repository')) + '"><h3>' + MENU_ICONS.repo + t('This Repository') + '</h3>' +
 				'<div class="settingsCheckboxes">' +
@@ -811,18 +699,20 @@ class SettingsWidget {
 				) +
 				'</div>';
 
-			this.contentsElem.innerHTML =
-				aiSectionHtml +
-				agentsSectionHtml +
-				autolinksSectionHtml +
-				integrationsSectionHtml +
-				commitGraphSectionHtml +
-				scmSectionHtml +
-				thisRepoSectionHtml +
-				editorSectionHtml +
-				languageSectionHtml +
-				statusBarSectionHtml +
-				menusSectionHtml;
+			this.contentsElem.innerHTML = this.renderSettingsCategories({
+				aiModels: this.renderAiModelsHtml(),
+				aiPanel: aiPanelHtml,
+				agents: agentsHtml,
+				cloudIntegrations: this.renderCloudIntegrationsHtml(),
+				remotes: remotesHtml,
+				autolinks: autolinksHtml,
+				graphAppearance: graphAppearanceHtml,
+				scmViews: scmMatrixHtml,
+				editorContextMenu: this.renderEditorContextMenuHtml(),
+				language: languageHtml,
+				statusBarItem: statusBarItemHtml
+			}, thisRepoSectionHtml);
+			if (this.hostingIntegrations === null) sendMessage({ command: 'loadHostingIntegrations' });
 			this.repoNameElem.textContent = this.repo.name || getRepoName(this.currentRepo);
 			this.footerElem.innerHTML = '<button type="button" id="exportRepositoryConfig" class="settingsBtn" tabindex="-1">' + SVG_ICONS.package + t('Export Repository Configuration') + '</button><span id="openExtensionSettings" class="settingsLink" tabindex="-1">' + t('Open Git Map Extension Settings') + '</span>';
 			this.renderNavRail();
@@ -1317,63 +1207,10 @@ class SettingsWidget {
 			sendMessage({ command: 'saveExtendedSettings', settings: patch });
 		};
 
-		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsExtCheckbox').forEach((cb) => {
-			cb.addEventListener('change', () => {
-				const k = cb.dataset.extKey;
-				if (!k) return;
-				const checked = cb.checked;
-				switch (k) {
-					case 'terminalLinks.enabled': this.extState.terminalLinksEnabled = checked; break;
-					case 'terminalLinks.showDetailsView': this.extState.terminalLinksShowDetails = checked; break;
-					case 'graph.followTerminal.enabled': this.extState.followTerminalEnabled = checked; break;
-					case 'launchpad.indicator.enabled': this.extState.launchpadEnabled = checked; break;
-					case 'launchpad.indicator.useColors': this.extState.launchpadUseColors = checked; break;
-					case 'graph.overviewBar.enabled': this.extState.overviewBarEnabled = checked; break;
-					case 'graph.scrollMarkers.enabled': this.extState.scrollMarkersEnabled = checked; break;
-					case 'graph.showGhostRefsOnRowHover': this.extState.showGhostRefs = checked; break;
-					case 'views.scm.grouped.enabled': this.extState.scmGroupedEnabled = checked; break;
-					case 'blame.currentLine': this.extState.editor.currentLineEnabled = checked; break;
-					case 'blame.currentLine.pullRequests.enabled': this.extState.editor.currentLinePullRequests = checked; break;
-					case 'blame.currentLine.scrollable': this.extState.editor.currentLineScrollable = checked; break;
-					case 'blame.statusBar': this.extState.editor.statusBarEnabled = checked; break;
-					case 'blame.statusBar.reduceFlicker': this.extState.editor.statusBarReduceFlicker = checked; break;
-					case 'codeLens.enabled': this.extState.editor.codeLensEnabled = checked; break;
-					case 'codeLens.recentChange.enabled': this.extState.editor.codeLensRecentChange = checked; break;
-					case 'codeLens.authors.enabled': this.extState.editor.codeLensAuthors = checked; break;
-					case 'hovers.enabled': this.extState.editor.hoversEnabled = checked; break;
-					case 'hovers.autolinks.enabled': this.extState.editor.hoversAutolinks = checked; break;
-					case 'fileBlame.compact': this.extState.editor.fileBlameCompact = checked; break;
-					case 'fileBlame.heatmap.enabled': this.extState.editor.fileBlameHeatmap = checked; break;
-					case 'fileBlame.highlight.enabled': this.extState.editor.fileBlameHighlightSameCommit = checked; break;
-					case 'fileHeatmap.fadeLines': this.extState.editor.fileHeatmapFadeLines = checked; break;
-					case 'menus.editor.enabled': this.extState.menus.editor = checked; break;
-					case 'menus.editorGroup.enabled': this.extState.menus.editorGroup = checked; break;
-					case 'menus.explorer.enabled': this.extState.menus.explorer = checked; break;
-					case 'menus.scm.enabled': this.extState.menus.scm = checked; break;
-					case 'menus.editorTab.enabled': this.extState.menus.editorTab = checked; break;
-				}
-				saveExt({ [k]: checked });
-				this.updateLivePreviews();
-			});
-		});
+		this.observeSettingsCategoryEvents(saveExt);
 
-		this.contentsElem.querySelectorAll<HTMLElement>('.settingsExtSegmented').forEach((group) => {
-			const extKey = group.dataset.extKey;
-			if (!extKey) return;
-			group.querySelectorAll<HTMLElement>('.settingsSegment').forEach((seg) => {
-				seg.addEventListener('click', () => {
-					const val = seg.dataset.value!;
-					if (extKey === 'graph.multiselect') this.extState.multiselect = <GG.GraphMultiSelectMode>val;
-					if (extKey === 'mode.active') this.extState.editor.activeMode = val;
-					group.querySelectorAll<HTMLElement>('.settingsSegment').forEach((s) => {
-						alterClass(s, CLASS_SELECTED, s === seg);
-						s.setAttribute('aria-checked', s === seg ? 'true' : 'false');
-					});
-					saveExt({ [extKey]: val });
-					this.updateLivePreviews();
-				});
-			});
-		});
+
+
 
 		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsAiTaskModelInput').forEach((inp) => {
 			inp.addEventListener('change', () => {
@@ -1437,46 +1274,6 @@ class SettingsWidget {
 			});
 		});
 
-		const startWorkFmt = <HTMLInputElement | null>document.getElementById('settingsStartWorkFormat');
-		if (startWorkFmt !== null) {
-			startWorkFmt.addEventListener('input', () => {
-				this.extState.startWorkBranchFormat = startWorkFmt.value || '${id}-${title}';
-				this.updateLivePreviews();
-			});
-			startWorkFmt.addEventListener('change', () => {
-				this.extState.startWorkBranchFormat = startWorkFmt.value || '${id}-${title}';
-				saveExt({ 'startWork.branchNameFormat': this.extState.startWorkBranchFormat });
-			});
-		}
-
-		const openLaunchpadBtn = document.getElementById('settingsOpenLaunchpadBtn');
-		if (openLaunchpadBtn !== null) {
-			openLaunchpadBtn.addEventListener('click', () => {
-				sendMessage({ command: 'openCompanionFeature', feature: 'openLaunchpad' });
-			});
-		}
-
-		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsMarkerTypeCheckbox').forEach((cb) => {
-			cb.addEventListener('change', () => {
-				const mt = cb.dataset.markerType as GG.GraphMarkerType | undefined;
-				if (!mt) return;
-				const set = new Set<GG.GraphMarkerType>(this.extState.scrollMarkersTypes);
-				if (cb.checked) set.add(mt);
-				else set.delete(mt);
-				this.extState.scrollMarkersTypes = Array.from(set);
-				saveExt({ 'graph.scrollMarkers.types': this.extState.scrollMarkersTypes });
-			});
-		});
-
-		const maxRefsSel = <HTMLSelectElement | null>document.getElementById('settingsMaxVisibleRefs');
-		if (maxRefsSel !== null) {
-			maxRefsSel.addEventListener('change', () => {
-				const v = parseInt(maxRefsSel.value, 10) || 0;
-				this.extState.maxVisibleRefsPerCommit = v;
-				saveExt({ 'graph.maxVisibleRefsPerCommit': v });
-			});
-		}
-
 		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsShortcutOverrideInput').forEach((inp) => {
 			inp.addEventListener('change', () => {
 				const act = inp.dataset.shortcutAct;
@@ -1507,8 +1304,7 @@ class SettingsWidget {
 				else hidden.add(sec);
 				this.extState.scmHiddenSections = Array.from(hidden);
 				saveExt({
-					'views.scm.grouped.hiddenSections': this.extState.scmHiddenSections,
-					'views.scm.hiddenSections': this.extState.scmHiddenSections
+					'views.scm.grouped.hiddenSections': this.extState.scmHiddenSections
 				});
 			});
 		});
@@ -1521,21 +1317,6 @@ class SettingsWidget {
 			});
 		});
 
-		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsScmFormatInput').forEach((inp) => {
-			const syncFmtPreview = () => {
-				const prop = inp.dataset.fmtProp as keyof SettingsWidget['extState']['scmFormats'] | undefined;
-				if (!prop) return;
-				this.extState.scmFormats[prop] = inp.value;
-				const exEl = this.contentsElem.querySelector<HTMLElement>('[data-fmt-example="' + prop + '"]');
-				if (exEl !== null) exEl.textContent = t('Example: {0}', this.formatSampleTemplate(inp.value));
-			};
-			inp.addEventListener('input', syncFmtPreview);
-			inp.addEventListener('change', () => {
-				syncFmtPreview();
-				const settingKey = inp.dataset.fmtKey;
-				if (settingKey) saveExt({ [settingKey]: inp.value });
-			});
-		});
 
 		this.contentsElem.querySelectorAll<HTMLInputElement>('.settingsAiInstructionInput').forEach((inp) => {
 			inp.addEventListener('change', () => {
@@ -1605,35 +1386,6 @@ class SettingsWidget {
 			});
 		});
 
-		const inlineBlameFmt = <HTMLInputElement | null>document.getElementById('settingsBlameInlineFormat');
-		if (inlineBlameFmt !== null) {
-			inlineBlameFmt.addEventListener('input', () => {
-				this.extState.editor.currentLineFormat = inlineBlameFmt.value;
-				this.updateLivePreviews();
-			});
-			inlineBlameFmt.addEventListener('change', () => {
-				this.extState.editor.currentLineFormat = inlineBlameFmt.value;
-				saveExt({ 'blame.currentLine.format': inlineBlameFmt.value });
-			});
-		}
-		const uncommBlameFmt = <HTMLInputElement | null>document.getElementById('settingsBlameUncommittedFormat');
-		if (uncommBlameFmt !== null) {
-			uncommBlameFmt.addEventListener('change', () => {
-				this.extState.editor.currentLineUncommittedFormat = uncommBlameFmt.value;
-				saveExt({ 'blame.currentLine.uncommittedFormat': uncommBlameFmt.value });
-			});
-		}
-		const sbBlameFmt = <HTMLInputElement | null>document.getElementById('settingsBlameStatusBarFormat');
-		if (sbBlameFmt !== null) {
-			sbBlameFmt.addEventListener('input', () => {
-				this.extState.editor.statusBarFormat = sbBlameFmt.value;
-				this.updateLivePreviews();
-			});
-			sbBlameFmt.addEventListener('change', () => {
-				this.extState.editor.statusBarFormat = sbBlameFmt.value;
-				saveExt({ 'blame.statusBar.format': sbBlameFmt.value });
-			});
-		}
 
 		const healthBtn = document.getElementById('settingsCheckRepoHealthBtn');
 		if (healthBtn !== null) {
@@ -1660,8 +1412,7 @@ class SettingsWidget {
 				this.extState.showGhostRefs
 			);
 		}
-		const ep = document.getElementById('settingsEditorLivePreview');
-		if (ep !== null) ep.innerHTML = this.renderEditorPreviewHtml(this.extState.editor);
+		this.updateEditorPreviews();
 		const ap = document.getElementById('settingsAutolinkLivePreview');
 		if (ap !== null) ap.innerHTML = this.renderAutolinkPreviewHtml(this.extState.autolinks, this.extState.startWorkBranchFormat);
 	}
@@ -1677,12 +1428,6 @@ class SettingsWidget {
 			'<div class="' + rowCls + '">' + node(c0, 'A') + '<span class="gitRef head">main</span><span>feat: integrate terminal &amp; editor suite</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Branch</span>' : '') + '</div>' +
 			'<div class="' + rowCls + '">' + node(c1, 'B') + '<span>fix: preserve topological multiselect</span>' + (ghostRefs ? '<span class="ghostRefBtn">+ Tag</span>' : '') + '</div>' +
 			'</div>';
-	}
-
-	private renderScmFormatFieldHtml(prop: keyof SettingsWidget['extState']['scmFormats'], settingKey: string, label: string, value: string) {
-		return '<div class="settingsFormatField"><label class="settingsKey">' + escapeHtml(label) + '</label>' +
-			'<input type="text" class="settingsInput mono settingsScmFormatInput" data-fmt-prop="' + prop + '" data-fmt-key="' + escapeHtml(settingKey) + '" value="' + escapeHtml(value) + '" spellcheck="false">' +
-			'<div class="settingsFormatExample" data-fmt-example="' + prop + '">' + escapeHtml(t('Example: {0}', this.formatSampleTemplate(value))) + '</div></div>';
 	}
 
 	private formatSampleTemplate(template: string, includePr: boolean = true): string {
@@ -1710,19 +1455,121 @@ class SettingsWidget {
 			.trim();
 	}
 
-	private renderEditorPreviewHtml(ed: SettingsWidget['extState']['editor']) {
-		const blameText = this.formatSampleTemplate(ed.currentLineFormat || '${author, }${agoOrDate}', ed.currentLinePullRequests) || 'You, 2h ago';
-		const statusBarText = this.formatSampleTemplate(ed.statusBarFormat || '${author}, ${ago}', ed.currentLinePullRequests) || 'You, 2h ago';
-		return '<div class="settingsLivePreviewHeader"><span>supercharge.ts</span><span>' + escapeHtml(t('Mode') + ': ' + ed.activeMode) + '</span></div>' +
-			'<div class="settingsEditorPreviewCode">' +
-			(ed.codeLensEnabled ? '<div class="settingsEditorCodeLens">' + (ed.codeLensRecentChange ? 'You, 2h ago' : '') + (ed.codeLensRecentChange && ed.codeLensAuthors ? ' | ' : '') + (ed.codeLensAuthors ? '2 authors (You)' : '') + '</div>' : '') +
-			'<div class="settingsEditorLine' + (ed.fileBlameHeatmap ? ' hot' : '') + '"><span class="settingsEditorLn">2</span><code>export function supercharge(code: string) {</code></div>' +
-			'<div class="settingsEditorLine' + (ed.fileBlameHighlightSameCommit ? ' changed' : '') + '"><span class="settingsEditorLn">3</span><code>&nbsp;&nbsp;return optimize(parse(code));</code>' +
-			(ed.currentLineEnabled ? '<span class="settingsEditorInlineBlame">' + escapeHtml(blameText) + '</span>' : '') +
-			'</div>' +
-			'<div class="settingsEditorLine"><span class="settingsEditorLn">4</span><code>}</code></div>' +
-			(ed.statusBarEnabled ? '<div class="settingsEditorStatusBarStrip">&#9673; ' + escapeHtml(statusBarText) + '</div>' : '') +
-			'</div>';
+	/**
+	 * Format a sample date (a fixed recent date) with a date format of the settings (empty => the short date).
+	 */
+	private formatSampleDate(pattern: string, localeSetting?: string) {
+		const date = new Date(2026, 10, 24, 9, 41, 7), zh = initialState.l10n !== null; // A translation bundle is only loaded for Simplified Chinese
+		const configured = typeof localeSetting === 'string' ? localeSetting : String(this.getSettingValue('defaultDateLocale') || '');
+		const locale = configured === 'system' ? undefined : configured !== '' && /^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(configured) ? configured : zh ? 'zh-CN' : 'en';
+		if (pattern.trim() === '') return date.toLocaleDateString(locale);
+		const pad = (n: number) => (n < 10 ? '0' : '') + n, h12 = date.getHours() % 12 === 0 ? 12 : date.getHours() % 12;
+		const ordinal = (n: number) => n + (n % 100 >= 11 && n % 100 <= 13 ? 'th' : n % 10 === 1 ? 'st' : n % 10 === 2 ? 'nd' : n % 10 === 3 ? 'rd' : 'th');
+		const tokens: { [token: string]: string } = {
+			YYYY: String(date.getFullYear()), YY: String(date.getFullYear()).slice(-2), MMMM: date.toLocaleString(locale, { month: 'long' }), MMM: date.toLocaleString(locale, { month: 'short' }),
+			MM: pad(date.getMonth() + 1), M: String(date.getMonth() + 1), DD: pad(date.getDate()), D: String(date.getDate()), dddd: date.toLocaleString(locale, { weekday: 'long' }), ddd: date.toLocaleString(locale, { weekday: 'short' }),
+			HH: pad(date.getHours()), H: String(date.getHours()), hh: pad(h12), h: String(h12), mm: pad(date.getMinutes()), ss: pad(date.getSeconds()), A: date.getHours() < 12 ? 'AM' : 'PM', a: date.getHours() < 12 ? 'am' : 'pm', Do: ordinal(date.getDate())
+		};
+		return pattern.replace(/\[([^\]]*)\]|YYYY|YY|MMMM|MMM|MM|M|DD|Do|D|dddd|ddd|HH|H|hh|h|mm|ss|A|a/g, (match: string, literal: string | undefined) => typeof literal === 'string' ? literal : tokens[match]);
+	}
+
+	/**
+	 * Format a sample of a blame annotation template, with the date style & format of the settings.
+	 */
+	private formatSampleBlame(template: string, includePr: boolean, dateFormat: string) {
+		const ed = this.extState.editor, date = this.formatSampleDate(dateFormat);
+		return this.formatSampleTemplate(template.replace(/\$\{agoOrDate([^}]*)\}/g, ed.dateStyle === 'absolute' ? '\u0001$1' : '${ago$1}').replace(/\$\{date([^}]*)\}/g, '\u0001$1'), includePr)
+			.replace(/\u0001[^\s]*/g, date) || t('You, 2 hours ago');
+	}
+
+	/**
+	 * Update the examples shown below the format templates of the Editor Annotations.
+	 */
+	private updateEditorExamples() {
+		const ed = this.extState.editor;
+		const set = (id: string, text: string) => {
+			const elem = document.getElementById(id);
+			if (elem !== null) elem.textContent = text;
+		};
+		set('settingsExample-inlineBlame', this.formatSampleBlame(ed.currentLineFormat, ed.currentLinePullRequests, ed.currentLineDateFormat));
+		set('settingsExample-uncommitted', this.formatSampleTemplate(ed.currentLineUncommittedFormat.replace(/\$\{ago\}/g, t('just now'))) || t('You, Uncommitted changes'));
+		set('settingsExample-inlineDate', this.formatSampleDate(ed.currentLineDateFormat));
+		set('settingsExample-statusBar', this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat));
+		set('settingsExample-statusBarDate', this.formatSampleDate(ed.statusBarDateFormat));
+		set('settingsExample-fileBlame', this.formatSampleBlame(ed.fileBlameFormat !== '' ? ed.fileBlameFormat : '${date} ${author|16?}', false, ed.fileBlameDateFormat !== '' ? ed.fileBlameDateFormat : 'YYYY-MM-DD'));
+	}
+
+	/**
+	 * Render the live preview of a feature of the Editor Annotations.
+	 * @param id The feature.
+	 * @param ed The state of the Editor Annotations settings.
+	 */
+	private renderEditorFeaturePreview(id: string, ed: GG.Writeable<GG.EditorAnnotationsSnapshot>) {
+		const CODE = ['export namespace GitMap {', '&nbsp;&nbsp;export function supercharge(code: string) {', '&nbsp;&nbsp;&nbsp;&nbsp;return optimize(parse(code));', '&nbsp;&nbsp;}', '}'];
+		const tab = '<div class="settingsLivePreviewHeader"><span>' + SVG_ICONS.file + 'supercharge.ts</span></div>';
+		const lines = (decorate: (index: number) => { cls?: string, before?: string, after?: string, style?: string }, scrollbar: string = '') =>
+			tab + '<div class="settingsEditorPreviewCode settingsEditorPreviewGrid">' + CODE.map((code, i) => {
+				const d = decorate(i);
+				return '<div class="settingsEditorLine' + (d.cls ? ' ' + d.cls : '') + '"' + (d.style ? ' style="' + d.style + '"' : '') + '>' + (d.before || '') + '<span class="settingsEditorLn">' + (i + 1) + '</span><code>' + code + '</code>' + (d.after || '') + '</div>';
+			}).join('') + (scrollbar !== '' ? '<div class="settingsEditorScrollbar">' + scrollbar + '</div>' : '') + '</div>';
+		switch (id) {
+			case 'inlineBlame':
+				return lines((i) => i === 2 ? { cls: 'current', after: ed.currentLineEnabled ? '<span class="settingsEditorInlineBlame">' + escapeHtml(this.formatSampleBlame(ed.currentLineFormat, ed.currentLinePullRequests, ed.currentLineDateFormat)) + '</span>' : '' } : {});
+			case 'statusBar': {
+				const blame = ed.statusBarEnabled ? '<span class="settingsStatusBarBlame">' + MENU_ICONS.commit + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>' : '';
+				return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div><div class="settingsStatusBarPreviewStrip"><span>' + MENU_ICONS.branch + 'main</span>' + (ed.statusBarAlignment === 'left' ? blame : '') + '<span class="grow"></span>' + (ed.statusBarAlignment === 'right' ? blame : '') + '<span>' + t('Ln 3, Col 12') + '</span><span>UTF-8</span></div>';
+			}
+			case 'hovers':
+				if (!ed.hoversEnabled) return '<div class="settingsFeatureEmpty">' + t('Blame hovers are turned off.') + '</div>';
+				return '<div class="settingsHoverPreview"><div class="settingsHoverHead"><span class="settingsHoverAvatar">Y</span><span><b>You</b>, ' + escapeHtml(this.formatSampleBlame('${agoOrDate}', false, '')) + (ed.hoversPullRequests ? ', ' + t('via {0}', '<span class="settingsHoverLink">PR #1</span>') : '') + '<br><b>Supercharged</b> ' + (ed.hoversAutolinks ? '<span class="settingsHoverLink">#1138</span>' : '#1138') + '</span></div>' +
+					(ed.hoversDetails ? '<div class="settingsHoverActions"><span class="settingsHoverLink">fe26af4</span>' + (ed.hoversPullRequests ? '<span class="settingsHoverLink">PR #1</span>' : '') + '<span>' + MENU_ICONS.history + '</span><span>' + MENU_ICONS.globe + '</span></div>' : '') +
+					(ed.hoversChanges ? '<div class="settingsHoverDiff"><span class="del">- return code;</span><span class="add">+ return optimize(parse(code));</span></div>' : '') + '</div>';
+			case 'fileBlame': {
+				const labels = [['You', 0.95, 'a'], ['You', 0.95, 'a'], ['You', 0.95, 'a'], ['Alex Kim', 0.35, 'b'], ['Sam Lee', 0.1, 'c']];
+				const fmt = ed.fileBlameFormat !== '' ? ed.fileBlameFormat : '${date} ${author|16?}', dateFmt = ed.fileBlameDateFormat !== '' ? ed.fileBlameDateFormat : 'YYYY-MM-DD';
+				return lines((i) => {
+					const [author, heat, hash] = <[string, number, string]>labels[i];
+					const first = !ed.fileBlameCompact || i === 0 || labels[i - 1][2] !== hash;
+					const colour = 'rgba(' + Math.round(10 + 236 * heat) + ',' + Math.round(96 + 10 * heat) + ',' + Math.round(246 - 236 * heat) + ',' + (0.35 + 0.65 * heat).toFixed(2) + ')';
+					const label = first ? escapeHtml(this.formatSampleBlame(fmt, false, dateFmt).replace(/^You|You$/, author)) : '';
+					const same = ed.fileBlameHighlightSameCommit && hash === 'a';
+					return {
+						cls: (i === 2 ? 'current' : '') + (same && ed.fileBlameHighlightLocations.includes('line') ? ' changed' : ''),
+						before: '<span class="settingsFileBlameLabel" style="' + (ed.fileBlameHeatmap ? 'border-' + ed.fileBlameHeatmapLocation + '-color:' + colour : 'border-color:transparent') + '">' + label + '</span>' +
+							(same && ed.fileBlameHighlightLocations.includes('gutter') ? '<span class="settingsGutterMark same"></span>' : '<span class="settingsGutterMark"></span>')
+					};
+				}, ed.fileBlameHighlightSameCommit && ed.fileBlameHighlightLocations.includes('overviewRuler') ? '<span style="top:6%"></span><span style="top:26%"></span><span style="top:46%"></span>' : '');
+			}
+			case 'fileChanges':
+				return lines((i) => i === 2 ? {
+					cls: ed.fileChangesLocations.includes('line') ? 'changedLocal' : '',
+					before: '<span class="settingsGutterMark' + (ed.fileChangesLocations.includes('gutter') ? ' local' : '') + '"></span>'
+				} : { before: '<span class="settingsGutterMark"></span>' }, ed.fileChangesLocations.includes('overviewRuler') ? '<span class="local" style="top:46%"></span>' : '');
+			case 'fileHeatmap': {
+				const ages = [400, 300, 3, 120, 20]; // Days since each line changed
+				const heatColour = (days: number) => days <= ed.fileHeatmapAgeThreshold ? ed.fileHeatmapHotColor : ed.fileHeatmapColdColor;
+				return lines((i) => ({
+					cls: ed.fileHeatmapLocations.includes('line') ? 'heatLine' : '',
+					style: (ed.fileHeatmapLocations.includes('line') ? 'background:' + heatColour(ages[i]) + '22;' : '') + (ed.fileHeatmapFadeLines && ages[i] > ed.fileHeatmapAgeThreshold ? 'opacity:.55' : ''),
+					before: '<span class="settingsGutterMark" style="' + (ed.fileHeatmapLocations.includes('gutter') ? 'background:' + heatColour(ages[i]) : '') + '"></span>'
+				}), ed.fileHeatmapLocations.includes('overviewRuler') ? ages.map((days, i) => '<span style="top:' + (6 + i * 20) + '%;background:' + heatColour(days) + '"></span>').join('') : '');
+			}
+			case 'codeLens':
+				return tab + '<div class="settingsEditorPreviewCode">' + (ed.codeLensEnabled ? '<div class="settingsEditorCodeLens">' + [ed.codeLensRecentChange ? escapeHtml(this.formatSampleBlame('${author}, ${agoOrDate}', false, '')) : '', ed.codeLensAuthors ? t('2 authors (You and Alex Kim)') : ''].filter((s) => s !== '').join(' | ') + '</div>' : '') +
+					'<div class="settingsEditorLine"><span class="settingsEditorLn">2</span><code>' + CODE[1] + '</code></div><div class="settingsEditorLine"><span class="settingsEditorLn">3</span><code>' + CODE[2] + '</code></div></div>';
+		}
+		return '';
+	}
+
+	/**
+	 * Update the live previews & examples of the Editor Annotations.
+	 */
+	private updateEditorPreviews() {
+		['inlineBlame', 'statusBar', 'hovers', 'fileBlame', 'fileChanges', 'fileHeatmap', 'codeLens'].forEach((id) => {
+			const elem = document.getElementById('settingsPreview-' + id);
+			if (elem !== null) elem.innerHTML = this.renderEditorFeaturePreview(id, this.extState.editor);
+		});
+		this.updateEditorExamples();
 	}
 
 	private renderAutolinkPreviewHtml(rules: ReadonlyArray<GG.AutolinkRule>, branchFmt: string) {
@@ -2175,6 +2022,345 @@ class SettingsWidget {
 		this.maximizeBtnElem.title = label;
 		this.maximizeBtnElem.setAttribute('aria-label', label);
 		alterClass(this.maximizeBtnElem, CLASS_ACTIVE, isMaximized);
+	}
+
+	/* Categories (declared in settingsCategories.ts, like the Settings page of GitLens) */
+
+	/**
+	 * Get the current value of an Extension Setting (`#menus` => is any menu location turned on).
+	 */
+	private getSettingValue(key: string): unknown {
+		if (key === '#menus') return SETTINGS_MENU_LOCATIONS.some((location) => this.settingValues[location] !== false);
+		return this.settingValues[key];
+	}
+
+	/**
+	 * Render the categories of the Settings panel (each a section of the navigation rail).
+	 * @param customs The HTML of the custom blocks of the categories (e.g. the AI panel).
+	 * @param thisRepositoryHtml The section of the settings of this repository (shown after the Views).
+	 */
+	private renderSettingsCategories(customs: { readonly [id: string]: string }, thisRepositoryHtml: string) {
+		const categories = getSettingsCategories();
+		return categories.map((category, index) => this.renderSettingsCategory(category, customs) +
+			(category.group === 'views' && (index + 1 === categories.length || categories[index + 1].group !== 'views') ? thisRepositoryHtml : '')
+		).join('');
+	}
+
+	/**
+	 * Count the switches of a category that are on (shown in the navigation rail, e.g. "4/5").
+	 */
+	private getCategoryCounts(category: SettingsCategoryDef) {
+		const checks = category.controls.filter((control): control is Extract<SettingsControl, { kind: 'check' }> => control.kind === 'check' && typeof control.path === 'undefined');
+		const keys = (category.master ? [category.master.key] : []).concat(checks.map((control) => control.key));
+		return { enabled: keys.filter((key) => this.isSettingChecked(key, checks.find((c) => c.key === key))).length, total: keys.length };
+	}
+
+	private isSettingChecked(key: string, control?: { readonly valueOn?: unknown, readonly path?: string }) {
+		let value = this.getSettingValue(key);
+		if (control && typeof control.path === 'string') value = value !== null && typeof value === 'object' ? (<{ [key: string]: unknown }>value)[control.path] : undefined;
+		return control && typeof control.valueOn !== 'undefined' ? value === control.valueOn : !!value;
+	}
+
+	private renderSettingsCategory(category: SettingsCategoryDef, customs: { readonly [id: string]: string }) {
+		const counts = this.getCategoryCounts(category);
+		const preview = category.preview === 'graph'
+			? '<div class="settingsLivePreview" id="settingsGraphLivePreview">' + this.renderGraphPreviewHtml(
+				(this.appearance.colourPresets.find((p) => p.name === this.appearance.colourPreset) || { colours: initialState.config.graph.colours }).colours,
+				initialState.config.graph.density === GG.GraphDensity.Compact ? 'Compact' : 'Comfortable',
+				initialState.config.graph.nodeStyle === GG.GraphNodeStyle.Avatar ? 'Avatar' : 'Dot',
+				this.extState.showGhostRefs) + '</div>'
+			: typeof category.preview === 'string' ? '<div class="settingsLivePreview settingsFeaturePreview" id="settingsPreview-' + category.preview + '">' + this.renderEditorFeaturePreview(category.preview, this.extState.editor) + '</div>' : '';
+		return '<div class="settingsSection settingsCategory" id="settingsCategory-' + category.id + '" data-category="' + category.id + '" data-nav-group="' + category.group + '" data-nav-icon="' + category.icon + '" data-nav-label="' + escapeHtml(category.name) + '"' +
+			(counts.total > 0 ? ' data-nav-enabled="' + counts.enabled + '" data-nav-total="' + counts.total + '"' : '') + '>' +
+			'<h3 class="settingsCategoryHeader"><span class="settingsFeatureIcon">' + MENU_ICONS[category.icon] + '</span><span class="settingsFeatureHeading"><span class="settingsFeatureTitle">' + escapeHtml(category.name) + '</span><span class="settingsFeatureDesc">' + escapeHtml(category.hint) + '</span></span></h3>' +
+			(category.command ? '<div class="settingsCategoryTip">' + MENU_ICONS.warning + t('Tip — run {0} to override this setting for the current window.', '<a class="settingsRunCommand" data-run-command="' + escapeHtml(category.command.command) + '" tabindex="-1">' + escapeHtml(category.command.title) + '</a>') + '</div>' : '') +
+			(preview !== '' ? '<div class="settingsFeaturePreviewLabel">' + t('Live Preview') + '</div>' + preview : '') +
+			'<div class="settingsCategoryBody">' +
+			(category.master ? this.renderSettingsControl({ kind: 'check', key: category.master.key, label: category.master.label }, customs, true) : '') +
+			category.controls.map((control) => this.renderSettingsControl(control, customs, false)).join('') +
+			'</div>' +
+			'<div class="settingsCategoryFooter">' + MENU_ICONS.settings + t('More options: open the Settings editor and search for {0}', '<a class="settingsOpenSearch" data-settings-search="' + escapeHtml(category.search) + '" tabindex="-1">' + escapeHtml(category.search) + '</a>') + '</div>' +
+			'</div>';
+	}
+
+	/**
+	 * Render a control of a category.
+	 * @param control The control.
+	 * @param customs The HTML of the custom blocks.
+	 * @param master Is it the switch of the whole category.
+	 */
+	private renderSettingsControl(control: SettingsControl, customs: { readonly [id: string]: string }, master: boolean): string {
+		if (control.kind === 'custom') return '<div class="settingsCustomBlock" data-custom="' + control.id + '">' + (customs[control.id] || '') + '</div>';
+		const indent = typeof control.indent === 'number' ? ' indent' + control.indent : '';
+		const visible = typeof control.visibleWhen === 'string' ? ' data-visible-when="' + escapeHtml(control.visibleWhen) + '"' : '';
+		if (control.kind === 'info') return '<div class="settingsFeatureInfo settingsControl' + (control.boxed ? ' boxed' : '') + indent + '"' + visible + '>' + SVG_ICONS.info + '<span>' + escapeHtml(control.text) + '</span></div>';
+		const enabled = typeof control.enabledWhen === 'string' ? ' data-enabled-when="' + escapeHtml(control.enabledWhen) + '"' : '';
+		const path = 'path' in control && typeof control.path === 'string' ? control.path : null;
+		const raw = this.getSettingValue(control.key);
+		const value = path !== null ? (raw !== null && typeof raw === 'object' ? (<{ [key: string]: unknown }>raw)[path] : undefined) : raw;
+		const attrs = ' data-skey="' + escapeHtml(control.key) + '"' + (path !== null ? ' data-path="' + escapeHtml(path) + '"' : '') + (control.field ? ' data-field="' + control.field + '"' : '');
+		const hint = control.hint ? '<div class="settingsFeatureInfo">' + SVG_ICONS.info + '<span>' + escapeHtml(control.hint) + '</span></div>' : '';
+		const wrap = (inner: string) => '<div class="settingsRow settingsControl' + (master ? ' master' : '') + indent + '"' + enabled + visible + '>' + inner + hint + '</div>';
+		switch (control.kind) {
+			case 'check': {
+				const checked = typeof control.valueOn !== 'undefined' ? value === control.valueOn : !!value;
+				return wrap('<label class="settingsFeatureCheck"><input type="checkbox" class="settingsCtl" data-kind="check"' + attrs +
+					(typeof control.valueOn !== 'undefined' ? ' data-value-on="' + escapeHtml(JSON.stringify(control.valueOn)) + '" data-value-off="' + escapeHtml(JSON.stringify(control.valueOff)) + '"' : '') +
+					(checked ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span>' + escapeHtml(control.label) + '</label>');
+			}
+			case 'select':
+				return wrap('<div class="settingsFeatureLabel">' + escapeHtml(control.label) + '</div><select class="settingsSelect settingsCtl" data-kind="select"' + attrs + (control.numeric ? ' data-numeric="1"' : '') + ' tabindex="-1">' +
+					control.options.map((o) => '<option value="' + escapeHtml(o[0]) + '"' + (o[0] === String(value) ? ' selected' : '') + '>' + escapeHtml(o[1]) + '</option>').join('') + '</select>');
+			case 'segmented':
+				return wrap('<span class="settingsLabel">' + escapeHtml(control.label) + '</span><div class="settingsSegmentedCtl" role="radiogroup"' + attrs + '>' +
+					control.options.map((o) => '<button type="button" role="radio" class="settingsSegment settingsCtl' + (o[0] === String(value) ? ' selected' : '') + '" aria-checked="' + (o[0] === String(value)) + '" data-kind="segment"' + attrs + ' data-value="' + escapeHtml(o[0]) + '" tabindex="-1">' + escapeHtml(o[1]) + '</button>').join('') + '</div>');
+			case 'text':
+				return wrap('<div class="settingsFeatureLabel">' + escapeHtml(control.label) + '</div><div class="settingsTextRow"><input type="text" class="settingsInput mono settingsCtl" data-kind="text"' + attrs +
+					(control.example ? ' data-example="' + control.example + '" data-example-default="' + escapeHtml(control.exampleDefault || control.placeholder || '') + '"' : '') +
+					' value="' + escapeHtml(typeof value === 'string' ? value : '') + '" placeholder="' + escapeHtml(control.placeholder || '') + '" spellcheck="false" tabindex="-1">' +
+					(control.tokens ? '<select class="settingsSelect settingsTokenSelect" data-token-for="' + escapeHtml(control.key) + '" title="' + escapeHtml(t('Insert a token')) + '" tabindex="-1"><option value="">' + escapeHtml(t('Insert') + '…') + '</option>' + getSettingsTokens(control.tokens).map((tk) => '<option value="' + escapeHtml(tk[0]) + '">' + escapeHtml(tk[0] + ' — ' + tk[1]) + '</option>').join('') + '</select>' : '') +
+					'</div>' + (control.example ? '<div class="settingsFeatureExample">' + t('Example:') + ' <span class="settingsExample" data-example-for="' + escapeHtml(control.key) + '"></span></div>' : ''));
+			case 'number':
+				return wrap('<span class="settingsLabel">' + escapeHtml(control.label) + '</span><input type="number" class="settingsInput settingsCtl" data-kind="number"' + attrs + (typeof control.min === 'number' ? ' min="' + control.min + '"' : '') + ' value="' + escapeHtml(typeof value === 'number' ? String(value) : '') + '" placeholder="' + escapeHtml(control.placeholder || '') + '" style="width:100px" tabindex="-1">');
+			case 'colour':
+				return wrap('<span class="settingsLabel">' + escapeHtml(control.label) + '</span><input type="color" class="settingsCtl" data-kind="colour"' + attrs + ' value="' + escapeHtml(typeof value === 'string' ? value : '#000000') + '" tabindex="-1">');
+			case 'checkgroup': {
+				const selected = Array.isArray(value) ? value : [];
+				return wrap((control.label !== '' ? '<div class="settingsFeatureLabel">' + escapeHtml(control.label) + '</div>' : '') + '<div class="settingsLocationCards">' +
+					control.options.map((o) => '<label class="settingsLocationCard' + (selected.includes(o[0]) ? ' selected' : '') + '"><input type="checkbox" class="settingsCtl" data-kind="checkgroup"' + attrs + ' data-value="' + escapeHtml(o[0]) + '"' + (selected.includes(o[0]) ? ' checked' : '') + ' tabindex="-1"><span class="customCheckbox"></span><span class="settingsLocationCardText"><b>' + escapeHtml(o[1]) + '</b><span>' + escapeHtml(o[2]) + '</span></span></label>').join('') + '</div>');
+			}
+		}
+	}
+
+	/**
+	 * Render the selects of the actions of the editor context menu (`git-map.editorContextMenu`: in the Git Map submenu, directly in the
+	 * context menu, or hidden).
+	 */
+	private renderEditorContextMenuHtml() {
+		const placements: ReadonlyArray<[string, string]> = [['Submenu', t('in the Git Map submenu')], ['Context Menu', t('directly in the context menu')], ['Hidden', t('hidden')]];
+		return (<const>[['viewLineHistory', t('View Line History')], ['viewLineHistoryInGitMap', t('View Line History in Git Map')], ['viewFileHistory', t('View File History in Git Map')], ['visualFileHistory', t('Visual File History')], ['toggleFileBlame', t('Toggle File Blame')], ['toggleLineBlame', t('Toggle Current Line Blame')], ['openPreviousRevision', t('Show Previous Revision')], ['copyRemoteLinkToLines', t('Copy Remote Link to Lines')], ['openLinesOnRemote', t('Open Lines on Remote')]])
+			.map((action) => this.renderSettingsControl({ kind: 'select', key: 'editorContextMenu', path: action[0], label: action[1], options: placements, indent: 1, enabledWhen: 'menus.editor.enabled' }, {}, false)).join('');
+	}
+
+	/**
+	 * Render the providers & models of the AI features: the default, and the model of each task (which can use the default).
+	 */
+	private renderAiModelsHtml() {
+		const ai = this.ai, taskModels: GG.AiTaskModelsConfig = ai.taskModels || {};
+		const providerName = (id: string) => {
+			const preset = ai.presets.find((p) => p.id === id);
+			return id === 'VS Code' ? t('VS Code (Built-in / Copilot)') : preset ? preset.name : id;
+		};
+		const row = (id: string, icon: string, title: string, value: string) => '<div class="settingsAiModelRow"><span class="settingsAiModelIcon">' + icon + '</span><span class="settingsAiModelText"><b>' + escapeHtml(title) + '</b><span>' + escapeHtml(value) + '</span></span>' +
+			'<button type="button" class="settingsBtn settingsAiSwitchBtn" data-ai-switch="' + id + '" tabindex="-1">' + MENU_ICONS.fetch + t('Switch') + '</button></div>';
+		const defaultValue = providerName(ai.provider) + ' — ' + (ai.model !== '' ? ai.model : t('the default model'));
+		const taskValue = (task: GG.AiTaskKey) => {
+			const override = taskModels[task];
+			return override && (override.provider || override.model) ? providerName(override.provider || ai.provider) + ' — ' + (override.model || t('the default model')) : t('Default') + ' — ' + defaultValue;
+		};
+		return '<div class="settingsAiModelRows">' +
+			row('default', MENU_ICONS.sparkle, t('Default AI Provider & Model'), defaultValue) +
+			row('commitMessage', MENU_ICONS.edit, t('Composing Commits'), taskValue('commitMessage')) +
+			row('reviewChanges', MENU_ICONS.files, t('Reviewing Changes'), taskValue('reviewChanges')) +
+			row('resolveConflicts', MENU_ICONS.merge, t('Resolving Conflicts'), taskValue('resolveConflicts')) +
+			row('explainAndSearch', MENU_ICONS.subject, t('Explaining & Searching'), taskValue('explainAndSearch')) +
+			'</div>';
+	}
+
+	/**
+	 * Render the hosting services Git Map can connect to, and whether each is connected.
+	 */
+	private renderCloudIntegrationsHtml() {
+		if (this.hostingIntegrations === null) return '<div class="settingsDescription">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</div>';
+		return '<div class="settingsIntegrationRows">' + this.hostingIntegrations.map((integration) =>
+			'<div class="settingsIntegrationRow' + (integration.connected ? ' connected' : '') + '"><span class="settingsIntegrationIcon">' + (integration.provider === 'github' || integration.provider === 'gitlab' ? MENU_ICONS.pullRequest : MENU_ICONS.cloud) + '</span>' +
+			'<span class="settingsIntegrationText"><b>' + escapeHtml(integration.name) + '</b><span>' + escapeHtml(integration.host + ' · ' + (integration.supports === 'prs-issues' ? t('Supports pull requests & issues') : t('Supports pull requests'))) + '</span></span>' +
+			(integration.connected
+				? '<span class="settingsIntegrationStatus">' + SVG_ICONS.check + t('Connected') + '</span><button type="button" class="settingsBtn" data-integration-disconnect="' + escapeHtml(integration.host) + '" tabindex="-1">' + MENU_ICONS.trash + t('Disconnect') + '</button>'
+				: '<button type="button" class="settingsBtn" data-integration-connect="' + escapeHtml(integration.host) + '" tabindex="-1">' + MENU_ICONS.key + t('Connect') + ELLIPSIS + '</button>') +
+			'</div>'
+		).join('') + '</div>' +
+			'<div class="settingsRow"><button type="button" class="settingsBtn" data-integration-connect="" tabindex="-1">' + MENU_ICONS.plus + t('Connect Another Host') + ELLIPSIS + '</button><button type="button" class="settingsBtn" data-integration-refresh="1" tabindex="-1">' + MENU_ICONS.fetch + t('Sync Status') + '</button></div>';
+	}
+
+	/**
+	 * Process the hosting services Git Map can connect to, loaded by the extension.
+	 */
+	public processLoadHostingIntegrations(msg: GG.ResponseLoadHostingIntegrations) {
+		this.hostingIntegrations = msg.integrations;
+		const block = this.contentsElem.querySelector<HTMLElement>('[data-custom="cloudIntegrations"]');
+		if (block !== null) block.innerHTML = this.renderCloudIntegrationsHtml();
+	}
+
+	/**
+	 * Get the example of a format, as it's shown below its text control.
+	 */
+	private getSettingExample(kind: SettingsExampleKind, key: string, value: string, fallback: string) {
+		const format = value !== '' ? value : fallback;
+		const get = (k: string) => {
+			const v = this.getSettingValue(k);
+			return typeof v === 'string' ? v : '';
+		};
+		const defaultDate = get('defaultDateFormat') !== '' ? get('defaultDateFormat') : get('defaultDateShortFormat');
+		switch (kind) {
+			case 'blame': {
+				const dateKey = key.startsWith('blame.statusBar') ? 'blame.statusBar.dateFormat' : key.startsWith('fileBlame') ? 'fileBlame.dateFormat' : 'blame.currentLine.dateFormat';
+				const prKey = key.startsWith('blame.statusBar') ? 'blame.statusBar.pullRequests.enabled' : key.startsWith('fileBlame') ? '' : 'blame.currentLine.pullRequests.enabled';
+				const dateFormat = get(dateKey) !== '' ? get(dateKey) : key.startsWith('fileBlame') ? (get('defaultDateShortFormat') !== '' ? get('defaultDateShortFormat') : 'YYYY-MM-DD') : defaultDate;
+				return this.formatSampleBlame(format !== '' ? format : '${author}, ${agoOrDate}', prKey !== '' && this.getSettingValue(prKey) !== false, dateFormat);
+			}
+			case 'uncommitted': return this.formatSampleTemplate(format.replace(/\$\{ago\}/g, t('just now'))) || t('You, Uncommitted changes');
+			case 'date': return this.formatSampleDate(format !== '' ? format : defaultDate !== '' ? defaultDate : 'MMMM Do, YYYY h:mma');
+			case 'shortDate': return this.formatSampleDate(format !== '' ? format : get('defaultDateShortFormat'));
+			case 'time': return this.formatSampleDate(format !== '' ? format : 'h:mma');
+			case 'locale': return this.formatSampleDate(defaultDate !== '' ? defaultDate : 'MMMM Do, YYYY h:mma', value);
+			case 'branch': return format.replace(/\$\{id\}/g, 'ABC-123').replace(/\$\{title\}/g, 'update-login-flow').replace(/\s+/g, '-');
+			case 'tooltip': return this.formatSampleTemplate(format.replace(/\\n/g, ' '));
+			default: return this.formatSampleTemplate(format);
+		}
+	}
+
+	/**
+	 * Update the state of the controls of the categories: which are enabled & visible (from the settings they depend on), the examples of
+	 * the formats, the counts of the navigation rail, and the live previews.
+	 */
+	private updateSettingsCategoryState() {
+		const getValue = (key: string) => this.getSettingValue(key);
+		this.contentsElem.querySelectorAll<HTMLElement>('[data-visible-when]').forEach((elem) => {
+			elem.style.display = evaluateSettingsExpression(elem.dataset.visibleWhen!, getValue) ? '' : 'none';
+		});
+		this.contentsElem.querySelectorAll<HTMLElement>('[data-enabled-when]').forEach((elem) => {
+			const enabled = evaluateSettingsExpression(elem.dataset.enabledWhen!, getValue);
+			alterClass(elem, 'settingsControlDisabled', !enabled);
+			elem.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>('input, select, button').forEach((input) => input.disabled = !enabled);
+		});
+		this.contentsElem.querySelectorAll<HTMLInputElement>('input[data-kind="text"][data-example]').forEach((input) => {
+			const example = this.contentsElem.querySelector<HTMLElement>('.settingsExample[data-example-for="' + input.dataset.skey + '"]');
+			if (example !== null) example.textContent = this.getSettingExample(<SettingsExampleKind>input.dataset.example, input.dataset.skey!, input.value, input.dataset.exampleDefault || '');
+		});
+		let navChanged = false;
+		getSettingsCategories().forEach((category) => {
+			const section = document.getElementById('settingsCategory-' + category.id), counts = this.getCategoryCounts(category);
+			if (section !== null && counts.total > 0 && section.dataset.navEnabled !== String(counts.enabled)) {
+				section.dataset.navEnabled = String(counts.enabled);
+				navChanged = true;
+			}
+		});
+		if (navChanged) this.renderNavRail();
+	}
+
+	/**
+	 * Handle the controls of the categories: each saves its Extension Setting, and updates the panel.
+	 * @param saveExt Saves Extension Settings.
+	 */
+	private observeSettingsCategoryEvents(saveExt: (patch: { [key: string]: unknown }) => void) {
+		const apply = (elem: HTMLElement, value: unknown, save: boolean) => {
+			const key = elem.dataset.skey!, path = elem.dataset.path;
+			let stored: unknown = value;
+			if (typeof path === 'string') {
+				const current = this.settingValues[key];
+				stored = Object.assign({}, current !== null && typeof current === 'object' ? current : {}, { [path]: value });
+			}
+			if (elem.dataset.field) (<{ [field: string]: unknown }>this.extState.editor)[elem.dataset.field] = value;
+			if (key === 'startWork.branchNameFormat') this.extState.startWorkBranchFormat = typeof value === 'string' && value !== '' ? value : '${id}-${title}';
+			if (key === 'graph.showGhostRefsOnRowHover') this.extState.showGhostRefs = !!value;
+			if (key === '#menus') {
+				const patch: { [key: string]: unknown } = {};
+				SETTINGS_MENU_LOCATIONS.forEach((location) => {
+					this.settingValues[location] = value;
+					patch[location] = value;
+					this.contentsElem.querySelectorAll<HTMLInputElement>('input[data-skey="' + location + '"]').forEach((input) => input.checked = !!value);
+				});
+				if (save) saveExt(patch);
+			} else {
+				this.settingValues[key] = stored;
+				if (save) saveExt({ [key]: stored });
+			}
+			this.updateSettingsCategoryState();
+			this.updateLivePreviews();
+		};
+		this.contentsElem.addEventListener('change', (e) => {
+			const target = <HTMLElement>e.target;
+			if (target.classList.contains('settingsTokenSelect')) {
+				const select = <HTMLSelectElement>target, input = this.contentsElem.querySelector<HTMLInputElement>('input[data-kind="text"][data-skey="' + select.dataset.tokenFor + '"]');
+				if (input !== null && select.value !== '') {
+					const start = input.selectionStart !== null ? input.selectionStart : input.value.length, end = input.selectionEnd !== null ? input.selectionEnd : start;
+					input.value = input.value.substring(0, start) + select.value + input.value.substring(end);
+					apply(input, input.value, true);
+				}
+				select.value = '';
+				return;
+			}
+			if (!target.classList.contains('settingsCtl')) return;
+			const input = <HTMLInputElement>target;
+			switch (target.dataset.kind) {
+				case 'check':
+					apply(input, typeof input.dataset.valueOn === 'string' ? JSON.parse(input.checked ? input.dataset.valueOn : input.dataset.valueOff!) : input.checked, true);
+					break;
+				case 'select': {
+					const select = <HTMLSelectElement><HTMLElement>target;
+					apply(select, select.dataset.numeric ? parseInt(select.value, 10) : select.value, true);
+					break;
+				}
+				case 'text':
+				case 'colour':
+					apply(input, input.value, true);
+					break;
+				case 'number': {
+					const value = parseInt(input.value, 10), min = parseInt(input.min || '0', 10);
+					if (!isNaN(value) && value >= min) apply(input, value, true);
+					break;
+				}
+				case 'checkgroup': {
+					const values: string[] = [];
+					this.contentsElem.querySelectorAll<HTMLInputElement>('input[data-kind="checkgroup"][data-skey="' + input.dataset.skey + '"]').forEach((other) => {
+						if (other.checked) values.push(other.dataset.value!);
+						const card = other.closest('.settingsLocationCard');
+						if (card !== null) alterClass(<HTMLElement>card, CLASS_SELECTED, other.checked);
+					});
+					apply(input, values, true);
+					break;
+				}
+			}
+		});
+		this.contentsElem.addEventListener('input', (e) => {
+			const target = <HTMLElement>e.target;
+			if (target.classList.contains('settingsCtl') && (target.dataset.kind === 'text' || target.dataset.kind === 'colour')) apply(target, (<HTMLInputElement>target).value, false);
+		});
+		this.contentsElem.addEventListener('click', (e) => {
+			const target = <HTMLElement>e.target;
+			const segment = <HTMLElement | null>target.closest('.settingsSegment.settingsCtl');
+			if (segment !== null && !(<HTMLButtonElement>segment).disabled) {
+				segment.parentElement!.querySelectorAll<HTMLElement>('.settingsSegment').forEach((s) => {
+					alterClass(s, CLASS_SELECTED, s === segment);
+					s.setAttribute('aria-checked', s === segment ? 'true' : 'false');
+				});
+				apply(segment, segment.dataset.value, true);
+				return;
+			}
+			const run = <HTMLElement | null>target.closest('[data-run-command]');
+			if (run !== null) {
+				sendMessage({ command: 'runSettingsCommand', settingsCommand: run.dataset.runCommand! });
+				return;
+			}
+			const search = <HTMLElement | null>target.closest('[data-settings-search]');
+			if (search !== null) {
+				sendMessage({ command: 'openSettingsSearch', query: search.dataset.settingsSearch! });
+				return;
+			}
+			const aiSwitch = <HTMLElement | null>target.closest('[data-ai-switch]');
+			if (aiSwitch !== null) {
+				sendMessage({ command: 'openCompanionFeature', feature: 'aiSwitchModel', ref: aiSwitch.dataset.aiSwitch });
+				return;
+			}
+			const connect = <HTMLElement | null>target.closest('[data-integration-connect]'), disconnect = <HTMLElement | null>target.closest('[data-integration-disconnect]');
+			if (connect !== null || disconnect !== null) {
+				sendMessage({ command: 'openCompanionFeature', feature: connect !== null ? 'connectIntegration' : 'disconnectIntegration', ref: connect !== null ? connect.dataset.integrationConnect : disconnect!.dataset.integrationDisconnect });
+				return;
+			}
+			if (target.closest('[data-integration-refresh]') !== null) sendMessage({ command: 'loadHostingIntegrations' });
+		});
+		this.updateSettingsCategoryState();
 	}
 
 	private renderNavRail() {

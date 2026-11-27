@@ -11,6 +11,9 @@ import { FileBlame } from './fileBlame';
 import { FileTimeMachine } from './fileTimeMachine';
 import { GitGraphView } from './gitGraphView';
 import { LineBlame } from './lineBlame';
+import { switchAiModel } from './aiModelPicker';
+import { InspectView } from './inspectView';
+import { RepoBrowser } from './repoBrowser';
 import { LineHistory } from './lineHistory';
 import { Logger } from './logger';
 import { MultiRepoOverview } from './multiRepoOverview';
@@ -109,6 +112,8 @@ export async function activate(context: vscode.ExtensionContext) {
 	const removeFromHistory = new RemoveFromHistory(context, dataSource, repoManager, logger);
 	const visualFileHistory = new VisualFileHistory(dataSource, repoManager, logger);
 	const fileTimeMachine = new FileTimeMachine(dataSource, repoManager, logger);
+	const inspectView = new InspectView(dataSource, repoManager, logger);
+	const repoBrowser = new RepoBrowser(dataSource, repoManager, extensionState, logger);
 	setAiSecretStorage(context.secrets);
 	setHostingSecretStorage(context.secrets);
 	setSettingFallbackStorage(context.globalState);
@@ -167,11 +172,14 @@ export async function activate(context: vscode.ExtensionContext) {
 	};
 
 	context.subscriptions.push(
+		inspectView,
+		repoBrowser,
 		vscode.commands.registerCommand('git-map.ai.generateCommitMessage', (arg?: unknown) => generateScmCommitMessage(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.ai.setApiKey', (key?: unknown) => setApiKey(key)),
+		vscode.commands.registerCommand('git-map.ai.switchModel', (arg?: unknown) => switchAiModel(arg)),
 		vscode.commands.registerCommand('git-map.ai.clearApiKey', () => clearApiKey()),
-		vscode.commands.registerCommand('git-map.setHostingToken', () => setHostingTokenCommand()),
-		vscode.commands.registerCommand('git-map.clearHostingToken', () => clearHostingTokenCommand()),
+		vscode.commands.registerCommand('git-map.setHostingToken', (host?: unknown) => setHostingTokenCommand(host)),
+		vscode.commands.registerCommand('git-map.clearHostingToken', (host?: unknown) => clearHostingTokenCommand(host)),
 		vscode.commands.registerCommand('git-map.checkoutPullRequest', (arg?: unknown) => checkoutPullRequestCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.exportChangelog', (arg?: unknown) => exportChangelogCommand(dataSource, repoManager, extensionState, arg)),
 		vscode.commands.registerCommand('git-map.startWork', (arg?: unknown) => startWorkCommand(dataSource, repoManager, extensionState, arg)),

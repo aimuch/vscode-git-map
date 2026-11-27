@@ -10,6 +10,8 @@ import {
 	AnnotationToggleMode,
 	AppearanceConfig,
 	AutolinkRule,
+	BlameStatusBarCommand,
+	CodeLensCommand,
 	CommitDetailsViewConfig,
 	CommitDetailsViewLocation,
 	CommitOrdering,
@@ -438,6 +440,7 @@ class Config {
 			scrollMarkers: this.graphScrollMarkers,
 			shortcutOverrides: this.graphShortcutOverrides,
 			showGhostRefsOnRowHover: this.graphShowGhostRefs,
+			showUpstreamStatus: !!this.config.get('graph.showUpstreamStatus', true),
 			style: this.getRenamedExtensionSetting<string>('graph.style', 'graphStyle', 'rounded') === 'angular'
 				? GraphStyle.Angular
 				: GraphStyle.Rounded,
@@ -687,20 +690,27 @@ class Config {
 	get codeLensConfig(): {
 		readonly enabled: boolean,
 		readonly recentChangeEnabled: boolean,
-		readonly recentChangeCommand: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit',
+		readonly recentChangeCommand: CodeLensCommand,
 		readonly authorsEnabled: boolean,
-		readonly authorsCommand: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit',
+		readonly authorsCommand: CodeLensCommand,
 		readonly scopes: ReadonlyArray<'document' | 'containers' | 'blocks'>,
-		readonly includeSingleLineSymbols: boolean
+		readonly includeSingleLineSymbols: boolean,
+		readonly dateFormat: string
 	} {
 		const rawScopes = this.config.get<unknown>('codeLens.scopes', ['containers', 'blocks']);
 		const validScopes = Array.isArray(rawScopes)
 			? rawScopes.filter((s): s is 'document' | 'containers' | 'blocks' => s === 'document' || s === 'containers' || s === 'blocks')
 			: ['containers' as const, 'blocks' as const];
-		const parseCmd = (raw: unknown, fallback: 'openLineHistory' | 'toggleFileBlame' | 'viewCommit') => {
+		const parseCmd = (raw: unknown, fallback: CodeLensCommand): CodeLensCommand => {
+			if (raw === false || raw === 'none') return 'none';
 			if (raw === 'toggleFileBlame' || raw === 'git-map.toggleFileBlame') return 'toggleFileBlame';
+			if (raw === 'git-map.toggleFileHeatmap') return 'toggleFileHeatmap';
+			if (raw === 'git-map.toggleFileChanges') return 'toggleFileChanges';
 			if (raw === 'viewCommit' || raw === 'git-map.viewCommitInGitMap') return 'viewCommit';
-			if (raw === 'openLineHistory' || raw === 'git-map.viewLineHistory' || raw === 'git-map.openLineChanges') return 'openLineHistory';
+			if (raw === 'git-map.inspect') return 'inspect';
+			if (raw === 'git-map.openLineChanges') return 'openLineChanges';
+			if (raw === 'git-map.viewFileHistory') return 'viewFileHistory';
+			if (raw === 'openLineHistory' || raw === 'git-map.viewLineHistory') return 'openLineHistory';
 			return fallback;
 		};
 		return {
@@ -710,7 +720,8 @@ class Config {
 			authorsEnabled: !!this.config.get('codeLens.authors.enabled', true),
 			authorsCommand: parseCmd(this.config.get('codeLens.authors.command', 'git-map.viewLineHistory'), 'openLineHistory'),
 			scopes: validScopes.length > 0 ? validScopes : ['containers', 'blocks'],
-			includeSingleLineSymbols: !!this.config.get('codeLens.includeSingleLineSymbols', false)
+			includeSingleLineSymbols: !!this.config.get('codeLens.includeSingleLineSymbols', false),
+			dateFormat: String(this.config.get('codeLens.dateFormat', '') || '')
 		};
 	}
 
@@ -720,12 +731,12 @@ class Config {
 	}
 
 	get blameUncommittedFormat(): string {
-		const v = this.config.get('blame.currentLine.uncommittedChangesFormat', 'You, Uncommitted changes (${ago})');
+		const v = this.getRenamedExtensionSetting('blame.currentLine.uncommittedFormat', 'blame.currentLine.uncommittedChangesFormat', 'You, Uncommitted changes (${ago})');
 		return typeof v === 'string' && v.trim() !== '' ? v : 'You, Uncommitted changes';
 	}
 
 	get blamePullRequestsEnabled(): boolean {
-		return !!this.config.get('blame.pullRequests.enabled', true);
+		return !!this.getRenamedExtensionSetting('blame.currentLine.pullRequests.enabled', 'blame.pullRequests.enabled', true);
 	}
 
 	get blameScrollable(): boolean {
@@ -741,6 +752,75 @@ class Config {
 		return this.config.get<string>('blame.statusBar.alignment', 'left') === 'right' ? 'right' : 'left';
 	}
 
+	/**
+	 * How dates are shown by the `${agoOrDate}` token of blame annotations: relative (e.g. "2 days ago") or absolute.
+	 */
+	get blameDateStyle(): 'relative' | 'absolute' {
+		return this.config.get<string>('defaultDateStyle', 'relative') === 'absolute' ? 'absolute' : 'relative';
+	}
+
+	/**
+	 * The date format used when an annotation doesn't have its own (empty => the short date).
+	 */
+	get defaultDateFormat(): string {
+		return String(this.config.get('defaultDateFormat', '') || '');
+	}
+
+	get defaultDateShortFormat(): string {
+		return String(this.config.get('defaultDateShortFormat', '') || '');
+	}
+
+	get defaultTimeFormat(): string {
+		return String(this.config.get('defaultTimeFormat', '') || '');
+	}
+
+	/**
+	 * The locale of dates: empty => the language Git Map is displayed in, "system" => the locale of the system, otherwise a language tag.
+	 */
+	get defaultDateLocale(): string {
+		const v = String(this.config.get('defaultDateLocale', '') || '').trim();
+		return /^(system|[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*)?$/.test(v) ? v : '';
+	}
+
+	/**
+	 * Is the format of uncommitted changes (`git-map.blame.currentLine.uncommittedFormat`) used? When it isn't set explicitly, it's used
+	 * when the format has been set.
+	 */
+	get blameUseUncommittedFormat(): boolean {
+		const use = this.config.inspect<boolean>('blame.currentLine.useUncommittedFormat');
+		const explicit = typeof use !== 'undefined' ? (typeof use.workspaceValue === 'boolean' ? use.workspaceValue : use.globalValue) : undefined;
+		if (typeof explicit === 'boolean') return explicit;
+		const format = this.config.inspect<string>('blame.currentLine.uncommittedFormat');
+		return typeof format !== 'undefined' && (typeof format.workspaceValue === 'string' || typeof format.globalValue === 'string');
+	}
+
+	/**
+	 * The template of the tooltip of the blame in the Status Bar (Markdown; empty => the commit, author & subject).
+	 */
+	get blameStatusBarTooltipFormat(): string {
+		return String(this.config.get('blame.statusBar.tooltipFormat', '') || '');
+	}
+
+	get blameCurrentLineDateFormat(): string {
+		return String(this.config.get('blame.currentLine.dateFormat', '') || '');
+	}
+
+	get blameStatusBarDateFormat(): string {
+		return String(this.config.get('blame.statusBar.dateFormat', '') || '');
+	}
+
+	get blameStatusBarPullRequests(): boolean {
+		return !!this.config.get('blame.statusBar.pullRequests.enabled', true);
+	}
+
+	/**
+	 * What clicking the blame in the Status Bar does.
+	 */
+	get blameStatusBarCommand(): BlameStatusBarCommand {
+		const value = this.config.get<string>('blame.statusBar.command', 'viewLineHistory');
+		return value === 'inspect' || value === 'viewCommitInGitMap' || value === 'toggleFileBlame' || value === 'toggleFileHeatmap' || value === 'toggleFileChanges' || value === 'toggleCodeLens' || value === 'openLineChanges' || value === 'viewFileHistory' ? value : 'viewLineHistory';
+	}
+
 	get blameStatusBarReduceFlicker(): boolean {
 		return !!this.config.get('blame.statusBar.reduceFlicker', true);
 	}
@@ -752,7 +832,10 @@ class Config {
 		readonly currentLineDetails: boolean,
 		readonly currentLineChanges: boolean,
 		readonly autolinksEnabled: boolean,
-		readonly pullRequestsEnabled: boolean
+		readonly pullRequestsEnabled: boolean,
+		readonly annotationsEnabled: boolean,
+		readonly annotationsOver: 'annotation' | 'line',
+		readonly annotationsDetails: boolean
 	} {
 		return {
 			enabled: !!this.config.get('hovers.enabled', true),
@@ -761,7 +844,10 @@ class Config {
 			currentLineDetails: !!this.config.get('hovers.currentLine.details', true),
 			currentLineChanges: !!this.config.get('hovers.currentLine.changes', true),
 			autolinksEnabled: !!this.config.get('hovers.autolinks.enabled', true),
-			pullRequestsEnabled: !!this.config.get('hovers.pullRequests.enabled', true)
+			pullRequestsEnabled: !!this.config.get('hovers.pullRequests.enabled', true),
+			annotationsEnabled: !!this.config.get('hovers.annotations.enabled', true),
+			annotationsOver: this.config.get<string>('hovers.annotations.over', 'line') === 'annotation' ? 'annotation' : 'line',
+			annotationsDetails: !!this.config.get('hovers.annotations.details', true)
 		};
 	}
 
@@ -774,21 +860,25 @@ class Config {
 		readonly highlightLocations: ReadonlyArray<AnnotationLocation>,
 		readonly delayAfterEdit: number,
 		readonly sizeThresholdAfterEdit: number,
-		readonly dismissOnEscape: boolean
+		readonly dismissOnEscape: boolean,
+		readonly format: string,
+		readonly dateFormat: string
 	} {
-		const locs = this.parseLocations(this.config.get('blame.file.highlight.locations', ['gutter', 'line', 'overviewRuler']), ['gutter', 'line']);
-		const delay = this.config.get('advanced.blame.delayAfterEdit', 5000);
-		const sizeThresh = this.config.get('advanced.blame.sizeThresholdAfterEdit', 5000);
+		const locs = this.parseLocations(this.getRenamedExtensionSetting('fileBlame.highlight.locations', 'blame.file.highlight.locations', <unknown>['gutter', 'line', 'overviewRuler']), ['gutter', 'line']);
+		const delay = this.getRenamedExtensionSetting('fileBlame.delayAfterEdit', 'advanced.blame.delayAfterEdit', 5000);
+		const sizeThresh = this.getRenamedExtensionSetting('fileBlame.sizeThresholdAfterEdit', 'advanced.blame.sizeThresholdAfterEdit', 5000);
 		return {
-			toggleMode: this.config.get<string>('blame.file.toggleMode', 'file') === 'window' ? 'window' : 'file',
-			heatmapEnabled: !!this.config.get('blame.file.heatmap.enabled', true),
-			heatmapLocation: this.config.get<string>('blame.file.heatmap.location', 'right') === 'left' ? 'left' : 'right',
-			compact: !!this.config.get('blame.file.compact', true),
-			highlightEnabled: !!this.config.get('blame.file.highlight.enabled', true),
+			toggleMode: this.getRenamedExtensionSetting('fileBlame.toggleMode', 'blame.file.toggleMode', <string>'file') === 'window' ? 'window' : 'file',
+			heatmapEnabled: !!this.getRenamedExtensionSetting('fileBlame.heatmap.enabled', 'blame.file.heatmap.enabled', true),
+			heatmapLocation: this.getRenamedExtensionSetting('fileBlame.heatmap.location', 'blame.file.heatmap.location', <string>'right') === 'left' ? 'left' : 'right',
+			compact: !!this.getRenamedExtensionSetting('fileBlame.compact', 'blame.file.compact', true),
+			highlightEnabled: !!this.getRenamedExtensionSetting('fileBlame.highlight.enabled', 'blame.file.highlight.enabled', true),
 			highlightLocations: locs,
 			delayAfterEdit: typeof delay === 'number' && Number.isFinite(delay) && delay >= 100 ? delay : 5000,
 			sizeThresholdAfterEdit: typeof sizeThresh === 'number' && Number.isFinite(sizeThresh) && sizeThresh >= 0 ? sizeThresh : 5000,
-			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true)
+			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true),
+			format: String(this.config.get('fileBlame.format', '') || ''),
+			dateFormat: String(this.config.get('fileBlame.dateFormat', '') || '')
 		};
 	}
 
@@ -798,8 +888,8 @@ class Config {
 		readonly dismissOnEscape: boolean
 	} {
 		return {
-			toggleMode: this.config.get<string>('changes.toggleMode', 'file') === 'window' ? 'window' : 'file',
-			locations: this.parseLocations(this.config.get('changes.locations', ['gutter', 'line', 'overviewRuler']), ['gutter', 'overviewRuler']),
+			toggleMode: this.getRenamedExtensionSetting('fileChanges.toggleMode', 'changes.toggleMode', <string>'file') === 'window' ? 'window' : 'file',
+			locations: this.parseLocations(this.getRenamedExtensionSetting('fileChanges.locations', 'changes.locations', <unknown>['gutter', 'line', 'overviewRuler']), ['gutter', 'overviewRuler']),
 			dismissOnEscape: !!this.config.get('fileAnnotations.dismissOnEscape', true)
 		};
 	}
@@ -813,13 +903,13 @@ class Config {
 		readonly coldColor: string,
 		readonly dismissOnEscape: boolean
 	} {
-		const threshold = this.config.get('heatmap.ageThreshold', 90);
-		const hot = String(this.config.get('heatmap.hotColor', '#f66a0a') || '#f66a0a');
-		const cold = String(this.config.get('heatmap.coldColor', '#0a60f6') || '#0a60f6');
+		const threshold = this.getRenamedExtensionSetting('fileHeatmap.ageThreshold', 'heatmap.ageThreshold', 90);
+		const hot = String(this.getRenamedExtensionSetting('fileHeatmap.hotColor', 'heatmap.hotColor', '#f66a0a') || '#f66a0a');
+		const cold = String(this.getRenamedExtensionSetting('fileHeatmap.coldColor', 'heatmap.coldColor', '#0a60f6') || '#0a60f6');
 		return {
-			toggleMode: this.config.get<string>('heatmap.toggleMode', 'file') === 'window' ? 'window' : 'file',
-			locations: this.parseLocations(this.config.get('heatmap.locations', ['gutter', 'overviewRuler']), ['gutter', 'overviewRuler']),
-			fadeLines: !!this.config.get('heatmap.fadeLines', true),
+			toggleMode: this.getRenamedExtensionSetting('fileHeatmap.toggleMode', 'heatmap.toggleMode', <string>'file') === 'window' ? 'window' : 'file',
+			locations: this.parseLocations(this.getRenamedExtensionSetting('fileHeatmap.locations', 'heatmap.locations', <unknown>['gutter', 'overviewRuler']), ['gutter', 'overviewRuler']),
+			fadeLines: !!this.getRenamedExtensionSetting('fileHeatmap.fadeLines', 'heatmap.fadeLines', true),
 			ageThreshold: typeof threshold === 'number' && Number.isFinite(threshold) && threshold >= 1 ? threshold : 90,
 			hotColor: /^#[0-9a-fA-F]{6}$/.test(hot) ? hot : '#f66a0a',
 			coldColor: /^#[0-9a-fA-F]{6}$/.test(cold) ? cold : '#0a60f6',
@@ -851,7 +941,8 @@ class Config {
 	get terminalLinks(): TerminalLinksConfigSnapshot {
 		return {
 			enabled: !!this.config.get('terminalLinks.enabled', true),
-			showDetailsView: !!this.config.get('terminalLinks.showDetailsView', true)
+			showDetailsView: !!this.config.get('terminalLinks.showDetailsView', true),
+			showIn: ((value) => value === 'inspect' || value === 'quickpick' ? value : 'graph')(this.config.get<string>('terminalLinks.showIn', 'graph'))
 		};
 	}
 
@@ -919,12 +1010,16 @@ class Config {
 		const groups = Array.isArray(rawGroups)
 			? rawGroups.filter((g): g is LaunchpadBucket => g === 'mergeable' || g === 'blocked' || g === 'needsReview' || g === 'followUp')
 			: (['mergeable', 'blocked', 'needsReview', 'followUp'] as LaunchpadBucket[]);
-		const interval = this.config.get('launchpad.indicator.polling.interval', 30);
-		const stale = this.config.get('launchpad.staleThreshold', 14);
+		const interval = this.getRenamedExtensionSetting<unknown>('launchpad.pollingIntervalMinutes', 'launchpad.indicator.polling.interval', 30);
+		const stale = this.getRenamedExtensionSetting<unknown>('launchpad.staleThresholdDays', 'launchpad.staleThreshold', 14);
+		const label = this.config.get<unknown>('launchpad.indicator.label', 'item');
 		return {
 			indicatorEnabled: !!this.config.get('launchpad.indicator.enabled', true),
 			groups: groups,
 			useColors: !!this.config.get('launchpad.indicator.useColors', true),
+			icon: this.config.get<string>('launchpad.indicator.icon', 'default') === 'group' ? 'group' : 'default',
+			label: label === false || label === 'false' ? 'hidden' : label === 'counts' ? 'counts' : 'item',
+			pollingEnabled: !!this.config.get('launchpad.indicator.polling.enabled', true),
 			pollingIntervalMinutes: typeof interval === 'number' && Number.isFinite(interval) && interval >= 0 ? Math.floor(interval) : 30,
 			staleThresholdDays: typeof stale === 'number' && Number.isFinite(stale) && stale >= 0 ? Math.floor(stale) : 14
 		};
@@ -964,8 +1059,26 @@ class Config {
 			stashLabelFormat: String(this.config.get('views.stashes.labelFormat', '${message}') || '${message}'),
 			stashDescriptionFormat: String(this.config.get('views.stashes.descriptionFormat', '${agoOrDate}') || '${agoOrDate}'),
 			fileLabelFormat: String(this.config.get('views.files.labelFormat', '${file}') || '${file}'),
-			fileDescriptionFormat: String(this.config.get('views.files.descriptionFormat', '${directory}') || '${directory}')
+			fileDescriptionFormat: String(this.config.get('views.files.descriptionFormat', '${directory}') || '${directory}'),
+			commitTooltipFormat: String(this.config.get('views.commits.tooltipFormat', '') || ''),
+			stashTooltipFormat: String(this.config.get('views.stashes.tooltipFormat', '') || '')
 		};
+	}
+
+	/**
+	 * Get the value of every Extension Setting contributed by Git Map (for the Settings panel), keyed by its name without `git-map.`.
+	 */
+	get allSettingValues(): { readonly [key: string]: unknown } {
+		const values: { [key: string]: unknown } = {};
+		const api: any = vscode;
+		const extension = api.extensions && typeof api.extensions.getExtension === 'function' ? api.extensions.getExtension('aimdev.git-map') : undefined;
+		const configuration = extension && extension.packageJSON && extension.packageJSON.contributes ? extension.packageJSON.contributes.configuration : undefined;
+		(Array.isArray(configuration) ? configuration : configuration ? [configuration] : []).forEach((section: { properties?: { [key: string]: unknown } }) => {
+			Object.keys(section.properties || {}).forEach((key) => {
+				if (key.startsWith('git-map.')) values[key.substring(8)] = this.config.get(key.substring(8));
+			});
+		});
+		return values;
 	}
 
 	get editorAnnotationsSnapshot(): EditorAnnotationsSnapshot {
@@ -979,6 +1092,11 @@ class Config {
 			statusBarAlignment: this.blameStatusBarAlignment,
 			statusBarFormat: this.blameStatusBarFormat,
 			statusBarReduceFlicker: this.blameStatusBarReduceFlicker,
+			statusBarPullRequests: this.blameStatusBarPullRequests,
+			statusBarCommand: this.blameStatusBarCommand,
+			statusBarDateFormat: this.blameStatusBarDateFormat,
+			currentLineDateFormat: this.blameCurrentLineDateFormat,
+			dateStyle: this.blameDateStyle,
 			codeLensEnabled: this.codeLensEnabled,
 			codeLensRecentChange: this.codeLensConfig.recentChangeEnabled,
 			codeLensAuthors: this.codeLensConfig.authorsEnabled,
@@ -987,6 +1105,17 @@ class Config {
 			hoversCurrentLineOver: this.hoversConfig.currentLineOver,
 			hoversChanges: this.hoversConfig.currentLineChanges,
 			hoversAutolinks: this.hoversConfig.autolinksEnabled,
+			hoversCurrentLineEnabled: this.hoversConfig.currentLineEnabled,
+			hoversDetails: this.hoversConfig.currentLineDetails,
+			hoversPullRequests: this.hoversConfig.pullRequestsEnabled,
+			hoversAnnotations: this.hoversConfig.annotationsEnabled,
+			fileBlameToggleMode: this.fileBlameConfig.toggleMode,
+			fileBlameFormat: this.fileBlameConfig.format,
+			fileBlameDateFormat: this.fileBlameConfig.dateFormat,
+			fileBlameDelayAfterEdit: this.fileBlameConfig.delayAfterEdit,
+			fileBlameSizeThresholdAfterEdit: this.fileBlameConfig.sizeThresholdAfterEdit,
+			fileChangesToggleMode: this.fileChangesConfig.toggleMode,
+			fileHeatmapToggleMode: this.fileHeatmapConfig.toggleMode,
 			fileBlameHeatmap: this.fileBlameConfig.heatmapEnabled,
 			fileBlameHeatmapLocation: this.fileBlameConfig.heatmapLocation,
 			fileBlameCompact: this.fileBlameConfig.compact,

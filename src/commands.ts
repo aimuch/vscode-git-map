@@ -60,6 +60,7 @@ export class CommandManager extends Disposable {
 		this.registerCommand('git-map.selectGraphColourPreset', () => this.selectGraphColourPreset());
 		this.registerCommand('git-map.openFile', (arg) => this.openFile(arg));
 		this.registerCommand('git-map.viewFileHistory', (arg) => this.viewFileHistory(arg));
+		this.registerCommand('git-map.viewFolderHistory', (arg) => this.viewFileHistory(arg));
 		this.registerCommand('git-map.viewLineHistoryInGitMap', (arg) => this.viewLineHistoryInGitMap(arg));
 		this.registerCommand('git-map.viewCommitInGitMap', (repo, hash) => this.viewCommitInGitMap(repo, hash));
 		this.registerCommand('git-map.viewAuthorInGitMap', (repo, author) => {
@@ -158,6 +159,11 @@ export class CommandManager extends Disposable {
 		const file = await this.getRepoOfFile(uri);
 		if (file === null) {
 			showErrorMessage(t('Unable to View File History: {0}', t('The file {0} isn\'t in a repository known by Git Map.', getPathFromUri(uri))));
+			return;
+		}
+		if (file.path === '') {
+			// The root folder of a repository: its history is the whole Git Map View
+			GitGraphView.createOrShow(this.context.extensionPath, this.dataSource, this.extensionState, this.avatarManager, this.repoManager, this.logger, { repo: file.repo });
 			return;
 		}
 		// The commit that last changed the line the cursor is on (or the file) is selected in the history

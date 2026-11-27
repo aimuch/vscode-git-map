@@ -348,11 +348,41 @@ export interface GitBranchCleanupCandidate {
 	readonly hash: string;
 	readonly upstream: string | null;
 	readonly upstreamGone: boolean;
-	readonly merged: boolean; // Is it merged into the default branch
+	readonly merged: boolean; // Has its work landed in the default branch (merged, rebased or squashed into it)
+	readonly landed: GitLandedState; // How its work landed in the default branch
 	readonly unmergedCommits: number; // The number of commits that only this branch contains (which are lost if it's deleted)
 	readonly date: number;
 	readonly author: string;
 	readonly remotes: ReadonlyArray<string>; // The remotes that have a branch with the same name
+}
+
+/**
+ * How the work of a branch landed in another branch: merged (it contains every commit of the branch), rebased (it has an equivalent
+ * commit for every commit of the branch), or squashed (one of its commits has all of the branch's changes). NULL => it hasn't landed.
+ */
+export type GitLandedState = 'merged' | 'rebased' | 'squashed' | null;
+
+/**
+ * The predicted result of applying a commit in an interactive rebase: it applies cleanly, it conflicts (in these files), or it can't be
+ * predicted (it's after a conflict, whose resolution it depends on).
+ */
+export interface GitRebaseConflictPrediction {
+	readonly hash: string;
+	readonly state: 'clean' | 'conflict' | 'unknown';
+	readonly files: ReadonlyArray<string>;
+}
+
+/**
+ * The status of a branch compared with its merge target (the branch its work is meant to be merged into).
+ */
+export interface GitMergeTargetStatus {
+	readonly branch: string;
+	readonly target: string | null; // NULL => no merge target was found (no default branch)
+	readonly chosen: boolean; // Was the merge target chosen for the branch (otherwise it's the default branch)
+	readonly ahead: number; // The number of commits on the branch that aren't on the merge target
+	readonly behind: number; // The number of commits on the merge target that aren't on the branch
+	readonly landed: GitLandedState;
+	readonly mergeBase: string | null;
 }
 
 /**
@@ -551,6 +581,36 @@ export interface AiCustomInstructionsConfig {
 
 export type CustomRemoteType = 'github' | 'gitlab' | 'bitbucket' | 'gitea' | 'azure' | 'custom';
 
+/**
+ * A hosting service Git Map can connect to (by storing a token for its domain), to read pull requests & CI statuses.
+ */
+export interface HostingIntegrationStatus {
+	readonly provider: string;
+	readonly name: string;
+	readonly host: string;
+	readonly supports: 'prs' | 'prs-issues';
+	readonly selfHosted: boolean;
+	readonly connected: boolean;
+}
+
+export interface RequestRunSettingsCommand extends BaseMessage {
+	readonly command: 'runSettingsCommand';
+	readonly settingsCommand: string; // A Git Map command (named in a tip of the Settings panel)
+}
+
+export interface RequestOpenSettingsSearch extends BaseMessage {
+	readonly command: 'openSettingsSearch';
+	readonly query: string; // The Git Map settings searched for in the Settings editor
+}
+
+export interface RequestLoadHostingIntegrations extends BaseMessage {
+	readonly command: 'loadHostingIntegrations';
+}
+export interface ResponseLoadHostingIntegrations extends BaseMessage {
+	readonly command: 'loadHostingIntegrations';
+	readonly integrations: ReadonlyArray<HostingIntegrationStatus>;
+}
+
 export interface CustomRemoteConfig {
 	readonly domain?: string;
 	readonly regex?: string;
@@ -596,6 +656,16 @@ export interface GitMapModeConfig {
 	readonly hovers?: boolean;
 }
 
+/**
+ * What clicking the blame in the Status Bar does.
+ */
+export type BlameStatusBarCommand = 'viewLineHistory' | 'inspect' | 'viewCommitInGitMap' | 'toggleFileBlame' | 'toggleFileHeatmap' | 'toggleFileChanges' | 'toggleCodeLens' | 'openLineChanges' | 'viewFileHistory';
+
+/**
+ * What clicking a Git CodeLens does ('none' => nothing).
+ */
+export type CodeLensCommand = 'openLineHistory' | 'viewCommit' | 'inspect' | 'openLineChanges' | 'viewFileHistory' | 'toggleFileBlame' | 'toggleFileHeatmap' | 'toggleFileChanges' | 'none';
+
 export interface EditorAnnotationsSnapshot {
 	readonly currentLineEnabled: boolean;
 	readonly currentLinePullRequests: boolean;
@@ -606,6 +676,11 @@ export interface EditorAnnotationsSnapshot {
 	readonly statusBarAlignment: 'left' | 'right';
 	readonly statusBarFormat: string;
 	readonly statusBarReduceFlicker: boolean;
+	readonly statusBarPullRequests: boolean;
+	readonly statusBarCommand: BlameStatusBarCommand;
+	readonly statusBarDateFormat: string;
+	readonly currentLineDateFormat: string;
+	readonly dateStyle: 'relative' | 'absolute';
 	readonly codeLensEnabled: boolean;
 	readonly codeLensRecentChange: boolean;
 	readonly codeLensAuthors: boolean;
@@ -614,6 +689,17 @@ export interface EditorAnnotationsSnapshot {
 	readonly hoversCurrentLineOver: 'annotation' | 'line';
 	readonly hoversChanges: boolean;
 	readonly hoversAutolinks: boolean;
+	readonly hoversCurrentLineEnabled: boolean;
+	readonly hoversDetails: boolean;
+	readonly hoversPullRequests: boolean;
+	readonly hoversAnnotations: boolean;
+	readonly fileBlameToggleMode: AnnotationToggleMode;
+	readonly fileBlameFormat: string;
+	readonly fileBlameDateFormat: string;
+	readonly fileBlameDelayAfterEdit: number;
+	readonly fileBlameSizeThresholdAfterEdit: number;
+	readonly fileChangesToggleMode: AnnotationToggleMode;
+	readonly fileHeatmapToggleMode: AnnotationToggleMode;
 	readonly fileBlameHeatmap: boolean;
 	readonly fileBlameHeatmapLocation: 'left' | 'right';
 	readonly fileBlameCompact: boolean;
@@ -651,17 +737,23 @@ export interface ScmViewsConfigSnapshot {
 	readonly stashDescriptionFormat: string;
 	readonly fileLabelFormat: string;
 	readonly fileDescriptionFormat: string;
+	readonly commitTooltipFormat: string; // Markdown (empty => the default tooltip)
+	readonly stashTooltipFormat: string;
 }
 
 export interface TerminalLinksConfigSnapshot {
 	readonly enabled: boolean;
 	readonly showDetailsView: boolean;
+	readonly showIn: 'graph' | 'inspect' | 'quickpick'; // Where commit & ref links are opened
 }
 
 export interface LaunchpadConfigSnapshot {
 	readonly indicatorEnabled: boolean;
 	readonly groups: ReadonlyArray<LaunchpadBucket>;
 	readonly useColors: boolean;
+	readonly icon: 'default' | 'group'; // The Launchpad icon, or the icon of the highest priority group
+	readonly label: 'hidden' | 'item' | 'counts'; // The highest priority item, or the counts of the groups
+	readonly pollingEnabled: boolean;
 	readonly pollingIntervalMinutes: number;
 	readonly staleThresholdDays: number;
 }
@@ -697,6 +789,7 @@ export interface GitGraphViewConfig {
 	readonly defaultColumnVisibility: DefaultColumnVisibility;
 	readonly dialogDefaults: DialogDefaults;
 	readonly editorAnnotations?: EditorAnnotationsSnapshot;
+	readonly settingValues?: { readonly [key: string]: unknown }; // The value of every Git Map Extension Setting (for the Settings panel)
 	readonly enhancedAccessibility: boolean;
 	readonly explainCommit: boolean;
 	readonly fetchAndPrune: boolean;
@@ -774,6 +867,8 @@ export interface GraphConfig {
 	};
 	readonly shortcutOverrides?: { readonly [action: string]: string };
 	readonly showGhostRefsOnRowHover?: boolean;
+	readonly showUpstreamStatus?: boolean; // Show how far local branches are ahead / behind their upstream
+
 	readonly style: GraphStyle;
 	readonly grid: { x: number, y: number, offsetX: number, offsetY: number, expandY: number };
 	readonly uncommittedChanges: GraphUncommittedChangesStyle;
@@ -2036,6 +2131,40 @@ export interface ResponseLoadBranchCleanup extends ResponseWithErrorInfo {
 	readonly candidates: ReadonlyArray<GitBranchCleanupCandidate>;
 }
 
+export interface RequestPredictRebaseConflicts extends RepoRequest {
+	readonly command: 'predictRebaseConflicts';
+	readonly base: string;
+	readonly todo: ReadonlyArray<{ readonly action: string, readonly hash: string }>;
+	readonly requestId: number;
+}
+export interface ResponsePredictRebaseConflicts extends ResponseWithErrorInfo {
+	readonly command: 'predictRebaseConflicts';
+	readonly base: string;
+	readonly requestId: number;
+	readonly results: ReadonlyArray<GitRebaseConflictPrediction>;
+	readonly unsupported: boolean;
+}
+
+export interface RequestLoadMergeTargetStatus extends RepoRequest {
+	readonly command: 'loadMergeTargetStatus';
+	readonly branch: string;
+}
+export interface ResponseLoadMergeTargetStatus extends ResponseWithErrorInfo {
+	readonly command: 'loadMergeTargetStatus';
+	readonly repo: string;
+	readonly branch: string;
+	readonly status: GitMergeTargetStatus | null;
+}
+
+export interface RequestSetMergeTarget extends RepoRequest {
+	readonly command: 'setMergeTarget';
+	readonly branch: string;
+	readonly target: string | null; // NULL => the default branch
+}
+export interface ResponseSetMergeTarget extends ResponseWithErrorInfo {
+	readonly command: 'setMergeTarget';
+}
+
 export interface RequestDeleteBranches extends RepoRequest {
 	readonly command: 'deleteBranches';
 	readonly branches: ReadonlyArray<string>;
@@ -2793,9 +2922,10 @@ export interface ResponseCopyWipToWorktree extends ResponseWithErrorInfo {
 
 export interface RequestOpenCompanionFeature extends BaseMessage {
 	readonly command: 'openCompanionFeature';
-	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'aiExplainRegression' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken' | 'preCommitCheck' | 'aiSmartCommitSplit' | 'submoduleManager' | 'branchDashboard' | 'exportChangelog' | 'startWork' | 'openLaunchpad' | 'switchMode' | 'aiAutoRebase' | 'checkRepoHealth' | 'editSshAllowedSigners';
+	readonly feature: 'aiReview' | 'aiReleaseNotes' | 'aiExplainRegression' | 'aiExplainChanges' | 'inspectCommit' | 'aiSwitchModel' | 'connectIntegration' | 'disconnectIntegration' | 'browseRevision' | 'filesTreemap' | 'conflictAssistant' | 'reflogExplorer' | 'repoInsights' | 'multiRepoOverview' | 'checkoutPullRequest' | 'setHostingToken' | 'clearHostingToken' | 'preCommitCheck' | 'aiSmartCommitSplit' | 'submoduleManager' | 'branchDashboard' | 'exportChangelog' | 'startWork' | 'openLaunchpad' | 'switchMode' | 'aiAutoRebase' | 'checkRepoHealth' | 'editSshAllowedSigners';
 	readonly repo?: string;
-	readonly mode?: 'uncommitted' | 'commit' | 'range';
+	readonly mode?: 'uncommitted' | 'commit' | 'range' | 'stash' | 'branch' | 'unpushed';
+	readonly ref?: string; // The branch (for 'branch' & 'unpushed')
 	readonly commitHash?: string;
 	readonly fromRef?: string;
 	readonly toRef?: string;
@@ -2897,6 +3027,12 @@ export type RequestMessage =
 	| RequestCompareBranches
 	| RequestOpenAllChanges
 	| RequestLoadBranchCleanup
+	| RequestLoadMergeTargetStatus
+	| RequestLoadHostingIntegrations
+	| RequestRunSettingsCommand
+	| RequestOpenSettingsSearch
+	| RequestPredictRebaseConflicts
+	| RequestSetMergeTarget
 	| RequestDeleteBranches
 	| RequestEditCommitMessage
 	| RequestLoadCommitMessage
@@ -3043,6 +3179,10 @@ export type ResponseMessage =
 	| ResponseCompareBranches
 	| ResponseOpenAllChanges
 	| ResponseLoadBranchCleanup
+	| ResponseLoadMergeTargetStatus
+	| ResponseLoadHostingIntegrations
+	| ResponsePredictRebaseConflicts
+	| ResponseSetMergeTarget
 	| ResponseDeleteBranches
 	| ResponseEditCommitMessage
 	| ResponseLoadCommitMessage

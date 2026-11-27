@@ -7,7 +7,7 @@ import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { RepoManager } from './repoManager';
 import { GitFileStatus, GitFileTimelineCommit } from './types';
-import { getNonce, getPathFromUri, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
+import { getNonce, getPathFromUri, getRepoName, showErrorMessage, viewDiff, viewFileAtRevision } from './utils';
 import { Disposable } from './utils/disposable';
 
 /**
@@ -52,6 +52,7 @@ export class VisualFileHistory extends Disposable {
 		VisualFileHistory.instance = this;
 		this.registerDisposables(
 			vscode.commands.registerCommand('git-map.visualFileHistory', (arg: any) => this.show(arg)),
+			vscode.commands.registerCommand('git-map.visualFolderHistory', (arg: any) => this.show(arg)),
 			{
 				dispose: () => {
 					if (this.panel !== null) this.panel.dispose();
@@ -93,6 +94,7 @@ export class VisualFileHistory extends Disposable {
 				return;
 			}
 			file = await this.repoManager.getRepoAndPathOfFile(getPathFromUri(uri));
+			if (file !== null && file.path === '') file = { repo: file.repo, path: '.' }; // The root folder of a repository: the history of all of its files
 			if (file === null) {
 				showErrorMessage(t('Unable to show the Visual File History: {0}', t('The file {0} isn\'t in a repository known by Git Map.', getPathFromUri(uri))));
 				return;
@@ -109,7 +111,7 @@ export class VisualFileHistory extends Disposable {
 			return;
 		}
 		this.shown = { repo: file.repo, filePath: file.path, commits: result.commits };
-		const title = t('History: {0}', file.path.substring(file.path.lastIndexOf('/') + 1));
+		const title = t('History: {0}', file.path === '.' ? getRepoName(file.repo) : file.path.substring(file.path.lastIndexOf('/') + 1));
 		if (this.panel === null) {
 			this.panel = vscode.window.createWebviewPanel('git-map.visualFileHistory', title, getConfig().openNewTabEditorGroup, { enableScripts: true, localResourceRoots: [], retainContextWhenHidden: true });
 			const panel = this.panel;

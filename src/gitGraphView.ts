@@ -224,6 +224,11 @@ export class GitGraphView extends Disposable {
 					event.affectsConfiguration('git-map.changes') ||
 					event.affectsConfiguration('git-map.heatmap') ||
 					event.affectsConfiguration('git-map.mode') ||
+					event.affectsConfiguration('git-map.graph.showUpstreamStatus') ||
+					event.affectsConfiguration('git-map.fileBlame') ||
+					event.affectsConfiguration('git-map.fileChanges') ||
+					event.affectsConfiguration('git-map.fileHeatmap') ||
+					event.affectsConfiguration('git-map.defaultDateStyle') ||
 					event.affectsConfiguration('git-map.modes') ||
 					event.affectsConfiguration('git-map.language')
 				) {
@@ -968,6 +973,19 @@ export class GitGraphView extends Disposable {
 				this.sendMessage({ command: 'loadBranchCleanup', repo: msg.repo, defaultBranch: result.defaultBranch, candidates: result.candidates, error: result.error });
 				break;
 			}
+			case 'predictRebaseConflicts': {
+				const result = await this.gitFeatures.predictRebaseConflicts(msg.repo, msg.base, msg.todo);
+				this.sendMessage({ command: 'predictRebaseConflicts', base: msg.base, requestId: msg.requestId, results: result.results, unsupported: result.unsupported, error: result.error });
+				break;
+			}
+			case 'loadMergeTargetStatus': {
+				const result = await this.gitFeatures.getMergeTargetStatus(msg.repo, msg.branch);
+				this.sendMessage({ command: 'loadMergeTargetStatus', repo: msg.repo, branch: msg.branch, status: result.status, error: result.error });
+				break;
+			}
+			case 'setMergeTarget':
+				this.sendMessage({ command: 'setMergeTarget', error: await this.gitFeatures.setMergeTarget(msg.repo, msg.branch, msg.target) });
+				break;
 			case 'deleteBranches': {
 				const errors: ErrorInfo[] = [];
 				const deletedBranches = new Set<string>();
@@ -1197,6 +1215,9 @@ export class GitGraphView extends Disposable {
 			case 'toggleCodingAgentHooks':
 			case 'copyWipToWorktree':
 			case 'saveExtendedSettings':
+			case 'loadHostingIntegrations':
+			case 'runSettingsCommand':
+			case 'openSettingsSearch':
 			case 'openCompanionFeature':
 				await handleCompanionMessage(msg, {
 					dataSource: this.dataSource,
@@ -1513,6 +1534,7 @@ export class GitGraphView extends Disposable {
 				defaultColumnVisibility: config.defaultColumnVisibility,
 				dialogDefaults: config.dialogDefaults,
 				editorAnnotations: config.editorAnnotationsSnapshot,
+				settingValues: config.allSettingValues,
 				enhancedAccessibility: config.enhancedAccessibility,
 				explainCommit: config.explainCommit,
 				fetchAndPrune: config.fetchAndPrune,

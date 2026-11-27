@@ -192,8 +192,39 @@ export class GitTerminalLinkProvider extends Disposable implements vscode.Termin
 	public async handleTerminalLink(link: GitMapTerminalLink): Promise<void> {
 		const repo = link.repo || this.extensionState.getLastActiveRepo() || Object.keys(this.repoManager.getRepos())[0] || null;
 		if (repo === null) return;
-		const showDetails = getConfig().terminalLinks.showDetailsView;
+		const showDetails = getConfig().terminalLinks.showDetailsView, showIn = getConfig().terminalLinks.showIn;
 		const m = link.match;
+
+		// A commit or ref can also be opened in the Inspect view, or in a Quick Pick of its actions (`git-map.terminalLinks.showIn`)
+		if ((m.kind === 'commit' || m.kind === 'ref') && showIn !== 'graph') {
+			const hash = await this.gitFeatures.resolveCommit(repo, m.text);
+			if (hash !== null) {
+				if (showIn === 'inspect') {
+					await vscode.commands.executeCommand('git-map.inspect', repo, hash);
+					return;
+				}
+				const picked = typeof vscode.window.showQuickPick === 'function' ? await vscode.window.showQuickPick([
+					{ label: '$(git-merge) ' + t('View Commit in Git Map'), action: 'graph' },
+					{ label: '$(inspect) ' + t('Inspect Commit Details'), action: 'inspect' },
+					{ label: '$(files) ' + t('Browse Files at this Commit'), action: 'browse' },
+					{ label: '$(sparkle) ' + t('Explain with AI'), action: 'explain' },
+					{ label: '$(copy) ' + t('Copy Commit Hash to Clipboard'), action: 'copy' }
+				], { placeHolder: m.text + ' · ' + hash.substring(0, 8) }) : undefined;
+				if (typeof picked === 'undefined') return;
+				if (picked.action === 'inspect') {
+					await vscode.commands.executeCommand('git-map.inspect', repo, hash);
+				} else if (picked.action === 'browse') {
+					await vscode.commands.executeCommand('git-map.browseRevision', { repo: repo, commitHash: hash });
+				} else if (picked.action === 'explain') {
+					await vscode.commands.executeCommand('git-map.ai.explainChanges', { repo: repo, mode: 'range', fromRef: hash + '~1', toRef: hash, label: m.text });
+				} else if (picked.action === 'copy') {
+					await vscode.env.clipboard.writeText(hash);
+				} else {
+					this.onOpenGraphView({ repo: repo, commitDetails: { commitHash: hash, compareWithHash: null }, ref: hash });
+				}
+				return;
+			}
+		}
 
 		if (m.kind === 'commit') {
 			const resolved = await this.gitFeatures.resolveCommit(repo, m.text);

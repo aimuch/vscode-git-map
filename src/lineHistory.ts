@@ -109,8 +109,8 @@ export class LineHistory extends Disposable {
 					});
 				}
 			}),
-			vscode.commands.registerCommand('git-map.copyRemoteLinkToLines', () => this.remoteLinkToSelectedLines(false)),
-			vscode.commands.registerCommand('git-map.openLinesOnRemote', () => this.remoteLinkToSelectedLines(true)),
+			vscode.commands.registerCommand('git-map.copyRemoteLinkToLines', (arg?: unknown) => this.remoteLinkToSelectedLines(false, arg)),
+			vscode.commands.registerCommand('git-map.openLinesOnRemote', (arg?: unknown) => this.remoteLinkToSelectedLines(true, arg)),
 			vscode.window.onDidChangeTextEditorSelection((event) => this.onSelectionChange(event.textEditor)),
 			avatarManager.onAvatar((event) => this.onAvatar(event.email, event.image)),
 			onDidChangeConfiguration((event) => {
@@ -170,6 +170,10 @@ export class LineHistory extends Disposable {
 			// The file is a URI, or a string (from the link in the hover of the blame of a line)
 			document = await vscode.workspace.openTextDocument(typeof arg.uri === 'string' ? vscode.Uri.parse(arg.uri) : arg.uri);
 			range = { start: arg.start, end: arg.end };
+		} else if (isGutterMenuArg(arg)) {
+			// The context menu of the line numbers (the selected lines, if they include the line, otherwise only the line)
+			document = await vscode.workspace.openTextDocument(arg.uri);
+			range = getGutterMenuLines(arg);
 		} else {
 			const editor = vscode.window.activeTextEditor;
 			if (typeof editor === 'undefined' || editor.document.uri.scheme !== 'file') {
@@ -428,14 +432,14 @@ export class LineHistory extends Disposable {
 	 * lines are mapped to the same lines in HEAD, if the file has uncommitted changes).
 	 * @param open TRUE => Open the link, FALSE => Copy the link to the clipboard.
 	 */
-	private async remoteLinkToSelectedLines(open: boolean) {
+	private async remoteLinkToSelectedLines(open: boolean, arg?: unknown) {
 		const fail = (reason: string) => {
 			// The message isn't awaited, as it's only resolved when it's closed
 			showErrorMessage(open ? t('Unable to Open Lines on Remote: {0}', reason) : t('Unable to Copy Remote Link: {0}', reason));
 		};
 		const editor = vscode.window.activeTextEditor;
 		if (typeof editor === 'undefined' || editor.document.uri.scheme !== 'file') return fail(t('Open a file in an editor, and select the lines.'));
-		const target = await this.getTarget(editor.document.uri, getSelectedLines(editor.selection));
+		const target = await this.getTarget(editor.document.uri, isGutterMenuArg(arg) && arg.uri.toString() === editor.document.uri.toString() ? getGutterMenuLines(arg) : getSelectedLines(editor.selection));
 		if (target === null) return fail(t('The file {0} isn\'t in a repository known by Git Map.', getPathFromUri(editor.document.uri)));
 		const head = await this.dataSource.getHeadHash(target.repo), lines = await this.dataSource.getLinesInHead(target.repo, target.filePath, target.range, editor.document.getText());
 		if (head === null || lines === null) return fail(t('The selected lines haven\'t been committed yet.'));
@@ -579,4 +583,23 @@ function isSameTarget(a: LineHistoryTarget, b: LineHistoryTarget) {
  */
 function getRange(range: GitLineRange | null) {
 	return range !== null ? new vscode.Range(range.start - 1, 0, range.end - 1, 0) : undefined;
+}
+
+/**
+ * Is the argument of a command the line of the context menu of the line numbers (`{ lineNumber, uri }`)?
+ */
+function isGutterMenuArg(arg: unknown): arg is { lineNumber: number, uri: vscode.Uri } {
+	return typeof arg === 'object' && arg !== null && typeof (<any>arg).lineNumber === 'number' && (<any>arg).uri instanceof vscode.Uri;
+}
+
+/**
+ * Get the lines of the context menu of the line numbers: the selected lines when they include its line, otherwise only its line.
+ */
+function getGutterMenuLines(arg: { lineNumber: number, uri: vscode.Uri }): GitLineRange {
+	const editor = vscode.window.activeTextEditor;
+	if (typeof editor !== 'undefined' && editor.document.uri.toString() === arg.uri.toString()) {
+		const selected = getSelectedLines(editor.selection);
+		if (arg.lineNumber >= selected.start && arg.lineNumber <= selected.end) return selected;
+	}
+	return { start: arg.lineNumber, end: arg.lineNumber };
 }

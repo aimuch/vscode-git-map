@@ -404,8 +404,10 @@
 		await check('l10n-settings', 'The Repository Settings Widget and its dialogs are displayed in Simplified Chinese', async () => {
 			mouse(document.getElementById('settingsBtn'), 'click');
 			const widget = await waitFor('the Repository Settings Widget to load', () => document.getElementById('editIssueLinking') ? document.getElementById('settingsWidget') : null);
-			const sections = Array.from(widget.querySelectorAll('h3, h4')).map((elem) => elem.textContent.trim());
-			['外观 · 所有仓库', '界面语言 · 所有仓库', '状态栏 · 所有仓库', 'AI · 所有仓库', '大模型配置', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建', 'PR 与 CI 状态徽章'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
+			// The titles of the categories (like the Settings page of GitLens), and of the cards of This Repository
+			const sections = Array.from(widget.querySelectorAll('.settingsCategoryHeader .settingsFeatureTitle, h3:not(.settingsCategoryHeader), h4')).map((elem) => elem.textContent.trim());
+			['AI 智能助手', '大模型配置', '云集成', '提交图', '行内追溯', '文件追溯', '日期和时间', '菜单与工具栏', '语言', '状态栏', '此仓库', 'Issue 链接', '远程仓库', '常规', '用户信息', '拉取请求创建', 'PR 与 CI 状态徽章'].forEach((text) => assert(sections.includes(text), 'Unexpected sections: ' + JSON.stringify(sections)));
+			assert(widget.querySelector('#settingsCategory-current-line .settingsCategoryFooter').textContent.includes('更多选项'), 'The "More options" of the categories should be in Simplified Chinese');
 			['差异视图', '完整文件', '仅差异部分', '快捷操作栏', '自定义快捷操作按钮…'].forEach((text) => assert(widget.textContent.includes(text), 'Missing zh-CN Settings label "' + text + '"'));
 			assert(widget.querySelector('#settingsHeader h2').textContent === '设置', 'Unexpected title: ' + widget.querySelector('#settingsHeader h2').textContent);
 			mouse(document.getElementById('editIssueLinking'), 'click');
@@ -1078,7 +1080,7 @@
 			assert(document.querySelector('.settingsStatusBarPreview svg') !== null && !document.querySelector('.settingsStatusBarPreview').textContent.includes('Git Map'), 'The Status Bar Item preview wasn\'t updated');
 
 			// AI · All Repositories section: toggles, provider selector, model & baseUrl inputs, and Set API Key… button
-			const aiSection = document.getElementById('settingsAiSection');
+			const aiSection = document.getElementById('settingsCategory-ai');
 			assert(aiSection !== null, 'The AI settings section is missing');
 			assert(widget.querySelectorAll('.settingsNavGroup').length >= 4, 'Settings nav rail missing 4 categorized groups');
 			assert(widget.querySelectorAll('.settingsNavDot').length > 0 && widget.querySelectorAll('.settingsNavRatio').length > 0, 'Settings nav items missing status dots or enabled ratios');
@@ -1242,7 +1244,7 @@
 			mouse(commitRow(3), 'contextmenu', { button: 2 });
 			const menu = await waitFor('the context menu', () => document.querySelector('.contextMenu'));
 			const items = Array.from(menu.querySelectorAll('.contextMenuItem')).map((item) => item.textContent);
-			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Squash 3 Selected Commits…', 'Drop 3 Selected Commits…', 'AI Review Selected Range…', 'AI PR / Release Notes for Selection…', 'AI Changelog for Selection…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
+			assert(JSON.stringify(items) === JSON.stringify(['Cherry Pick 3 Commits…', 'Squash 3 Selected Commits…', 'Drop 3 Selected Commits…', 'AI Review Selected Range…', 'Explain Selected Changes with AI…', 'AI PR / Release Notes for Selection…', 'AI Changelog for Selection…', 'Copy 3 Commit Hashes to Clipboard', 'Copy 3 Commit Subjects to Clipboard', 'Save 3 Commits as Patch…', 'Clear Selection']), 'Unexpected context menu: ' + JSON.stringify(items));
 			mouse(Array.from(menu.querySelectorAll('.contextMenuItem')).find((item) => item.textContent.startsWith('Copy 3 Commit Hashes')), 'click');
 			const copied = await waitFor('the hashes to be copied', () => requestsOf('copyToClipboard').slice(-1)[0]);
 			assert(copied.data === [hash(6), hash(4), hash(3)].join('\n'), 'The hashes weren\'t copied oldest first: ' + JSON.stringify(copied.data));
@@ -2242,16 +2244,18 @@
 
 			// 4. Settings Widget: Agents table, Custom Remotes add/save, SCM 11-section matrix + format live example, and Blame live preview
 			mouse(document.getElementById('settingsBtn'), 'click');
-			const widget = await waitFor('Settings Widget to open', () => document.getElementById('settingsAgentsSection') ? document.getElementById('settingsWidget') : null);
+			const widget = await waitFor('Settings Widget to open', () => document.getElementById('settingsCategory-agents') ? document.getElementById('settingsWidget') : null);
 			try {
-				const agentsSec = document.getElementById('settingsAgentsSection');
+				const agentsSec = document.getElementById('settingsCategory-agents');
 				assert(agentsSec.querySelectorAll('.settingsAgentMcpBtn').length === 5, 'Expected 5 coding agents in Agents section');
 
 				// Semantic icons on every Settings nav rail item + 1-to-1 order with #settingsContent + colorful AI icons + resizable Settings drawer & nav rail
 				const navItems = Array.from(widget.querySelectorAll('#settingsNavRail .settingsNavItem'));
 				const navIcons = widget.querySelectorAll('#settingsNavRail .settingsNavItem .settingsNavIcon svg.uiIcon');
 				const contentSections = Array.from(widget.querySelectorAll('#settingsContent .settingsSection'));
-				assert(navItems.length === 11 && navIcons.length === 11 && contentSections.length === 11, 'Expected 11 semantic nav rail icons & sections, got ' + navIcons.length + '/' + navItems.length);
+				// The categories of GitLens's Settings page (Integrations, Views, Editor & General), plus This Repository
+				assert(contentSections.length >= 25 && navItems.length === contentSections.length && navIcons.length === contentSections.length, 'Expected a semantic nav rail icon for each of the 25 categories, got ' + navIcons.length + '/' + navItems.length + '/' + contentSections.length);
+				assert(['ai', 'agents', 'cloud-integrations', 'remotes', 'autolinks', 'launchpad', 'terminal-links', 'start-work', 'commit-graph', 'scm-views', 'commits-view', 'stashes-view', 'current-line', 'code-lens', 'status-bar', 'hovers', 'file-blame', 'file-changes', 'file-heatmap', 'dates', 'menus'].every((id) => document.getElementById('settingsCategory-' + id) !== null), 'A category of the Settings page is missing');
 				assert(navItems.every((el, idx) => el.dataset.settingsNav === String(idx) && el.title === contentSections[idx].dataset.navLabel), 'Settings nav rail order does not match #settingsContent section order');
 				assert(widget.querySelectorAll('#settingsNavRail svg.aiColorIcon').length >= 2 && document.querySelector('#findAiBtn svg.aiColorIcon') !== null, 'Expected colorful AI icons in Settings nav rail and Find Widget');
 				assert(widget.querySelectorAll('#settingsNavRail .settingsNavDot.none').length >= 2, 'Expected spacer dots on non-toggle categories');
@@ -2290,12 +2294,12 @@
 				navResizeHandle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
 				assert(Math.round(navRail.getBoundingClientRect().width) === initialNavWidth, 'Double-click on #settingsNavResizeHandle did not reset width');
 
-				const scmSec = document.getElementById('settingsScmSection');
+				const scmSec = document.getElementById('settingsCategory-scm-views');
 				assert(scmSec !== null && scmSec.querySelectorAll('.settingsScmVisCheckbox').length === 11, 'Expected 11 SCM sections in matrix');
-				const commitLabelInput = scmSec.querySelector('[data-fmt-prop="commitLabel"]');
+				const commitLabelInput = document.querySelector('#settingsCategory-commits-view input[data-skey="views.commits.labelFormat"]');
 				commitLabelInput.value = '[${id}] ${message}';
 				commitLabelInput.dispatchEvent(new Event('input', { bubbles: true }));
-				const fmtExample = scmSec.querySelector('[data-fmt-example="commitLabel"]');
+				const fmtExample = document.querySelector('.settingsExample[data-example-for="views.commits.labelFormat"]');
 				assert(fmtExample.textContent.includes('[fe26af4] feat: optimize parser'), 'SCM format live preview did not update: ' + fmtExample.textContent);
 
 				const saveBefore = requestsOf('saveExtendedSettings').length;
@@ -2305,11 +2309,56 @@
 				const savedCr = await waitFor('saveExtendedSettings(remotes)', () => requestsOf('saveExtendedSettings').length > saveBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
 				assert(Array.isArray(savedCr.settings.remotes) && savedCr.settings.remotes.some((r) => r.domain === 'git.corp.test'), 'Custom remote was not saved: ' + JSON.stringify(savedCr));
 
-				const inlineFmt = document.getElementById('settingsBlameInlineFormat');
+				const inlineFmt = document.querySelector('#settingsCategory-current-line input[data-skey="blame.currentLine.format"]');
 				inlineFmt.value = '${author} :: ${sha}';
 				inlineFmt.dispatchEvent(new Event('input', { bubbles: true }));
-				assert(document.getElementById('settingsEditorLivePreview').textContent.includes('You :: fe26af4'), 'Editor inline blame preview did not update');
-				return 'Overview Bar, ? Shortcuts modal, Solo Branch mode, 5 Coding Agents, 11 SCM sections, Custom Remote form & Blame format live preview verified';
+				const inlineExample = document.querySelector('.settingsExample[data-example-for="blame.currentLine.format"]');
+				assert(document.getElementById('settingsPreview-inlineBlame').textContent.includes('You :: fe26af4'), 'Editor inline blame preview did not update');
+				assert(inlineExample.textContent === 'You :: fe26af4', 'Inline blame format example did not update: ' + inlineExample.textContent);
+				const saveFmtBefore = requestsOf('saveExtendedSettings').length;
+				inlineFmt.dispatchEvent(new Event('change', { bubbles: true }));
+				const savedFmt = await waitFor('saveExtendedSettings(blame format)', () => requestsOf('saveExtendedSettings').length > saveFmtBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
+				assert(savedFmt.settings['blame.currentLine.format'] === '${author} :: ${sha}', 'Inline blame format was not saved: ' + JSON.stringify(savedFmt));
+
+				// The switch of a category turns its controls off (enabledWhen), and saves the setting
+				const lastSave = () => requestsOf('saveExtendedSettings').slice(-1)[0];
+				const inlineMaster = document.querySelector('#settingsCategory-current-line .settingsControl.master input[data-skey="blame.currentLine"]');
+				assert(inlineMaster !== null && inlineMaster.checked, 'Expected the Inline Blame switch to be on');
+				inlineMaster.checked = false;
+				inlineMaster.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(lastSave().settings['blame.currentLine'] === false, 'The Inline Blame switch was not saved: ' + JSON.stringify(lastSave()));
+				assert(inlineFmt.disabled && inlineFmt.closest('.settingsControl').classList.contains('settingsControlDisabled'), 'The format of the inline blame should be disabled when the Inline Blame is off');
+				inlineMaster.checked = true;
+				inlineMaster.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(!inlineFmt.disabled, 'The format of the inline blame should be enabled again');
+
+				// A control shown only when another setting is on (visibleWhen), and the token menu of a format
+				const uncommittedRow = document.querySelector('input[data-skey="blame.currentLine.uncommittedFormat"]').closest('.settingsControl');
+				const useUncommitted = document.querySelector('input[data-skey="blame.currentLine.useUncommittedFormat"]');
+				useUncommitted.checked = true;
+				useUncommitted.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(uncommittedRow.style.display !== 'none', 'The format of uncommitted changes should be shown when it\'s overridden');
+				const tokenSelect = document.querySelector('.settingsTokenSelect[data-token-for="views.stashes.labelFormat"]');
+				const stashLabel = document.querySelector('input[data-skey="views.stashes.labelFormat"]');
+				stashLabel.value = '';
+				tokenSelect.value = '${stashOnRef, }';
+				tokenSelect.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(stashLabel.value === '${stashOnRef, }' && lastSave().settings['views.stashes.labelFormat'] === '${stashOnRef, }', 'The token was not inserted: ' + stashLabel.value);
+
+				// A group of checkboxes saves an array, and the switch of Menus & Toolbars turns every menu location off
+				const blockedGroup = document.querySelector('input[data-kind="checkgroup"][data-skey="launchpad.indicator.groups"][data-value="blocked"]');
+				blockedGroup.checked = !blockedGroup.checked;
+				blockedGroup.dispatchEvent(new Event('change', { bubbles: true }));
+				assert(Array.isArray(lastSave().settings['launchpad.indicator.groups']), 'The groups of the Launchpad were not saved as an array');
+				const menusMaster = document.querySelector('#settingsCategory-menus .settingsControl.master input');
+				menusMaster.checked = false;
+				menusMaster.dispatchEvent(new Event('change', { bubbles: true }));
+				const menusSaved = lastSave().settings;
+				assert(['menus.editor.enabled', 'menus.editorGutter.enabled', 'menus.editorTab.enabled', 'menus.editorGroup.enabled', 'menus.explorer.enabled', 'menus.scm.enabled'].every((k) => menusSaved[k] === false), 'Menus & Toolbars did not turn every menu off: ' + JSON.stringify(menusSaved));
+				assert(document.querySelector('input[data-skey="menus.explorer.fileHistory"]').disabled, 'The items of a menu should be disabled when the menu is off');
+				menusMaster.checked = true;
+				menusMaster.dispatchEvent(new Event('change', { bubbles: true }));
+				return 'Overview Bar, ? Shortcuts modal, Solo Branch mode, 5 Coding Agents, 25 Settings categories, 11 SCM sections, Custom Remote form, Blame format live preview, category switches, dependent controls & token menus verified';
 			} finally {
 				mouse(document.getElementById('settingsClose'), 'click');
 				await waitFor('Settings Widget to close', () => !widget.classList.contains('active'));

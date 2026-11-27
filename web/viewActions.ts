@@ -133,6 +133,23 @@ class ViewActions {
 				visible: visibility.compare,
 				onClick: () => this.view.branchCompare.chooseAndCompare(refName, target)
 			}
+		], [
+			{
+				title: t('Explain Branch Changes with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainChanges', repo: this.view.currentRepo, mode: 'branch', ref: refName })
+			}, {
+				title: t('Explain Unpushed Changes with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: this.view.gitBranchHead === refName && this.view.gitRemotes.length > 0,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainChanges', repo: this.view.currentRepo, mode: 'unpushed', ref: refName })
+			}, {
+				title: t('Merge Target') + ELLIPSIS,
+				icon: MENU_ICONS.merge,
+				visible: true,
+				onClick: () => this.view.mergeTarget.open(refName, target)
+			}
 		]];
 	}
 
@@ -383,6 +400,20 @@ class ViewActions {
 				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainRegression', repo: this.view.currentRepo, commitHash: hash, label: abbrevCommit(hash) + ' ' + commit.message })
 			},
 			{
+				id: 'browseRevision',
+				title: t('Browse Files at this Commit') + ELLIPSIS,
+				icon: MENU_ICONS.files,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'browseRevision', repo: this.view.currentRepo, commitHash: hash })
+			},
+			{
+				id: 'inspectCommit',
+				title: t('Inspect in Side Bar'),
+				icon: MENU_ICONS.eye,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'inspectCommit', repo: this.view.currentRepo, commitHash: hash })
+			},
+			{
 				id: 'editGitNote',
 				title: t('Add / Edit Git Note') + ELLIPSIS,
 				icon: MENU_ICONS.subject,
@@ -467,6 +498,15 @@ class ViewActions {
 					const oldest = commits[0], newest = commits[commits.length - 1];
 					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
 					sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'range', fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + '..' + abbrevCommit(newest.hash) });
+				}
+			}, {
+				title: t('Explain Selected Changes with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: commits.length >= 2,
+				onClick: () => {
+					const oldest = commits[0], newest = commits[commits.length - 1];
+					const baseRef = oldest.parents.length > 0 ? oldest.parents[0] : oldest.hash;
+					sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainChanges', repo: this.view.currentRepo, mode: 'range', fromRef: baseRef, toRef: newest.hash, label: abbrevCommit(oldest.hash) + '..' + abbrevCommit(newest.hash) });
 				}
 			}, {
 				title: t('AI PR / Release Notes for Selection') + ELLIPSIS,
@@ -679,6 +719,13 @@ class ViewActions {
 				visible: visibility.savePatch,
 				onClick: () => this.savePatchAction('stash', [hash], selector.substring(5).replace(/[@{}]/g, '') + '.patch', false)
 			}
+		], [
+			{
+				title: t('Explain Stash with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainChanges', repo: this.view.currentRepo, mode: 'stash', commitHash: hash, label: selector })
+			}
 		]];
 	}
 
@@ -783,6 +830,11 @@ class ViewActions {
 				icon: MENU_ICONS.sparkle,
 				visible: true,
 				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiReview', repo: this.view.currentRepo, mode: 'uncommitted' })
+			}, {
+				title: t('Explain Uncommitted Changes with AI') + ELLIPSIS,
+				icon: MENU_ICONS.sparkle,
+				visible: true,
+				onClick: () => sendMessage({ command: 'openCompanionFeature', feature: 'aiExplainChanges', repo: this.view.currentRepo, mode: 'uncommitted' })
 			}, {
 				title: t('Stash uncommitted changes') + ELLIPSIS,
 				icon: MENU_ICONS.stash,

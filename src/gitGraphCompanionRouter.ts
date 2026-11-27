@@ -7,7 +7,7 @@ import { exportGraphSvgToFile } from './exportShare';
 import { GitFeatures, buildPartialHunkPatch } from './gitFeatures';
 import { getLanguage, t } from './l10n';
 import { computeGuardRiskScore, scanRepoWorkingTreeForIssues } from './preCommitGuard';
-import { fetchPullRequestDetails, fetchRepoPullRequestBadges } from './prStatusIntegration';
+import { fetchPullRequestDetails, fetchRepoPullRequestBadges, getHostingIntegrationStatuses } from './prStatusIntegration';
 import { RepoMetadataStore } from './repoMetadataStore';
 import { GitRebaseTodoItem, RequestMessage, ResponseMessage } from './types';
 import { UndoManager } from './undoManager';
@@ -27,6 +27,11 @@ const COMPANION_COMMAND_MAP: { readonly [key: string]: string } = {
 	aiReview: 'git-map.ai.reviewChanges',
 	aiReleaseNotes: 'git-map.ai.generateReleaseNotes',
 	aiExplainRegression: 'git-map.ai.explainRegression',
+	aiExplainChanges: 'git-map.ai.explainChanges',
+	inspectCommit: 'git-map.inspect',
+	aiSwitchModel: 'git-map.ai.switchModel',
+	browseRevision: 'git-map.browseRevision',
+	filesTreemap: 'git-map.filesTreemap',
 	conflictAssistant: 'git-map.conflictAssistant',
 	reflogExplorer: 'git-map.reflogExplorer',
 	repoInsights: 'git-map.repoInsights',
@@ -427,10 +432,23 @@ export async function handleCompanionMessage(msg: RequestMessage, ctx: Companion
 			}
 			return true;
 		}
+		case 'runSettingsCommand':
+			// Only the commands of Git Map can be run from the Settings panel
+			if (/^git-map\.[A-Za-z.]+$/.test(msg.settingsCommand)) vscode.commands.executeCommand(msg.settingsCommand).then(() => { }, () => { });
+			return true;
+		case 'openSettingsSearch':
+			if (/^git-map(\.[A-Za-z]+)*$/.test(msg.query)) vscode.commands.executeCommand('workbench.action.openSettings', msg.query).then(() => { }, () => { });
+			return true;
+		case 'loadHostingIntegrations':
+			ctx.sendMessage({ command: 'loadHostingIntegrations', integrations: await getHostingIntegrationStatuses() });
+			return true;
 		case 'openCompanionFeature': {
-			const payload = { repo: msg.repo, mode: msg.mode, commitHash: msg.commitHash, fromRef: msg.fromRef, toRef: msg.toRef, label: msg.label };
+			const payload = { repo: msg.repo, mode: msg.mode, ref: msg.ref, commitHash: msg.commitHash, fromRef: msg.fromRef, toRef: msg.toRef, label: msg.label };
 			if (msg.feature === 'multiRepoOverview') {
 				vscode.commands.executeCommand('git-map.multiRepoOverview').then(() => { }, () => { });
+			} else if (msg.feature === 'connectIntegration' || msg.feature === 'disconnectIntegration') {
+				await vscode.commands.executeCommand(msg.feature === 'connectIntegration' ? 'git-map.setHostingToken' : 'git-map.clearHostingToken', msg.ref);
+				ctx.sendMessage({ command: 'loadHostingIntegrations', integrations: await getHostingIntegrationStatuses() });
 			} else if (msg.feature === 'setHostingToken' || msg.feature === 'clearHostingToken') {
 				await vscode.commands.executeCommand(msg.feature === 'setHostingToken' ? 'git-map.setHostingToken' : 'git-map.clearHostingToken');
 				if (typeof msg.repo === 'string' && msg.repo !== '') {

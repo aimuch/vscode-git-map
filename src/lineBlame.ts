@@ -6,8 +6,8 @@ import { getLanguage, t } from './l10n';
 import { Logger } from './logger';
 import { getCachedRepoPullRequestBadges } from './prStatusIntegration';
 import { RepoManager } from './repoManager';
-import { AutolinkRule, GitLineBlame } from './types';
-import { abbrevCommit, getPathFromUri, getRelativeTimeDiff } from './utils';
+import { AutolinkRule, BlameStatusBarCommand, GitLineBlame } from './types';
+import { abbrevCommit, formatDatePattern, getPathFromUri, getRelativeTimeDiff } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 
@@ -243,17 +243,19 @@ export class LineBlame extends Disposable {
 	 */
 	private showInStatusBar(repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number) {
 		const cfg = getConfig(repo);
-		const prInfo = cfg.blamePullRequestsEnabled ? resolvePrInfoForLineBlame(repo, blame) : null;
-		if (cfg.blameStatusBarFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}') {
-			this.statusBarItem.text = '$(git-commit) ' + formatBlameTemplate(cfg.blameStatusBarFormat, blame, prInfo);
+		const prInfo = cfg.blamePullRequestsEnabled && cfg.blameStatusBarPullRequests ? resolvePrInfoForLineBlame(repo, blame) : null;
+		if (cfg.blameStatusBarFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}' || cfg.blameDateStyle === 'absolute') {
+			this.statusBarItem.text = '$(git-commit) ' + formatBlameTemplate(cfg.blameStatusBarFormat, blame, prInfo, getBlameDateOptions(repo, cfg.blameStatusBarDateFormat));
 		} else {
 			const baseText = blame.committed ? t('{0}, {1}', blame.author, getRelativeTimeDiff(blame.authorDate)) : t('You, Uncommitted changes');
 			this.statusBarItem.text = '$(git-commit) ' + baseText + (prInfo !== null ? ' via PR #' + prInfo.number : '');
 		}
-		this.statusBarItem.tooltip = blame.committed
-			? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary + (prInfo !== null ? ' (PR #' + prInfo.number + ')' : '')
-			: t('This line has uncommitted changes.');
-		this.statusBarItem.command = { title: t('View Line History'), command: 'git-map.viewLineHistory', arguments: [{ uri: uri.toString(), start: line, end: line }] };
+		this.statusBarItem.tooltip = blame.committed && cfg.blameStatusBarTooltipFormat !== ''
+			? new vscode.MarkdownString(formatBlameTemplate(cfg.blameStatusBarTooltipFormat, blame, prInfo, getBlameDateOptions(repo, cfg.blameStatusBarDateFormat)), true)
+			: blame.committed
+				? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary + (prInfo !== null ? ' (PR #' + prInfo.number + ')' : '')
+				: t('This line has uncommitted changes.');
+		this.statusBarItem.command = getStatusBarCommand(cfg.blameStatusBarCommand, repo, blame, uri, line);
 		this.statusBarItem.show();
 		this.statusBarVisible = true;
 	}
@@ -315,7 +317,9 @@ export class LineBlame extends Disposable {
 		const inlineText = getBlameText(blame, {
 			inlineFormat: repoCfg.blameInlineFormat,
 			uncommittedFormat: repoCfg.blameUncommittedFormat,
-			prInfo: prInfo
+			prInfo: prInfo,
+			dates: getBlameDateOptions(repo, repoCfg.blameCurrentLineDateFormat),
+			useUncommittedFormat: repoCfg.blameUseUncommittedFormat
 		});
 		const decRange = hoverCfg.currentLineOver === 'line' && hoversAllowed ? lineRange : new vscode.Range(end, end);
 		const decorate = (change: ReadonlyArray<string> | null) => {
@@ -404,9 +408,35 @@ export function resolvePrInfoForLineBlame(repo: string, blame: GitLineBlame): Bl
 }
 
 /**
+ * Get the command run when the blame in the Status Bar is clicked (`git-map.blame.statusBar.command`).
+ * @param kind What clicking it does.
+ * @param repo The repository of the file.
+ * @param blame The blame of the line.
+ * @param uri The URI of the file.
+ * @param line The line (1-based).
+ */
+export function getStatusBarCommand(kind: BlameStatusBarCommand, repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number): vscode.Command {
+	if (blame.committed) {
+		switch (kind) {
+			case 'inspect': return { title: t('Inspect Commit Details'), command: 'git-map.inspect', arguments: [repo, blame.hash] };
+			case 'viewCommitInGitMap': return { title: t('View Commit in Git Map'), command: 'git-map.viewCommitInGitMap', arguments: [repo, blame.hash] };
+			case 'openLineChanges': return { title: t('Open Changes'), command: 'git-map.openLineChanges', arguments: [repo, blame.hash, blame.originalFilePath, blame.originalLine] };
+		}
+	}
+	switch (kind) {
+		case 'toggleFileBlame': return { title: t('Toggle File Blame'), command: 'git-map.toggleFileBlame', arguments: [uri] };
+		case 'toggleFileHeatmap': return { title: t('Toggle File Heatmap'), command: 'git-map.toggleFileHeatmap', arguments: [] };
+		case 'toggleFileChanges': return { title: t('Toggle File Changes'), command: 'git-map.toggleFileChanges', arguments: [] };
+		case 'toggleCodeLens': return { title: t('Toggle Git CodeLens'), command: 'git-map.toggleCodeLens', arguments: [] };
+		case 'viewFileHistory': return { title: t('View File History in Git Map'), command: 'git-map.viewFileHistory', arguments: [uri] };
+	}
+	return { title: t('View Line History'), command: 'git-map.viewLineHistory', arguments: [{ uri: uri.toString(), start: line, end: line }] };
+}
+
+/**
  * Format a blame annotation string from a customizable token template (`${author}`, `${agoOrDate}`, `${' via 'pullRequest}`, `${ • summary|60?}`, etc.).
  */
-export function formatBlameTemplate(template: string, blame: GitLineBlame, prInfo: BlamePrInfo | null): string {
+export function formatBlameTemplate(template: string, blame: GitLineBlame, prInfo: BlamePrInfo | null, dates?: BlameDateOptions): string {
 	if (!blame.committed) {
 		const ago = t('just now');
 		return template
@@ -419,19 +449,21 @@ export function formatBlameTemplate(template: string, blame: GitLineBlame, prInf
 			.trim();
 	}
 	const ago = getRelativeTimeDiff(blame.authorDate);
-	const absDate = new Date(blame.authorDate * 1000).toLocaleDateString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en');
+	const absDate = typeof dates !== 'undefined' ? formatDatePattern(blame.authorDate, dates.format, dates.locale || '') : new Date(blame.authorDate * 1000).toLocaleDateString(getLanguage() === 'zh-cn' ? 'zh-CN' : 'en');
+	const agoOrDate = typeof dates !== 'undefined' && dates.style === 'absolute' ? absDate : ago;
 	const prText = prInfo !== null ? ('PR #' + prInfo.number) : '';
 
 	const resolveToken = (expr: string): string => {
-		const truncMatch = expr.match(/^([A-Za-z]+)\|(\d+)\??$/);
+		// `token|N?` truncates the value to N characters, `token|N-` truncates it and pads it with spaces to N characters
+		const truncMatch = expr.match(/^([A-Za-z]+)\|(\d+)([?-]?)$/);
 		const tokenName = truncMatch ? truncMatch[1] : expr.replace(/\?$/, '');
-		const maxLen = truncMatch ? parseInt(truncMatch[2], 10) : 0;
+		const maxLen = truncMatch ? parseInt(truncMatch[2], 10) : 0, pad = truncMatch !== null && truncMatch[3] === '-';
 		let val = '';
 		switch (tokenName) {
 			case 'author': val = blame.author; break;
 			case 'ago': val = ago; break;
 			case 'date': val = absDate; break;
-			case 'agoOrDate': val = ago; break;
+			case 'agoOrDate': val = agoOrDate; break;
 			case 'summary':
 			case 'message': val = blame.summary; break;
 			case 'sha': val = abbrevCommit(blame.hash); break;
@@ -441,17 +473,20 @@ export function formatBlameTemplate(template: string, blame: GitLineBlame, prInf
 		if (maxLen > 0 && val.length > maxLen) {
 			val = val.substring(0, Math.max(1, maxLen - 1)) + '…';
 		}
+		if (pad && val.length < maxLen) val = val + '\u00a0'.repeat(maxLen - val.length);
 		return val;
 	};
 
 	return template.replace(/\$\{([^}]+)\}/g, (_, inner: string) => {
+		// A token, truncated (`|N?`) or padded (`|N-`) to a width
+		if (/^[A-Za-z]+\|\d+[?-]?$/.test(inner)) return resolveToken(inner);
 		// Handle conditional literal prefixes like `' via 'pullRequest` or ` • summary|60?`
-		const quoted = inner.match(/^'([^']*)'([A-Za-z0-9|?]+)$/);
+		const quoted = inner.match(/^'([^']*)'([A-Za-z0-9|?-]+)$/);
 		if (quoted !== null) {
 			const v = resolveToken(quoted[2]);
 			return v !== '' ? quoted[1] + v : '';
 		}
-		const spaced = inner.match(/^(\s+[^A-Za-z\s]+\s+)([A-Za-z0-9|?]+)$/);
+		const spaced = inner.match(/^(\s+[^A-Za-z\s]+\s+)([A-Za-z0-9|?-]+)$/);
 		if (spaced !== null) {
 			const v = resolveToken(spaced[2]);
 			return v !== '' ? spaced[1] + v : '';
@@ -462,12 +497,33 @@ export function formatBlameTemplate(template: string, blame: GitLineBlame, prInf
 			return v !== '' ? v + trailingSuffix[2] : '';
 		}
 		return resolveToken(inner);
-	}).replace(/\s{2,}/g, ' ').trim();
+	}).replace(/ {2,}/g, ' ').trim();
+}
+
+/**
+ * How the dates of blame annotations are shown: the style of `${agoOrDate}`, and the format of `${date}` (empty => the short date).
+ */
+export interface BlameDateOptions {
+	readonly style: 'relative' | 'absolute';
+	readonly format: string;
+	readonly locale?: string; // `git-map.defaultDateLocale`
+}
+
+/**
+ * Get how the dates of an annotation are shown, from its own date format & the default date settings.
+ * @param repo The repository (for its settings).
+ * @param format The date format of the annotation (empty => the default date format, then the default short date format).
+ */
+export function getBlameDateOptions(repo: string, format: string): BlameDateOptions {
+	const cfg = getConfig(repo);
+	return { style: cfg.blameDateStyle, format: format !== '' ? format : cfg.defaultDateFormat !== '' ? cfg.defaultDateFormat : cfg.defaultDateShortFormat, locale: cfg.defaultDateLocale };
 }
 
 export interface BlameTextOptions {
 	readonly inlineFormat?: string;
 	readonly uncommittedFormat?: string;
+	readonly dates?: BlameDateOptions;
+	readonly useUncommittedFormat?: boolean; // Use `uncommittedFormat` (otherwise the default text)
 	readonly prInfo?: BlamePrInfo | null;
 }
 
@@ -479,13 +535,13 @@ export interface BlameTextOptions {
  */
 export function getBlameText(blame: GitLineBlame, options?: BlameTextOptions) {
 	if (!blame.committed) {
-		if (options && typeof options.uncommittedFormat === 'string' && options.uncommittedFormat !== 'You, Uncommitted changes (${ago})') {
+		if (options && options.useUncommittedFormat !== false && typeof options.uncommittedFormat === 'string' && options.uncommittedFormat !== 'You, Uncommitted changes (${ago})') {
 			return formatBlameTemplate(options.uncommittedFormat, blame, null);
 		}
 		return t('You, Uncommitted changes');
 	}
-	if (options && typeof options.inlineFormat === 'string' && options.inlineFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}${ • summary|60?}') {
-		return formatBlameTemplate(options.inlineFormat, blame, options.prInfo || null);
+	if (options && typeof options.inlineFormat === 'string' && (options.inlineFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}${ • summary|60?}' || (typeof options.dates !== 'undefined' && options.dates.style === 'absolute'))) {
+		return formatBlameTemplate(options.inlineFormat, blame, options.prInfo || null, options.dates);
 	}
 	const summary = blame.summary.length > 60 ? blame.summary.substring(0, 59) + '…' : blame.summary;
 	const base = t('{0}, {1} • {2}', blame.author, getRelativeTimeDiff(blame.authorDate), summary);

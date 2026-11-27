@@ -6,7 +6,7 @@ import { runGit } from './historyRewrite';
 import { t } from './l10n';
 import { matchCustomRemote } from './remoteLinks';
 import { RepoManager } from './repoManager';
-import { CustomRemoteConfig, PullRequestBadgeInfo, PullRequestDetailsInfo } from './types';
+import { CustomRemoteConfig, HostingIntegrationStatus, PullRequestBadgeInfo, PullRequestDetailsInfo } from './types';
 import { getPathFromUri, getRepoName, showErrorMessage, showInformationMessage } from './utils';
 
 export interface ParsedHostingRemote {
@@ -93,9 +93,9 @@ async function getHostingToken(host: string): Promise<string | null> {
 	return typeof val === 'string' && val.trim() !== '' ? val.trim() : null;
 }
 
-export async function setHostingTokenCommand() {
+export async function setHostingTokenCommand(givenHost?: unknown) {
 	if (hostingSecrets === null) return;
-	const host = await vscode.window.showInputBox({
+	const host = typeof givenHost === 'string' && givenHost.trim() !== '' ? givenHost : await vscode.window.showInputBox({
 		title: t('Git Map: Set GitHub / GitLab Token'),
 		value: 'github.com',
 		prompt: t('Enter the Git hosting domain (e.g. github.com or gitlab.com)'),
@@ -115,9 +115,9 @@ export async function setHostingTokenCommand() {
 	showInformationMessage(t('Saved token for {0}.', cleanHost));
 }
 
-export async function clearHostingTokenCommand() {
+export async function clearHostingTokenCommand(givenHost?: unknown) {
 	if (hostingSecrets === null) return;
-	const host = await vscode.window.showInputBox({
+	const host = typeof givenHost === 'string' && givenHost.trim() !== '' ? givenHost : await vscode.window.showInputBox({
 		title: t('Git Map: Clear GitHub / GitLab Token'),
 		value: 'github.com',
 		prompt: t('Enter the Git hosting domain whose token should be deleted'),
@@ -128,6 +128,33 @@ export async function clearHostingTokenCommand() {
 	await hostingSecrets.delete(HOSTING_TOKEN_PREFIX + cleanHost);
 	prCache.clear();
 	showInformationMessage(t('Cleared token for {0}.', cleanHost));
+}
+
+/**
+ * The hosting services whose pull requests & CI statuses Git Map reads (with a token stored for their domain).
+ */
+const HOSTING_SERVICES: ReadonlyArray<{ readonly provider: string, readonly name: string, readonly host: string, readonly supports: 'prs' | 'prs-issues' }> = [
+	{ provider: 'github', name: 'GitHub', host: 'github.com', supports: 'prs-issues' },
+	{ provider: 'gitlab', name: 'GitLab', host: 'gitlab.com', supports: 'prs-issues' },
+	{ provider: 'bitbucket', name: 'Bitbucket', host: 'bitbucket.org', supports: 'prs' },
+	{ provider: 'gitea', name: 'Codeberg (Gitea / Forgejo)', host: 'codeberg.org', supports: 'prs-issues' },
+	{ provider: 'azure', name: 'Azure DevOps', host: 'dev.azure.com', supports: 'prs' }
+];
+
+/**
+ * Get the hosting services Git Map can connect to (the public services, and the self-hosted ones of the custom remotes), and whether a
+ * token is stored for each.
+ */
+export async function getHostingIntegrationStatuses(): Promise<HostingIntegrationStatus[]> {
+	const names: { [provider: string]: string } = { github: 'GitHub Enterprise', gitlab: 'GitLab Self-Managed', bitbucket: 'Bitbucket Data Center', gitea: 'Gitea / Forgejo', azure: 'Azure DevOps Server', custom: t('Custom Remote') };
+	const services: { provider: string, name: string, host: string, supports: 'prs' | 'prs-issues', selfHosted: boolean }[] = HOSTING_SERVICES.map((s) => Object.assign({ selfHosted: false }, s));
+	getConfig().customRemotes.forEach((remote) => {
+		const host = typeof remote.domain === 'string' ? remote.domain.trim().toLowerCase() : '';
+		if (host !== '' && !services.some((s) => s.host === host)) {
+			services.push({ provider: remote.type, name: (typeof remote.name === 'string' && remote.name.trim() !== '' ? remote.name.trim() : names[remote.type] || remote.type), host: host, supports: 'prs', selfHosted: true });
+		}
+	});
+	return Promise.all(services.map(async (s) => ({ provider: s.provider, name: s.name, host: s.host, supports: s.supports, selfHosted: s.selfHosted, connected: (await getHostingToken(s.host)) !== null })));
 }
 
 async function fetchJson(url: string, headers: { [k: string]: string }): Promise<any | null> {

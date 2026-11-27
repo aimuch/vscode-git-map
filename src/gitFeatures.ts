@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { GitProcessRunner, runGit } from './historyRewrite';
-import { ContributorSummary, GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileChange, GitFileStatus, GitFileTimelineCommit, GitPatchInfo, GitStashableFile, ReviewSessionScope } from './types';
+import { ContributorSummary, GitBisectState, GitBranchCleanupCandidate, GitBranchComparison, GitFileChange, GitFileStatus, GitFileTimelineCommit, GitLandedState, GitMergeTargetStatus, GitPatchInfo, GitRebaseConflictPrediction, GitStashableFile, ReviewSessionScope } from './types';
 
 const FIELD = '\x1f';
 const RECORD = '\x1e';
@@ -12,6 +12,13 @@ const MAX_EXPLAIN_DIFF_LINES = 3000;
 const MAX_EXPLAIN_LINE_CHARS = 500;
 const MAX_EXPLAIN_CHARS = 80000;
 const MAX_EXPLAIN_BYTES = 256 * 1024;
+const MERGE_TARGET_CONFIG_KEY = 'gitMapMergeTarget';
+// The identity of the temporary commits made while predicting the conflicts of a rebase (never referenced, so Git removes them eventually)
+const CONFLICT_CHECK_IDENTITY = { GIT_AUTHOR_NAME: 'Git Map', GIT_AUTHOR_EMAIL: 'git-map@localhost', GIT_COMMITTER_NAME: 'Git Map', GIT_COMMITTER_EMAIL: 'git-map@localhost' };
+const MAX_LANDED_CHECK_COMMITS = 200; // Branches with more commits of their own aren't checked for having been rebased or squashed
+const MAX_LANDED_TARGET_COMMITS = 300; // How many of the latest commits on the target are compared with a squashed branch
+const MAX_LANDED_DIFF_BYTES = 8 * 1024 * 1024;
+const MAX_LANDED_LOG_BYTES = 32 * 1024 * 1024;
 const MAX_PATCH_BYTES = 25 * 1024 * 1024;
 
 /**
@@ -88,32 +95,34 @@ export class GitFeatures {
 		const defaultLocal = defaultBranch !== null ? defaultBranch.replace(new RegExp('^(' + remotes.map(escapeRegExp).join('|') + ')/'), '') : null;
 
 		const candidates: GitBranchCleanupCandidate[] = [];
+		let defaultPatchIds: Set<string> | null = null; // The patch-ids of the latest commits on the default branch (computed when first needed)
 		for (const line of splitLines(branches.stdout)) {
 			const [name, hash, upstream, track, date, author] = line.split(FIELD);
 			if (typeof author === 'undefined' || name === current || name === defaultBranch || name === defaultLocal || worktreeBranches.has(name)) continue;
-			let isMerged = merged.has(name);
+			let landed: GitLandedState = merged.has(name) ? 'merged' : null;
 			const upstreamGone = upstream !== '' && track === '[gone]';
-			if (!isMerged && !upstreamGone) continue;
 			let unmergedCommits = 0;
-			if (!isMerged) {
+			if (landed === null && defaultBranch !== null) {
+				// Rebased or squashed into the default branch (e.g. a Pull Request merged with "Rebase and merge" or "Squash and merge")
+				const ahead = parseInt((await this.run(repo, ['rev-list', '--count', defaultBranch + '..refs/heads/' + name, '--'])).stdout.toString().trim()) || 0;
+				if (ahead > 0 && ahead <= MAX_LANDED_CHECK_COMMITS) {
+					if (defaultPatchIds === null) defaultPatchIds = await this.getRecentPatchIds(repo, defaultBranch, null);
+					landed = await this.getLandedState(repo, 'refs/heads/' + name, defaultBranch, ahead, defaultPatchIds);
+				}
+			}
+			if (landed === null && !upstreamGone) continue;
+			if (landed === null) {
 				// The commits that only this branch contains (which are lost if it's deleted)
 				const count = await this.run(repo, ['rev-list', '--count', 'refs/heads/' + name, '--not', '--exclude=' + name, '--branches', '--remotes', '--tags']);
 				unmergedCommits = parseInt(count.stdout.toString().trim()) || 0;
-				if (unmergedCommits > 0 && defaultBranch !== null) {
-					const cherry = await this.run(repo, ['cherry', defaultBranch, 'refs/heads/' + name]);
-					const cherryLines = splitLines(cherry.stdout);
-					if (cherry.code === 0 && cherryLines.length > 0 && cherryLines.every((cherryLine) => cherryLine.startsWith('- '))) {
-						isMerged = true;
-						unmergedCommits = 0;
-					}
-				}
 			}
 			candidates.push({
 				name: name,
 				hash: hash,
 				upstream: upstream !== '' ? upstream : null,
 				upstreamGone: upstreamGone,
-				merged: isMerged,
+				merged: landed !== null,
+				landed: landed,
 				unmergedCommits: unmergedCommits,
 				date: parseInt(date) || 0,
 				author: author,
@@ -494,7 +503,9 @@ export class GitFeatures {
 	 */
 	public async getFileTimeline(repo: string, filePath: string, maxCommits: number, revision: string = 'HEAD'): Promise<{ commits: GitFileTimelineCommit[], error: GitFeatureError }> {
 		const rev = revision === 'HEAD' || HASH_REGEXP.test(revision) ? revision : 'HEAD';
-		const result = await this.run(repo, ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--follow', '-M', '--max-count=' + maxCommits, '--format=' + RECORD + '%H' + FIELD + '%aN' + FIELD + '%aE' + FIELD + '%at' + FIELD + '%s', '--numstat', '--summary', rev, '--', filePath]);
+		// A folder's history is the history of all of its files (Git can only follow a single file through renames)
+		const follow = isDirectory(repo, filePath) ? [] : ['--follow'];
+		const result = await this.run(repo, ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', ...follow, '-M', '--max-count=' + maxCommits, '--format=' + RECORD + '%H' + FIELD + '%aN' + FIELD + '%aE' + FIELD + '%at' + FIELD + '%s', '--numstat', '--summary', rev, '--', filePath]);
 		if (result.code !== 0) return { commits: [], error: errorOf(result) };
 		const commits: GitFileTimelineCommit[] = [];
 		result.stdout.toString().split(RECORD).slice(1).forEach((record) => {
@@ -566,49 +577,288 @@ export class GitFeatures {
 		let combined = unstaged.stdout.toString();
 		let extraTruncated = unstaged.truncated || untracked.truncated;
 		if (untrackedPaths.length > 0) {
-			const sections: string[] = ['Untracked files (' + untrackedPaths.length + '): ' + untrackedPaths.slice(0, 30).join(', ')];
-			if (untrackedPaths.length > 30) extraTruncated = true;
-			const repoResolved = path.resolve(repo);
-			let totalPreviewBytes = 0;
-			for (const relPath of untrackedPaths.slice(0, 15)) {
-				if (totalPreviewBytes >= 32768) {
-					extraTruncated = true;
-					break;
-				}
-				const absPath = path.resolve(repoResolved, relPath);
-				const relCheck = path.relative(repoResolved, absPath);
-				if (relCheck.startsWith('..') || path.isAbsolute(relCheck)) continue;
-				try {
-					const stat = fs.lstatSync(absPath);
-					if (!stat.isFile()) continue;
-					const readLen = Math.min(stat.size, 4096);
-					const fd = fs.openSync(absPath, 'r');
-					let buf: Buffer;
-					try {
-						buf = Buffer.alloc(readLen);
-						fs.readSync(fd, buf, 0, readLen, 0);
-					} finally {
-						fs.closeSync(fd);
-					}
-					if (buf.includes(0)) {
-						sections.push('--- /dev/null\n+++ b/' + relPath + '\n(Binary file)');
-					} else {
-						if (stat.size > readLen) extraTruncated = true;
-						totalPreviewBytes += readLen;
-						const addedLines = buf.toString('utf8').split(/\r?\n/).map((line) => '+' + line).join('\n');
-						sections.push('--- /dev/null\n+++ b/' + relPath + '\n' + addedLines);
-					}
-				} catch (_) {
-					// Ignore unreadable untracked files
-				}
-			}
-			if (untrackedPaths.length > 15) extraTruncated = true;
-			combined = (combined !== '' ? combined + '\n\n' : '') + sections.join('\n\n');
+			const preview = this.getUntrackedFilesPreview(repo, untrackedPaths);
+			if (preview.truncated) extraTruncated = true;
+			combined = (combined !== '' ? combined + '\n\n' : '') + preview.text;
 		}
 		const capped = truncateModelInput(combined, extraTruncated);
 		return { text: capped.text, scope: 'unstaged', recentSubjects: await getRecentSubjects(), truncated: capped.truncated, error: null };
 	}
 
+
+	/* Predicting the Conflicts of an Interactive Rebase */
+
+	/**
+	 * Predict which commits of an interactive rebase will conflict, without changing the working tree, the index or any ref: each commit
+	 * that's kept is applied in turn with `git merge-tree --write-tree` (Git 2.40 or later), on a temporary commit of the result so far.
+	 * The prediction stops at the first conflict (what follows depends on how it's resolved).
+	 * @param repo The path of the repository.
+	 * @param base The commit or branch the commits are rebased on.
+	 * @param todo The commits, in the order they're applied.
+	 * @returns The result for each commit that isn't dropped, whether this version of Git can't predict conflicts, and the error.
+	 */
+	public async predictRebaseConflicts(repo: string, base: string, todo: ReadonlyArray<{ readonly action: string, readonly hash: string }>): Promise<{ results: GitRebaseConflictPrediction[], unsupported: boolean, error: GitFeatureError }> {
+		if (isUnsafeRefName(base)) return { results: [], unsupported: false, error: 'Invalid base: ' + base };
+		let current = await this.resolveCommit(repo, base);
+		if (current === null) return { results: [], unsupported: false, error: 'Unable to resolve "' + base + '" to a commit.' };
+		const results: GitRebaseConflictPrediction[] = [];
+		let stopped = false;
+		for (const item of todo) {
+			if (item.action === 'drop') continue;
+			if (!HASH_REGEXP.test(item.hash)) return { results: [], unsupported: false, error: 'Invalid commit hash: ' + item.hash };
+			if (stopped) {
+				results.push({ hash: item.hash, state: 'unknown', files: [] });
+				continue;
+			}
+			const parent = await this.resolveCommit(repo, item.hash + '^');
+			if (parent === null) {
+				// A root commit can't be applied as a cherry pick, so what follows can't be predicted
+				results.push({ hash: item.hash, state: 'unknown', files: [] });
+				stopped = true;
+				continue;
+			}
+			const merge = await this.run(repo, ['merge-tree', '--write-tree', '--name-only', '--no-messages', '--merge-base=' + parent, current, item.hash]);
+			const lines = splitLines(merge.stdout);
+			if (merge.code === 0 && lines.length > 0 && HASH_REGEXP.test(lines[0])) {
+				const commit = await runGit(this.git, repo, ['commit-tree', lines[0], '-p', current, '-m', 'Git Map: rebase conflict check'], null, null, CONFLICT_CHECK_IDENTITY);
+				const hash = commit.stdout.toString().trim();
+				if (commit.code !== 0 || !HASH_REGEXP.test(hash)) return { results: [], unsupported: false, error: errorOf(commit) };
+				current = hash;
+				results.push({ hash: item.hash, state: 'clean', files: [] });
+			} else if (merge.code === 1 && lines.length > 0 && HASH_REGEXP.test(lines[0])) {
+				results.push({ hash: item.hash, state: 'conflict', files: Array.from(new Set(lines.slice(1))) });
+				stopped = true;
+			} else {
+				// Git before 2.40 doesn't have `git merge-tree --write-tree --merge-base`
+				if (/usage: git merge-tree|unknown option|merge-base/i.test(merge.stderr)) return { results: [], unsupported: true, error: null };
+				return { results: [], unsupported: false, error: errorOf(merge) };
+			}
+		}
+		return { results: results, unsupported: false, error: null };
+	}
+
+	/* Explaining Changes: the working changes, a stash, the changes of a branch, or the unpushed commits */
+
+	/**
+	 * Get the working changes (staged, unstaged & untracked) to explain, compared with HEAD.
+	 * @param repo The path of the repository.
+	 * @returns The changes (empty when there are none), whether they were truncated, and the error.
+	 */
+	public async getWorkingChangesForExplanation(repo: string): Promise<{ text: string, truncated: boolean, error: GitFeatureError }> {
+		const hasHead = (await this.resolveCommit(repo, 'HEAD')) !== null;
+		const [tracked, untracked] = await Promise.all([
+			runGit(this.git, repo, hasHead ? ['diff', 'HEAD', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--'] : ['diff', '--cached', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--'], null, null, undefined, MAX_EXPLAIN_BYTES),
+			runGit(this.git, repo, ['ls-files', '--others', '--exclude-standard', '-z'], null, null, undefined, MAX_EXPLAIN_BYTES)
+		]);
+		if (tracked.code !== 0 && !tracked.truncated) return { text: '', truncated: false, error: errorOf(tracked) };
+		const untrackedPaths = untracked.code === 0 || untracked.truncated ? untracked.stdout.toString().split('\0').filter((p) => p !== '') : [];
+		let text = tracked.stdout.toString(), truncated = tracked.truncated || untracked.truncated;
+		if (untrackedPaths.length > 0) {
+			const preview = this.getUntrackedFilesPreview(repo, untrackedPaths);
+			if (preview.truncated) truncated = true;
+			text = (text !== '' ? text + '\n\n' : '') + preview.text;
+		}
+		if (text.trim() === '') return { text: '', truncated: false, error: null };
+		const capped = truncateModelInput(text, truncated);
+		return { text: capped.text, truncated: capped.truncated, error: null };
+	}
+
+	/**
+	 * Get the changes of a stash to explain: its message, the changes to tracked files, and its untracked files (if it has them).
+	 * @param repo The path of the repository.
+	 * @param hash The hash of the stash.
+	 */
+	public async getStashForExplanation(repo: string, hash: string): Promise<{ text: string, truncated: boolean, error: GitFeatureError }> {
+		if (!HASH_REGEXP.test(hash)) return { text: '', truncated: false, error: 'Invalid stash hash: ' + hash };
+		const tracked = await runGit(this.git, repo, ['-c', 'log.showSignature=false', 'show', '-m', '--first-parent', '--no-color', '--no-ext-diff', '-M', '--stat', '--patch', '--format=Stash: %s%n', hash, '--'], null, null, undefined, MAX_EXPLAIN_BYTES);
+		if (tracked.code !== 0 && !tracked.truncated) return { text: '', truncated: false, error: errorOf(tracked) };
+		let text = tracked.stdout.toString(), truncated = tracked.truncated;
+		// The untracked files of a stash are in its third parent (a commit without parents)
+		const untrackedCommit = (await this.run(repo, ['rev-parse', '-q', '--verify', hash + '^3^{commit}'])).stdout.toString().trim();
+		if (HASH_REGEXP.test(untrackedCommit)) {
+			const untracked = await runGit(this.git, repo, ['show', '--no-color', '--no-ext-diff', '--stat', '--patch', '--format=tformat:Untracked files of the stash:', untrackedCommit, '--'], null, null, undefined, MAX_EXPLAIN_BYTES);
+			if (untracked.code === 0 || untracked.truncated) {
+				text += '\n\n' + untracked.stdout.toString();
+				truncated = truncated || untracked.truncated;
+			}
+		}
+		const capped = truncateModelInput(text, truncated);
+		return { text: capped.text, truncated: capped.truncated, error: null };
+	}
+
+	/**
+	 * Get the merge target of a branch: the branch its work is meant to be merged into. It's the branch chosen for it (stored in the
+	 * Git config as `branch.<name>.gitMapMergeTarget`), otherwise the default branch of the repository.
+	 * @param repo The path of the repository.
+	 * @param branch The local branch.
+	 * @returns The merge target (NULL if there's none), and whether it was chosen for the branch.
+	 */
+	public async getMergeTarget(repo: string, branch: string): Promise<{ target: string | null, chosen: boolean }> {
+		if (isUnsafeRefName(branch)) return { target: null, chosen: false };
+		const configured = (await this.run(repo, ['config', '--get', 'branch.' + branch + '.' + MERGE_TARGET_CONFIG_KEY])).stdout.toString().trim();
+		if (configured !== '' && !isUnsafeRefName(configured) && (await this.resolveCommit(repo, configured)) !== null) return { target: configured, chosen: true };
+		const defaultBranch = await this.getDefaultBranch(repo);
+		return { target: defaultBranch !== null && defaultBranch !== branch ? defaultBranch : null, chosen: false };
+	}
+
+	/**
+	 * Set (or clear) the merge target chosen for a branch.
+	 * @param repo The path of the repository.
+	 * @param branch The local branch.
+	 * @param target The merge target (NULL => use the default branch).
+	 * @returns The error, or NULL.
+	 */
+	public async setMergeTarget(repo: string, branch: string, target: string | null): Promise<GitFeatureError> {
+		if (isUnsafeRefName(branch)) return 'Invalid branch name: ' + branch;
+		const key = 'branch.' + branch + '.' + MERGE_TARGET_CONFIG_KEY;
+		if (target === null) {
+			const result = await this.run(repo, ['config', '--unset', key]);
+			// Exit code 5: the key wasn't set
+			return result.code === 0 || result.code === 5 ? null : errorOf(result);
+		}
+		if (isUnsafeRefName(target) || target === branch) return 'Invalid merge target: ' + target;
+		if ((await this.resolveCommit(repo, target)) === null) return 'Unable to resolve "' + target + '" to a commit.';
+		const result = await this.run(repo, ['config', key, target]);
+		return result.code === 0 ? null : errorOf(result);
+	}
+
+	/**
+	 * Get the status of a branch compared with its merge target: how many commits each has that the other doesn't, and whether the
+	 * branch's work has landed in it (merged, rebased or squashed into it).
+	 * @param repo The path of the repository.
+	 * @param branch The local branch.
+	 */
+	public async getMergeTargetStatus(repo: string, branch: string): Promise<{ status: GitMergeTargetStatus | null, error: GitFeatureError }> {
+		if (isUnsafeRefName(branch)) return { status: null, error: 'Invalid branch name: ' + branch };
+		const { target, chosen } = await this.getMergeTarget(repo, branch);
+		if (target === null) return { status: { branch: branch, target: null, chosen: false, ahead: 0, behind: 0, landed: null, mergeBase: null }, error: null };
+		const counts = await this.run(repo, ['rev-list', '--left-right', '--count', target + '...refs/heads/' + branch, '--']);
+		if (counts.code !== 0) return { status: null, error: errorOf(counts) };
+		const [behind, ahead] = counts.stdout.toString().trim().split(/\s+/).map((n) => parseInt(n) || 0);
+		const mergeBase = (await this.run(repo, ['merge-base', target, 'refs/heads/' + branch])).stdout.toString().trim();
+		const landed = await this.getLandedState(repo, 'refs/heads/' + branch, target, ahead, null);
+		return {
+			status: { branch: branch, target: target, chosen: chosen, ahead: ahead, behind: behind, landed: landed, mergeBase: HASH_REGEXP.test(mergeBase) ? mergeBase : null },
+			error: null
+		};
+	}
+
+	/**
+	 * Find out whether (and how) the work of a branch landed in another branch.
+	 * @param repo The path of the repository.
+	 * @param branchRef The branch (a full ref name).
+	 * @param target The branch it may have landed in.
+	 * @param ahead The number of commits on the branch that aren't on the target (0 => it's merged).
+	 * @param targetPatchIds The patch-ids of the recent commits on the target (computed when NULL).
+	 * @returns How it landed, or NULL if it hasn't (or the branch has no commits of its own).
+	 */
+	public async getLandedState(repo: string, branchRef: string, target: string, ahead: number, targetPatchIds: ReadonlySet<string> | null): Promise<GitLandedState> {
+		if (ahead === 0) return 'merged';
+		if (ahead > MAX_LANDED_CHECK_COMMITS) return null;
+		// Rebased (or cherry picked) onto the target: every commit has an equivalent commit on it
+		const cherry = await this.run(repo, ['cherry', target, branchRef]);
+		const cherryLines = splitLines(cherry.stdout);
+		if (cherry.code === 0 && cherryLines.length > 0 && cherryLines.every((line) => line.startsWith('- '))) return 'rebased';
+		// Squashed into the target: all of its changes (since it diverged) equal the changes of one commit on the target
+		const mergeBase = (await this.run(repo, ['merge-base', target, branchRef])).stdout.toString().trim();
+		if (!HASH_REGEXP.test(mergeBase)) return null;
+		const diff = await runGit(this.git, repo, ['diff', '--no-color', '--no-ext-diff', '--full-index', mergeBase, branchRef, '--'], null, null, undefined, MAX_LANDED_DIFF_BYTES);
+		if (diff.code !== 0 || diff.truncated || diff.stdout.length === 0) return null;
+		const patchId = await runGit(this.git, repo, ['patch-id', '--stable'], diff.stdout.toString());
+		const branchPatchId = patchId.code === 0 ? patchId.stdout.toString().trim().split(/\s+/)[0] : '';
+		if (branchPatchId === '') return null;
+		const ids = targetPatchIds !== null ? targetPatchIds : await this.getRecentPatchIds(repo, target, mergeBase);
+		return ids.has(branchPatchId) ? 'squashed' : null;
+	}
+
+	/**
+	 * Get the patch-ids of the recent commits on a branch (to recognise branches that were squashed into it).
+	 * @param repo The path of the repository.
+	 * @param target The branch.
+	 * @param since Only the commits after this commit (NULL => the most recent commits).
+	 */
+	public async getRecentPatchIds(repo: string, target: string, since: string | null): Promise<Set<string>> {
+		const log = await runGit(this.git, repo, ['-c', 'log.showSignature=false', 'log', '--no-merges', '--no-color', '--no-ext-diff', '--full-index', '-p', '--max-count=' + MAX_LANDED_TARGET_COMMITS, '--format=commit %H', since !== null ? since + '..' + target : target, '--'], null, null, undefined, MAX_LANDED_LOG_BYTES);
+		if (log.code !== 0 && !log.truncated) return new Set();
+		const patchIds = await runGit(this.git, repo, ['patch-id', '--stable'], log.stdout.toString());
+		return new Set(patchIds.code === 0 ? splitLines(patchIds.stdout).map((line) => line.split(' ')[0]).filter((id) => id !== '') : []);
+	}
+
+	/**
+	 * Get the range of commits that a branch adds to its merge target (or another base), to explain the branch's changes.
+	 * @param repo The path of the repository.
+	 * @param branch The branch (local or remote, e.g. "feature" or "origin/feature").
+	 * @param base The branch compared with (NULL => the merge target of the branch).
+	 * @returns The range (from the merge base to the branch), and the error.
+	 */
+	public async getBranchRangeForExplanation(repo: string, branch: string, base: string | null): Promise<{ fromRef: string, toRef: string, base: string | null, error: GitFeatureError }> {
+		if (isUnsafeRefName(branch) || (base !== null && isUnsafeRefName(base))) return { fromRef: '', toRef: '', base: null, error: 'Invalid branch name.' };
+		const target = base !== null ? base : (await this.getMergeTarget(repo, branch.replace(/^remotes\//, ''))).target;
+		if (target === null) return { fromRef: '', toRef: '', base: null, error: 'Unable to find the branch that "' + branch + '" is merged into. Choose its merge target first.' };
+		const mergeBase = (await this.run(repo, ['merge-base', target, branch])).stdout.toString().trim();
+		if (!HASH_REGEXP.test(mergeBase)) return { fromRef: '', toRef: '', base: target, error: '"' + branch + '" and "' + target + '" have no commits in common.' };
+		return { fromRef: mergeBase, toRef: branch, base: target, error: null };
+	}
+
+	/**
+	 * Get the range of the commits on a branch that aren't on its upstream branch (i.e. haven't been pushed).
+	 * @param repo The path of the repository.
+	 * @param branch The local branch (NULL => the branch that's checked out).
+	 */
+	public async getUnpushedRange(repo: string, branch: string | null): Promise<{ fromRef: string, toRef: string, branch: string, upstream: string | null, error: GitFeatureError }> {
+		const name = branch !== null ? branch : (await this.run(repo, ['symbolic-ref', '-q', '--short', 'HEAD'])).stdout.toString().trim();
+		if (name === '' || isUnsafeRefName(name)) return { fromRef: '', toRef: '', branch: name, upstream: null, error: 'No branch is checked out.' };
+		const upstream = (await this.run(repo, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', name + '@{upstream}'])).stdout.toString().trim();
+		if (upstream === '') return { fromRef: '', toRef: '', branch: name, upstream: null, error: 'The branch "' + name + '" has no upstream branch.' };
+		return { fromRef: upstream, toRef: 'refs/heads/' + name, branch: name, upstream: upstream, error: null };
+	}
+
+	/**
+	 * Describe untracked files for a language model: their paths, and the start of the contents of the first ones (as added lines).
+	 * @param repo The path of the repository.
+	 * @param untrackedPaths The paths of the untracked files (relative to the repository).
+	 */
+	private getUntrackedFilesPreview(repo: string, untrackedPaths: ReadonlyArray<string>): { text: string, truncated: boolean } {
+		let extraTruncated = false;
+		const sections: string[] = ['Untracked files (' + untrackedPaths.length + '): ' + untrackedPaths.slice(0, 30).join(', ')];
+		if (untrackedPaths.length > 30) extraTruncated = true;
+		const repoResolved = path.resolve(repo);
+		let totalPreviewBytes = 0;
+		for (const relPath of untrackedPaths.slice(0, 15)) {
+			if (totalPreviewBytes >= 32768) {
+				extraTruncated = true;
+				break;
+			}
+			const absPath = path.resolve(repoResolved, relPath);
+			const relCheck = path.relative(repoResolved, absPath);
+			if (relCheck.startsWith('..') || path.isAbsolute(relCheck)) continue;
+			try {
+				const stat = fs.lstatSync(absPath);
+				if (!stat.isFile()) continue;
+				const readLen = Math.min(stat.size, 4096);
+				const fd = fs.openSync(absPath, 'r');
+				let buf: Buffer;
+				try {
+					buf = Buffer.alloc(readLen);
+					fs.readSync(fd, buf, 0, readLen, 0);
+				} finally {
+					fs.closeSync(fd);
+				}
+				if (buf.includes(0)) {
+					sections.push('--- /dev/null\n+++ b/' + relPath + '\n(Binary file)');
+				} else {
+					if (stat.size > readLen) extraTruncated = true;
+					totalPreviewBytes += readLen;
+					const addedLines = buf.toString('utf8').split(/\r?\n/).map((line) => '+' + line).join('\n');
+					sections.push('--- /dev/null\n+++ b/' + relPath + '\n' + addedLines);
+				}
+			} catch (_) {
+				// Ignore unreadable untracked files
+			}
+		}
+		if (untrackedPaths.length > 15) extraTruncated = true;
+		return { text: sections.join('\n\n'), truncated: extraTruncated };
+	}
 
 	/* Helpers */
 
@@ -1364,6 +1614,24 @@ export class GitFeatures {
 /**
  * Get the error message of a Git command that failed.
  */
+/**
+ * Is a path (relative to a repository) a folder in its working tree?
+ */
+export function isDirectory(repo: string, filePath: string) {
+	try {
+		return fs.statSync(path.join(repo, filePath)).isDirectory();
+	} catch (_) {
+		return false;
+	}
+}
+
+/**
+ * Is a ref name unsafe to pass to Git (empty, an option, or containing characters that Git doesn't allow in ref names)?
+ */
+export function isUnsafeRefName(name: string) {
+	return name === '' || name.startsWith('-') || /[\s~^:?*[\\\x00-\x1f\x7f]|\.\.|@\{/.test(name);
+}
+
 function errorOf(result: { code: number, stdout: Buffer, stderr: string }) {
 	const message = result.stderr !== '' ? result.stderr : result.stdout.toString().trim();
 	return message !== '' ? message : 'Git exited with code ' + result.code + '.';

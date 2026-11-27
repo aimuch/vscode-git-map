@@ -8,7 +8,7 @@ import { t } from './l10n';
 import { getCachedRepoPullRequestBadges } from './prStatusIntegration';
 import { RepoManager } from './repoManager';
 import { CommitOrdering } from './types';
-import { abbrevCommit, getRepoName } from './utils';
+import { abbrevCommit, formatDatePattern, getRelativeTimeDiff, getRepoName } from './utils';
 import { Disposable } from './utils/disposable';
 import { Event } from './utils/event';
 
@@ -31,7 +31,7 @@ export interface ScmTreeNode {
 	readonly id: string;
 	readonly label: string;
 	readonly description?: string;
-	readonly tooltip?: string;
+	readonly tooltip?: string | vscode.MarkdownString;
 	readonly iconId: string;
 	readonly collapsibleState: vscode.TreeItemCollapsibleState;
 	readonly command?: vscode.Command;
@@ -63,6 +63,34 @@ export function formatScmNodeTemplate(template: string, vars: { readonly [key: s
 		.replace(/\$\{([a-zA-Z0-9_]+)\}/g, (_, key: string) => lookup(key))
 		.replace(/\$\{[^}]+\}/g, '')
 		.trim();
+}
+
+/**
+ * Get the tokens of a commit for the formats of the Git Map SCM view: `${message}`, `${author}`, `${ago}`, `${date}`, `${agoOrDate}`,
+ * `${sha}` & `${id}`.
+ */
+function getCommitVars(hash: string, message: string, author: string, date: number): { [key: string]: string } {
+	const shortSha = abbrevCommit(hash), cfg = getConfig();
+	const ago = getRelativeTimeDiff(date), absolute = formatDatePattern(date, cfg.defaultDateFormat !== '' ? cfg.defaultDateFormat : cfg.defaultDateShortFormat, cfg.defaultDateLocale);
+	return {
+		message: message || shortSha,
+		author: author,
+		ago: ago,
+		date: absolute,
+		agoOrDate: cfg.blameDateStyle === 'absolute' ? absolute : ago,
+		agoAndDate: ago + ' (' + absolute + ')',
+		id: shortSha,
+		sha: shortSha
+	};
+}
+
+/**
+ * Get the tooltip of a node from its Markdown format (`views.commits.tooltipFormat` / `views.stashes.tooltipFormat`).
+ */
+function getTooltip(format: string, vars: { readonly [key: string]: string | undefined }) {
+	const markdown = new vscode.MarkdownString(formatScmNodeTemplate(format.replace(/\\n/g, '\n'), vars), true);
+	markdown.isTrusted = false;
+	return markdown;
 }
 
 const SECTION_DEFS: ReadonlyArray<{ readonly id: ScmSectionId, readonly labelKey: string, readonly iconId: string }> = [
@@ -195,21 +223,14 @@ export class ScmTreeViewProvider extends Disposable implements vscode.TreeDataPr
 					);
 					return data.commits.map((c) => {
 						const shortSha = abbrevCommit(c.hash);
-						const vars = {
-							message: c.message || shortSha,
-							author: c.author,
-							ago: shortSha,
-							agoOrDate: shortSha,
-							id: shortSha,
-							sha: shortSha
-						};
+						const vars = getCommitVars(c.hash, c.message, c.author, c.date);
 						return {
 							kind: 'item',
 							sectionId: 'commits',
 							id: 'commit:' + c.hash,
 							label: formatScmNodeTemplate(cfg.commitLabelFormat, vars) || c.message || shortSha,
 							description: formatScmNodeTemplate(cfg.commitDescriptionFormat, vars),
-							tooltip: c.hash + '\n' + c.message + '\n' + c.author,
+							tooltip: cfg.commitTooltipFormat !== '' ? getTooltip(cfg.commitTooltipFormat, vars) : c.hash + '\n' + c.message + '\n' + c.author,
 							iconId: 'git-commit',
 							collapsibleState: vscode.TreeItemCollapsibleState.None,
 							command: {
@@ -262,19 +283,18 @@ export class ScmTreeViewProvider extends Disposable implements vscode.TreeDataPr
 				case 'stashes': {
 					const info = await this.dataSource.getRepoInfo(repo, false, true, []);
 					return info.stashes.map((s) => {
-						const vars = {
-							message: s.message || s.selector,
-							ago: s.selector,
-							agoOrDate: s.selector,
-							stashOnRef: s.selector,
-							id: abbrevCommit(s.hash)
-						};
+						const vars = Object.assign(getCommitVars(s.hash, s.message || s.selector, s.author, s.date), {
+							stashOnRef: ((match) => match !== null ? match[1] : '')(/^(?:WIP )?[Oo]n ([^:]+):/.exec(s.message)), // The branch the stash was made on
+
+							selector: s.selector
+						});
 						return {
 							kind: 'item',
 							sectionId: 'stashes',
 							id: 'stash:' + s.selector,
 							label: formatScmNodeTemplate(cfg.stashLabelFormat, vars) || s.message || s.selector,
 							description: formatScmNodeTemplate(cfg.stashDescriptionFormat, vars) || s.selector,
+							tooltip: cfg.stashTooltipFormat !== '' ? getTooltip(cfg.stashTooltipFormat, vars) : s.selector + '\n' + (s.message || ''),
 							iconId: 'archive',
 							collapsibleState: vscode.TreeItemCollapsibleState.None,
 							command: {
@@ -455,10 +475,7 @@ export class ScmTreeViewProvider extends Disposable implements vscode.TreeDataPr
 					return fhData.commits.map((c) => {
 						const shortSha = abbrevCommit(c.hash);
 						const vars = {
-							message: c.message || shortSha,
-							author: c.author,
-							ago: shortSha,
-							agoOrDate: shortSha,
+							...getCommitVars(c.hash, c.message, c.author, c.date),
 							file: path.basename(rel),
 							directory: path.posix.dirname(rel) === '.' ? '' : path.posix.dirname(rel),
 							id: shortSha,

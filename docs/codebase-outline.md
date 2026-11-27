@@ -24,6 +24,9 @@ Git Map has two parts that communicate with messages: the extension (`src/`, run
 | `codeLens.ts` | The optional Git CodeLens. |
 | `removeFromHistory.ts`, `historyRewrite.ts`, `historyFilter.ts` | Remove Files from History: the commands & their confirmation (`removeFromHistory.ts`), running `git fast-export` & `git fast-import`, the backup, restoring it & cleaning up (`historyRewrite.ts`, which doesn't depend on Visual Studio Code), and the filter that removes the files from the fast-export stream (`historyFilter.ts`). |
 | `gitFeatures.ts` | The Git operations of comparing & cleaning up branches, rewriting the latest commits, bisecting, patches, stashing & restoring files, the timeline of a file, and the changes of a commit that's explained (doesn't depend on Visual Studio Code). |
+| `aiModelPicker.ts` | `Git Map: Switch AI Provider / Model...`: choosing the provider & model of AI features, or of one task. |
+| `inspectView.ts` | The Inspect view (a Webview view in the Secondary Side Bar): the commit that last changed the line the cursor is on, or the commit chosen to be inspected. |
+| `repoBrowser.ts` | "Browse Files at this Commit…" (a Quick Pick of the files of a revision) and the Files Treemap panel. |
 | `visualFileHistory.ts` | The Visual File History panel (a Webview with its own page). |
 | `explainCommit.ts`, `aiProviders.ts`, `aiCommitMessage.ts` | Explains commits & drafts commit messages from uncommitted changes with a language model provided in Visual Studio Code (the Language Model API, when it exists) or by calling an OpenAI-compatible Chat Completions API directly (`aiProviders.ts`, with API keys in Visual Studio Code's Secret Storage; `aiCommitMessage.ts` handles the Source Control `git-map.ai.generateCommitMessage` command). |
 | `remoteLinks.ts` | Links to lines & commits on the web pages of remote repositories. |
@@ -39,8 +42,9 @@ Git Map has two parts that communicate with messages: the extension (`src/`, run
 | `main.ts` | The `GitGraphView` class: the control bar, commit table, Commit Details View, and the actions on context menus & dialogs. |
 | `graph.ts` | Lays out and renders the graph (SVG). |
 | `minimap.ts` | The Minimap (activity of the loaded commits) at the top of the view, and the markers alongside the scrollbar. |
-| `contextMenu.ts`, `dialog.ts`, `dropdown.ts`, `findWidget.ts`, `settingsWidget.ts` | UI components (`settingsWidget.ts` is the Repository Settings). |
-| `branchCompare.ts`, `branchCleanup.ts` | Branch Comparison (its bar & panel of the changed files) and Clean Up Branches. |
+| `contextMenu.ts`, `dialog.ts`, `dropdown.ts`, `findWidget.ts`, `settingsWidget.ts` | UI components (`settingsWidget.ts` is the Settings panel). |
+| `settingsCategories.ts` | The categories of the Settings panel, declared like the Settings page of GitLens: each category's switch, command, live preview & controls (with the settings they depend on), rendered by `settingsWidget.ts`. |
+| `branchCompare.ts`, `branchCleanup.ts`, `mergeTarget.ts` | Branch Comparison (its bar & panel of the changed files), Clean Up Branches, and the Merge Target dialog of a branch. |
 | `explainCommit.ts` | The Explain tab of the Commit Details View. |
 | `rebaseEditor.ts` | The Rebase Editor, and the operation bar (an operation in progress, or bisecting). |
 | `textFormatter.ts` | Formats commit messages (Markdown, emoji shortcodes, Issue Linking & URLs). |

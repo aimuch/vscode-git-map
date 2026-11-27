@@ -48,6 +48,15 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 			case 'loadBranchCleanup':
 				gitGraph.branchCleanup.processLoadBranchCleanupResponse(msg);
 				break;
+			case 'predictRebaseConflicts':
+				gitGraph.rebaseEditor.processPredictRebaseConflictsResponse(msg);
+				break;
+			case 'loadMergeTargetStatus':
+				gitGraph.mergeTarget.processLoadMergeTargetStatusResponse(msg);
+				break;
+			case 'setMergeTarget':
+				refreshOrDisplayError(msg.error, t('Unable to Save the Merge Target'));
+				break;
 			case 'deleteBranches':
 				refreshAndDisplayErrors(msg.errors.length > 0 || msg.deleted === 0 ? msg.errors.concat(msg.deleted > 0 ? [null] : []) : [null], t('Unable to Delete Branches'));
 				break;
@@ -369,6 +378,9 @@ function observeResponseMessages(gitGraph: GitGraphView, imageResizer: ImageResi
 					dialog.showMessage(t('Copied {0} uncommitted file(s) to the target worktree.', msg.copiedFiles));
 					gitGraph.worktreeList.requestWorktrees();
 				}
+				break;
+			case 'loadHostingIntegrations':
+				gitGraph.settingsWidget.processLoadHostingIntegrations(msg);
 				break;
 			case 'saveExtendedSettings':
 				if (msg.error !== null) {

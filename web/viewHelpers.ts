@@ -17,7 +17,7 @@ function generateCommitStatsHtml(stats: GG.GitCommitStats | null) {
  * @returns The HTML.
  */
 function generateTrackingHtml(upstream: GG.GitBranchUpstream | undefined) {
-	if (typeof upstream === 'undefined' || upstream.gone || (upstream.ahead === 0 && upstream.behind === 0)) return '';
+	if (initialState.config.graph.showUpstreamStatus === false || typeof upstream === 'undefined' || upstream.gone || (upstream.ahead === 0 && upstream.behind === 0)) return '';
 	const title = [upstream.ahead > 0 ? t('{0} commit(s) ahead of {1}', upstream.ahead, upstream.name) : null, upstream.behind > 0 ? t('{0} commit(s) behind {1}', upstream.behind, upstream.name) : null].filter((text) => text !== null).join(', ');
 	return '<span class="gitRefTrack" title="' + escapeHtml(title) + '">' + (upstream.ahead > 0 ? '\u2191' + upstream.ahead : '') + (upstream.behind > 0 ? '\u2193' + upstream.behind : '') + '</span>';
 }

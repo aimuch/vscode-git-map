@@ -1821,6 +1821,8 @@ export class DataSource extends Disposable {
 		return this.spawnGit(['rev-parse', 'HEAD'], repo, (stdout) => stdout.trim()).catch(() => '').then((head) => {
 			const key = JSON.stringify([repo, filePath, revisionArgs, onlyFollowFirstParent, head]);
 			if (this.fileHistoryPathsCache !== null && this.fileHistoryPathsCache.key === key) return this.fileHistoryPathsCache.paths;
+			// A folder's history is the history of all of its files (Git can only follow a single file through renames)
+			if (isDirectoryInRepo(repo, filePath)) return [filePath];
 			const args = ['-c', 'core.quotepath=false', '-c', 'log.showSignature=false', 'log', '--follow', '-M', '--diff-filter=R', '--name-status', '--format='];
 			if (onlyFollowFirstParent) args.push('--first-parent');
 			args.push(...revisionArgs, '--', filePath);
@@ -2041,7 +2043,7 @@ export class DataSource extends Disposable {
 		if (which === 'after') {
 			args.push('--reverse', '--ancestry-path', from + '..HEAD');
 		} else {
-			args.push('--follow', '--max-count=2', from);
+			args.push(...(isDirectoryInRepo(repo, filePath) ? [] : ['--follow']), '--max-count=2', from);
 		}
 		args.push('--', filePath);
 		const revisions = await this.spawnGit(args, repo, (stdout) => stdout.split('\x1e').slice(1).map((record) => {
@@ -3088,4 +3090,15 @@ export function parseLineHistoryDiff(diff: string, filePath: string) {
 		oldRange: oldRange, newRange: newRange,
 		diff: lines, additions: additions, deletions: deletions
 	};
+}
+
+/**
+ * Is a path (relative to a repository) a folder in its working tree?
+ */
+function isDirectoryInRepo(repo: string, filePath: string) {
+	try {
+		return filePath !== '' && fs.statSync(path.join(repo, filePath)).isDirectory();
+	} catch (_) {
+		return false;
+	}
 }

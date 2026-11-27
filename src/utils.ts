@@ -9,7 +9,7 @@ import { DataSource } from './dataSource';
 import { DiffSide, encodeDiffDocUri } from './diffDocProvider';
 import { ExtensionState } from './extensionState';
 import { ErrorInfo, GitFileStatus, GitLineRange, GitRepoSet, PullRequestConfig, PullRequestProvider, RepoDropdownOrder } from './types';
-import { t } from './l10n';
+import { getLanguage, t } from './l10n';
 
 export const UNCOMMITTED = '*';
 export const UNABLE_TO_FIND_GIT_MSG = 'Unable to find a Git executable. Either: Set the Visual Studio Code Setting "git.path" to the path and filename of an existing Git executable, or install Git and restart Visual Studio Code.';
@@ -213,6 +213,51 @@ export function getNonce() {
  * @param path The path of the repository.
  * @returns The short name.
  */
+/**
+ * Get a number with its English ordinal suffix (1st, 2nd, 3rd, 4th, 11th…).
+ */
+function getOrdinal(n: number) {
+	const tens = n % 100, ones = n % 10;
+	return n + (tens >= 11 && tens <= 13 ? 'th' : ones === 1 ? 'st' : ones === 2 ? 'nd' : ones === 3 ? 'rd' : 'th');
+}
+
+/**
+ * Format a date with a pattern of Moment.js-style tokens: `YYYY` `YY` `MMMM` `MMM` `MM` `M` `DD` `Do` `D` `dddd` `ddd` `HH` `H` `hh` `h`
+ * `mm` `ss` `A` `a`. Text in square brackets is kept as it is (e.g. `[at] HH:mm`).
+ * @param unixTimestamp The date (in seconds).
+ * @param pattern The pattern (empty => the short date of the locale).
+ * @param localeSetting The locale (`git-map.defaultDateLocale`: empty => the language Git Map is displayed in, "system" => the system's).
+ * @returns The formatted date.
+ */
+export function formatDatePattern(unixTimestamp: number, pattern: string, localeSetting: string = '') {
+	const date = new Date(unixTimestamp * 1000);
+	const locale = localeSetting === 'system' ? undefined : localeSetting !== '' ? localeSetting : getLanguage() === 'zh-cn' ? 'zh-CN' : 'en';
+	if (pattern.trim() === '') return date.toLocaleDateString(locale);
+	const pad = (n: number) => (n < 10 ? '0' : '') + n, hours = date.getHours(), h12 = hours % 12 === 0 ? 12 : hours % 12;
+	const tokens: { [token: string]: () => string } = {
+		YYYY: () => String(date.getFullYear()),
+		YY: () => String(date.getFullYear()).slice(-2),
+		MMMM: () => date.toLocaleString(locale, { month: 'long' }),
+		MMM: () => date.toLocaleString(locale, { month: 'short' }),
+		MM: () => pad(date.getMonth() + 1),
+		M: () => String(date.getMonth() + 1),
+		DD: () => pad(date.getDate()),
+		Do: () => getOrdinal(date.getDate()),
+		D: () => String(date.getDate()),
+		dddd: () => date.toLocaleString(locale, { weekday: 'long' }),
+		ddd: () => date.toLocaleString(locale, { weekday: 'short' }),
+		HH: () => pad(hours),
+		H: () => String(hours),
+		hh: () => pad(h12),
+		h: () => String(h12),
+		mm: () => pad(date.getMinutes()),
+		ss: () => pad(date.getSeconds()),
+		A: () => hours < 12 ? 'AM' : 'PM',
+		a: () => hours < 12 ? 'am' : 'pm'
+	};
+	return pattern.replace(/\[([^\]]*)\]|YYYY|YY|MMMM|MMM|MM|M|DD|Do|D|dddd|ddd|HH|H|hh|h|mm|ss|A|a/g, (match: string, literal: string | undefined) => typeof literal === 'string' ? literal : tokens[match]());
+}
+
 export function getRepoName(path: string) {
 	const firstSep = path.indexOf('/');
 	if (firstSep === path.length - 1 || firstSep === -1) {

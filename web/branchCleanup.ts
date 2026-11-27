@@ -99,7 +99,9 @@ class BranchCleanup {
 		const merged = this.candidates.filter((candidate) => candidate.merged), gone = this.candidates.filter((candidate) => !candidate.merged);
 		const item = (candidate: GG.GitBranchCleanupCandidate) => {
 			const notes: string[] = [];
-			if (candidate.merged) notes.push(t('Merged into {0}', escapeHtml(this.defaultBranch!)));
+			if (candidate.landed === 'rebased') notes.push(t('Rebased onto {0}', escapeHtml(this.defaultBranch!)));
+			else if (candidate.landed === 'squashed') notes.push(t('Squashed into {0}', escapeHtml(this.defaultBranch!)));
+			else if (candidate.merged) notes.push(t('Merged into {0}', escapeHtml(this.defaultBranch!)));
 			if (candidate.upstreamGone) notes.push(t('{0} is gone', escapeHtml(candidate.upstream!)));
 			else if (candidate.upstream !== null) notes.push(escapeHtml(candidate.upstream));
 			const warning = candidate.unmergedCommits > 0 ? '<span class="branchCleanupWarning">' + (candidate.unmergedCommits !== 1 ? t('Not merged: deleting it loses {0} commits', candidate.unmergedCommits) : t('Not merged: deleting it loses 1 commit')) + '</span>' : '';
@@ -109,7 +111,7 @@ class BranchCleanup {
 		};
 		const remote = this.getRemote(), remoteBranches = this.getRemoteBranches(), count = this.selected.size;
 		listElem.innerHTML = header + '<div class="stashListItems">' +
-			(merged.length > 0 ? '<div class="branchCleanupGroup">' + t('Merged into {0}', escapeHtml(this.defaultBranch !== null ? this.defaultBranch : '')) + ' · ' + merged.length + '</div>' + merged.map(item).join('') : '') +
+			(merged.length > 0 ? '<div class="branchCleanupGroup" title="' + escapeHtml(t('Merged, rebased or squashed into {0}', this.defaultBranch !== null ? this.defaultBranch : '')) + '">' + t('Landed in {0}', escapeHtml(this.defaultBranch !== null ? this.defaultBranch : '')) + ' · ' + merged.length + '</div>' + merged.map(item).join('') : '') +
 			(gone.length > 0 ? '<div class="branchCleanupGroup">' + t('Remote branch deleted') + ' · ' + gone.length + '</div>' + gone.map(item).join('') : '') + '</div>' +
 			'<div class="branchCleanupFooter">' +
 			(remote !== null && merged.some((candidate) => candidate.remotes.includes(remote)) ? '<label class="branchCleanupRemote"><input type="checkbox" data-action="deleteOnRemote"' + (this.deleteOnRemote ? ' checked' : '') + '><span class="customCheckbox"></span>' + t('Also delete the merged branches on {0}', escapeHtml(remote)) + '</label>' : '') +
