@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## 2.9.1 - 2026-11-27
 * The Status Bar category of the Settings panel has a switch for each item Git Map adds to the Status Bar: the Git Map item (`git-map.showStatusBarItem`), the Status Bar Blame (`git-map.blame.statusBar`), the Launchpad indicator (`git-map.launchpad.indicator.enabled`) and the active editor mode (`git-map.mode.statusBar.enabled`), kept in sync with the switches in their own categories.
 * Fixed: the controls of the Settings categories were centred, the format inputs were squeezed beside their token menus, the tips were split into columns, and the examples of the date formats without a value showed their description formatted as a date.
 
