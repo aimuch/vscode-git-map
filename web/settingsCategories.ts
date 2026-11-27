@@ -176,7 +176,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 			hint: t('The Git Map View visualizes, explores and manages the history of a repository'),
 			controls: [
 				{ kind: 'custom', id: 'graphAppearance', label: t('Appearance') },
-				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] },
+				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes. Status Bar uses multi-colour icons with high-contrast text.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] },
 				{ kind: 'number', key: 'repository.commits.initialLoad', label: t('Show this many rows at first'), min: 1 },
 				{ kind: 'number', key: 'repository.commits.loadMore', label: t('Then load this many more rows'), min: 1 },
 				{ kind: 'check', key: 'repository.commits.loadMoreAutomatically', label: t('Load more rows automatically when scrolling to the bottom') },
@@ -407,7 +407,7 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 				{ kind: 'check', key: 'blame.statusBar', field: 'statusBarEnabled', label: t('Show the blame of the current line (Status Bar Blame)'), previewBadge: 'statusBarBlame' },
 				{ kind: 'check', key: 'launchpad.indicator.enabled', label: t('Show the Launchpad indicator of the pull requests needing your attention'), hint: t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on'), previewBadge: 'statusBarLaunchpad' },
 				{ kind: 'check', key: 'mode.statusBar.enabled', label: t('Show the active editor mode'), previewBadge: 'statusBarMode' },
-				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] }
+				{ kind: 'segmented', key: 'ui.iconColorStyle', label: t('Icon colour style'), hint: t('AI & Coding Agent icons stay colourful in both modes. Status Bar uses multi-colour icons with high-contrast text.'), options: [['monochrome', t('Monochrome')], ['colorful', t('Colorful')]] }
 			]
 		}
 	];

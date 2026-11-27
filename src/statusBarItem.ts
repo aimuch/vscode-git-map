@@ -30,7 +30,6 @@ export class StatusBarItem extends Disposable {
 		statusBarItem.text = getStatusBarItemText();
 		statusBarItem.tooltip = t('View Git Map');
 		statusBarItem.command = 'git-map.view';
-		statusBarItem.color = getStatusBarItemColor();
 		this.statusBarItem = statusBarItem;
 
 		this.registerDisposables(
@@ -41,11 +40,8 @@ export class StatusBarItem extends Disposable {
 				if (event.affectsConfiguration('git-map.showStatusBarItem')) {
 					this.refresh();
 				}
-				if (event.affectsConfiguration('git-map.statusBarItemDisplay')) {
+				if (event.affectsConfiguration('git-map.statusBarItemDisplay') || event.affectsConfiguration('git-map.ui.iconColorStyle')) {
 					this.statusBarItem.text = getStatusBarItemText();
-				}
-				if (event.affectsConfiguration('git-map.ui.iconColorStyle')) {
-					this.statusBarItem.color = getStatusBarItemColor();
 				}
 				if (event.affectsConfiguration('git-map.language')) {
 					this.statusBarItem.tooltip = t('View Git Map');
@@ -88,17 +84,14 @@ export class StatusBarItem extends Disposable {
  * Get the text of the Status Bar Item, according to the configured value of `git-map.statusBarItemDisplay`.
  * @returns The text, using the `git-map-logo` icon contributed by Git Map.
  */
-function getStatusBarItemColor() {
-	return getConfig().iconColorStyle === 'colorful' ? new vscode.ThemeColor('charts.blue') : undefined;
-}
-
 function getStatusBarItemText() {
+	const logo = getConfig().iconColorStyle === 'colorful' ? '$(git-map-logo-color)' : '$(git-map-logo)';
 	switch (getConfig().statusBarItemDisplay) {
 		case StatusBarItemDisplay.Icon:
-			return '$(git-map-logo)';
+			return logo;
 		case StatusBarItemDisplay.Text:
 			return 'Git Map';
 		default:
-			return '$(git-map-logo) Git Map';
+			return logo + ' Git Map';
 	}
 }

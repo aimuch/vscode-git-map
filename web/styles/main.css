@@ -4801,20 +4801,24 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .settingsStatusBarPreviewEditor{height:54px;display:flex;align-items:center;justify-content:center;color:var(--vscode-descriptionForeground);font-size:12px}
 .settingsStatusBarPreviewStrip{display:flex;align-items:center;gap:10px;padding:2px 8px;min-height:22px;border-top:1px solid var(--vscode-statusBar-border,var(--gm-border));background:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);font-size:11.5px;overflow:hidden}
 .settingsStatusBarPreviewStrip > span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
-.settingsStatusBarPreviewStrip svg{width:12px;height:12px;flex:0 0 auto;fill:currentColor}
+.settingsStatusBarPreviewStrip svg{width:12px;height:12px;flex:0 0 auto}
+.settingsStatusBarPreviewStrip svg:not(.gmColorSvg){fill:currentColor}
+.settingsStatusBarPreviewStrip svg.uiIcon:not(.gmColorSvg),.settingsStatusBarItemPreview svg.uiIcon:not(.gmColorSvg){fill:none;stroke:currentColor}
 .settingsStatusBarPreviewStrip .grow{flex:1 1 auto;min-width:8px}
 .settingsStatusBarPreviewStrip .settingsSbHost{opacity:.78}
-.settingsStatusBarPreviewStrip .settingsSbItem{padding:1px 5px;border-radius:3px;background:rgba(255,255,255,.12)}
-.settingsStatusBarPreviewStrip .settingsSbItem.dimmed{opacity:.55;border:1px dashed rgba(255,255,255,.45);background:transparent}
+.settingsStatusBarPreviewStrip .settingsSbItem{padding:1px 5px;border-radius:3px;background:var(--vscode-statusBarItem-hoverBackground,rgba(255,255,255,.12))}
+.settingsStatusBarPreviewStrip .settingsSbItem.dimmed{opacity:.55;border:1px dashed currentColor;background:transparent}
 .settingsStatusBarPreviewStrip .settingsSbItem.settingsStatusBarBlame{min-width:0;max-width:220px;overflow:hidden}
 .settingsStatusBarPreviewStrip .settingsSbItem.settingsStatusBarBlame > span{min-width:0;overflow:hidden;text-overflow:ellipsis}
-.settingsStatusBarPreviewStrip .settingsSbItem.sbColorBlocked{color:#ff9b96}
-.settingsStatusBarPreviewStrip .settingsSbItem.sbColorReview{color:#ffd666}
-.settingsStatusBarPreviewStrip .settingsSbItem.sbColorMergeable{color:#8be9a8}
+.settingsStatusBarPreviewStrip .settingsSbItem.sbPillError,
+.settingsStatusBarItemPreview.sbPillError{background-color:var(--vscode-statusBarItem-errorBackground,#c72e0f);color:var(--vscode-statusBarItem-errorForeground,#fff);fill:var(--vscode-statusBarItem-errorForeground,#fff);border-color:transparent}
+.settingsStatusBarPreviewStrip .settingsSbItem.sbPillWarning,
+.settingsStatusBarItemPreview.sbPillWarning{background-color:var(--vscode-statusBarItem-warningBackground,#9c7600);color:var(--vscode-statusBarItem-warningForeground,#fff);fill:var(--vscode-statusBarItem-warningForeground,#fff);border-color:transparent}
 .settingsCheckWithPreview{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;width:100%}
 .settingsStatusBarItemPreview{display:inline-flex;align-items:center;gap:5px;height:22px;padding:0 8px;box-sizing:border-box;border:1px solid var(--vscode-statusBar-border,var(--gm-border-strong));border-radius:4px;background-color:var(--vscode-statusBar-background,#007acc);color:var(--vscode-statusBar-foreground,#fff);fill:var(--vscode-statusBar-foreground,#fff);font-size:11.5px;line-height:20px;white-space:nowrap;max-width:100%;overflow:hidden}
 .settingsStatusBarItemPreview > span{overflow:hidden;text-overflow:ellipsis}
-.settingsStatusBarItemPreview svg{width:12px;height:12px;flex:0 0 auto;fill:currentColor}
+.settingsStatusBarItemPreview svg{width:12px;height:12px;flex:0 0 auto}
+.settingsStatusBarItemPreview svg:not(.gmColorSvg){fill:currentColor}
 .settingsStatusBarPreview.off,.settingsStatusBarItemPreview.off{opacity:.4;filter:grayscale(.45)}
 .settingsHoverPreview{margin:12px auto;max-width:380px;border:1px solid var(--vscode-editorHoverWidget-border,var(--gm-border-strong));border-radius:6px;background:var(--vscode-editorHoverWidget-background,var(--vscode-editor-background));font-size:12px;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .settingsHoverHead{display:flex;gap:10px;padding:10px 12px;line-height:1.5}
@@ -4916,16 +4920,24 @@ body[data-icon-style="colorful"] svg.iconTone-amber{stroke:var(--gm-icon-amber) 
 body[data-icon-style="colorful"] svg.iconTone-red{stroke:var(--gm-icon-red) !important}
 body[data-icon-style="colorful"] svg.iconTone-indigo{stroke:var(--gm-icon-indigo) !important}
 body[data-icon-style="colorful"] svg.iconFillTone-blue{fill:var(--gm-icon-blue) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-purple{fill:var(--gm-icon-purple) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-cyan{fill:var(--gm-icon-cyan) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-green{fill:var(--gm-icon-green) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-amber{fill:var(--gm-icon-amber) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-red{fill:var(--gm-icon-red) !important}
+body[data-icon-style="colorful"] svg.iconFillTone-indigo{fill:var(--gm-icon-indigo) !important}
+body[data-icon-style="colorful"] #cdvFileFloatingBar .rowAction[data-cdv-act="copy"] svg{fill:var(--gm-icon-cyan) !important}
+body[data-icon-style="colorful"] #cdvFileFloatingBar .rowAction[data-cdv-act="rev"] svg{fill:var(--gm-icon-amber) !important}
+body[data-icon-style="colorful"] #cdvFileFloatingBar .rowAction[data-cdv-act="open"] svg{fill:var(--gm-icon-blue) !important}
+body[data-icon-style="colorful"] .rowAction:hover svg{filter:brightness(1.16)}
 body[data-icon-style="colorful"] .settingsNavIcon,
 body[data-icon-style="colorful"] .contextMenuItemIcon{opacity:1}
-body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="gitMap"],
-body[data-icon-style="colorful"] .settingsStatusBarPreview{color:#7cc4ff;fill:#7cc4ff}
-body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="blame"],
-body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarBlame"]{color:#d8b4fe;fill:#d8b4fe}
-body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="launchpad"],
-body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarLaunchpad"]{color:#fcd34d;fill:#fcd34d}
-body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip .settingsSbItem[data-sb-item="mode"],
-body[data-icon-style="colorful"] .settingsStatusBarItemPreview[data-sb-badge="statusBarMode"]{color:#86efac;fill:#86efac}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip svg.uiIcon:not(.gmColorSvg),
+body[data-icon-style="colorful"] .settingsStatusBarPreview svg.uiIcon:not(.gmColorSvg),
+body[data-icon-style="colorful"] .settingsStatusBarItemPreview svg.uiIcon:not(.gmColorSvg){stroke:currentColor !important;fill:none !important}
+body[data-icon-style="colorful"] .settingsStatusBarPreviewStrip svg.iconFillTone-blue,
+body[data-icon-style="colorful"] .settingsStatusBarPreview svg.iconFillTone-blue,
+body[data-icon-style="colorful"] .settingsStatusBarItemPreview svg.iconFillTone-blue{fill:currentColor !important}
 
 /* Rich interactive Settings & Customizer previews */
 .settingsGraphPreviewOverview{display:flex;align-items:center;gap:6px;padding:4px 10px;border-bottom:1px solid var(--gm-border);background:var(--gm-surface-muted);font-size:11px}

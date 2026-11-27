@@ -264,7 +264,7 @@ class BranchCompare {
 		const segment = (mode: string, label: string, count: number | null) => '<button type="button" class="compareSegment" data-compare="' + mode + '" aria-pressed="' + (this.mode === mode) + '">' + label + (count !== null ? ' <b>' + count + '</b>' : '') + '</button>';
 		elem.innerHTML = SVG_ICONS.compare + '<b class="compareTitle">' + t('Comparing') + '</b>' +
 			'<span class="compareBranch left" title="' + escapeHtml(this.left) + '"><i></i>' + escapeHtml(this.left) + '</span>' +
-			'<button type="button" class="compareIconBtn" data-compare="swap" title="' + t('Swap the branches') + '" aria-label="' + t('Swap the branches') + '"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 5h11l-3-3M14 11H3l3 3"/></svg></button>' +
+			'<button type="button" class="compareIconBtn" data-compare="swap" title="' + t('Swap the branches') + '" aria-label="' + t('Swap the branches') + '"><svg class="iconTone-blue" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M2 5h11l-3-3M14 11H3l3 3"/></svg></button>' +
 			'<span class="compareBranch right" title="' + escapeHtml(this.right) + '"><i></i>' + escapeHtml(this.right) + '</span>' +
 			(comparison === null
 				? '<span class="compareMuted">' + SVG_ICONS.loading + t('Loading') + ELLIPSIS + '</span>'

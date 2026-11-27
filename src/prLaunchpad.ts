@@ -146,22 +146,31 @@ export class PrLaunchpad extends Disposable {
 		const needsReview = visible.filter((i) => i.bucket === 'needsReview').length;
 		const followUp = visible.filter((i) => i.bucket === 'followUp').length;
 
+		const colorfulIcons = getConfig().iconColorStyle === 'colorful';
+		const rocketIcon = colorfulIcons ? '$(git-map-rocket-color)' : '$(rocket)';
 		// The highest priority group that has pull requests: blocked, then needs review, then mergeable, then follow-up
 		const top: { group: LaunchpadBucket, count: number, icon: string, label: string } | null =
 			blocked > 0 && enabledSet.has('blocked') ? { group: 'blocked', count: blocked, icon: '$(error)', label: t('{0} Blocked PR(s)', blocked) }
 				: needsReview > 0 && enabledSet.has('needsReview') ? { group: 'needsReview', count: needsReview, icon: '$(comment-unresolved)', label: t('{0} Review PR(s)', needsReview) }
-					: mergeable > 0 && enabledSet.has('mergeable') ? { group: 'mergeable', count: mergeable, icon: '$(rocket)', label: t('{0} Mergeable PR(s)', mergeable) }
+					: mergeable > 0 && enabledSet.has('mergeable') ? { group: 'mergeable', count: mergeable, icon: rocketIcon, label: t('{0} Mergeable PR(s)', mergeable) }
 						: visible.length > 0 ? { group: 'followUp', count: followUp || visible.length, icon: '$(report)', label: t('{0} PR(s)', followUp || visible.length) }
 							: null;
-		const icon = cfg.icon === 'group' && top !== null ? top.icon : '$(rocket)';
+		const icon = cfg.icon === 'group' && top !== null ? top.icon : rocketIcon;
 		const label = cfg.label === 'hidden' ? ''
 			: cfg.label === 'counts' ? [blocked > 0 && enabledSet.has('blocked') ? '$(error) ' + blocked : '', needsReview > 0 && enabledSet.has('needsReview') ? '$(comment-unresolved) ' + needsReview : '', mergeable > 0 && enabledSet.has('mergeable') ? '$(check) ' + mergeable : '', followUp > 0 && enabledSet.has('followUp') ? '$(report) ' + followUp : ''].filter((s) => s !== '').join('  ') || t('PRs: 0')
 				: top !== null ? top.label : t('PRs: 0');
 		this.statusBarItem.text = icon + (label !== '' ? ' ' + label : '');
-		const colorfulIcons = getConfig().iconColorStyle === 'colorful';
-		this.statusBarItem.color = (cfg.useColors || colorfulIcons) && top !== null
-			? new vscode.ThemeColor(top.group === 'blocked' ? 'errorForeground' : top.group === 'needsReview' ? 'editorWarning.foreground' : top.group === 'mergeable' ? 'gitDecoration.addedResourceForeground' : 'charts.blue')
-			: colorfulIcons ? new vscode.ThemeColor('charts.orange') : undefined;
+		const useSemanticPills = cfg.useColors || colorfulIcons;
+		if (useSemanticPills && top !== null && top.group === 'blocked') {
+			this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
+			this.statusBarItem.color = new vscode.ThemeColor('statusBarItem.errorForeground');
+		} else if (useSemanticPills && top !== null && top.group === 'needsReview') {
+			this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
+			this.statusBarItem.color = new vscode.ThemeColor('statusBarItem.warningForeground');
+		} else {
+			this.statusBarItem.backgroundColor = undefined;
+			this.statusBarItem.color = undefined;
+		}
 		if (visible.length === 0) this.statusBarItem.tooltip = t('Git Map Launchpad: Click to inspect Pull Requests needing attention');
 		this.statusBarItem.tooltip = [
 			t('Mergeable: {0}', mergeable),

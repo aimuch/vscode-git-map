@@ -1299,6 +1299,21 @@
 			const toolbarRect = toolbar.getBoundingClientRect(), rowRect = row.getBoundingClientRect();
 			assert(Math.abs((toolbarRect.top + toolbarRect.height / 2) - (rowRect.top + rowRect.height / 2)) <= 3 && toolbarRect.left >= 0 && toolbarRect.right <= window.innerWidth, 'Floating pill is not aligned vertically with the hovered row: ' + JSON.stringify({ toolbarRect, rowRect }));
 			const button = (action) => toolbar.querySelector('.rowAction[data-action="' + action + '"]');
+			const prevIconStyle = document.body.dataset.iconStyle || 'monochrome';
+			try {
+				const monoStroke = getComputedStyle(button('createBranch').querySelector('svg')).stroke;
+				const monoMoreFill = getComputedStyle(button('more').querySelector('svg')).fill;
+				document.body.dataset.iconStyle = 'colorful';
+				const cBranch = getComputedStyle(button('createBranch').querySelector('svg')).stroke;
+				const cCheckout = getComputedStyle(button('checkout').querySelector('svg')).stroke;
+				const cPick = getComputedStyle(button('cherrypick').querySelector('svg')).stroke;
+				const cCopy = getComputedStyle(button('copyHash').querySelector('svg')).stroke;
+				const cMore = getComputedStyle(button('more').querySelector('svg')).fill;
+				assert(cBranch !== monoStroke && new Set([cBranch, cCheckout, cPick, cCopy]).size === 4 && cMore !== monoMoreFill, 'Expected distinct semantic colors for floating row hover bar icons in colorful mode');
+				await shot('row-actions-colorful');
+			} finally {
+				document.body.dataset.iconStyle = prevIconStyle;
+			}
 
 			// Copying the hash doesn't open the Commit Details View (the click isn't handled by the row)
 			const detailsRequests = requestsOf('commitDetails').length;
@@ -2408,35 +2423,51 @@
 					return s && s.settings['ui.iconColorStyle'] === 'colorful';
 				});
 				assert(document.body.dataset.iconStyle === 'colorful' && sbColorSeg.classList.contains('selected'), 'ui.iconColorStyle=colorful did not update body data attribute and synced Status Bar switch');
-				mouse(sbMonoSeg, 'click');
+				const launchpadPill = document.querySelector('#settingsPreview-launchpad .settingsSbItem');
+				const blockedChecked = !!document.querySelector('input[data-kind="checkgroup"][data-skey="launchpad.indicator.groups"][data-value="blocked"]:checked');
+				const sbStrip = document.querySelector('#settingsPreview-statusBarItems .settingsStatusBarPreviewStrip');
+				const gitMapSbItem = sbStrip && sbStrip.querySelector('.settingsSbItem[data-sb-item="gitMap"]');
+				const gitMapSbLogo = gitMapSbItem && gitMapSbItem.querySelector('svg');
+				assert(launchpadPill !== null && launchpadPill.classList.contains(blockedChecked ? 'sbPillError' : 'sbPillWarning'), 'Expected native semantic pill styling on Launchpad Status Bar preview');
+				const launchpadBadgeSvg = statusBarSec.querySelector('.settingsStatusBarItemPreview[data-sb-badge="statusBarLaunchpad"] svg');
+				assert(sbStrip !== null && gitMapSbItem !== null && gitMapSbLogo !== null && gitMapSbLogo.classList.contains('gmColorSvg') && launchpadBadgeSvg !== null && launchpadBadgeSvg.classList.contains('gmColorSvg'), 'Expected multi-color SVGs for Git Map logo and Launchpad rocket in colorful mode');
+				assert(getComputedStyle(gitMapSbItem).color === getComputedStyle(sbStrip).color, 'Expected idle Git Map Status Bar text to follow high-contrast native status bar foreground');
+				statusBarSec.scrollIntoView({ block: 'start' });
+				await sleep(250);
+				await shot('settings-status-bar-colorful');
+				const sbMonoSegNow = document.querySelector('#settingsCategory-status-bar-item .settingsSegmentedCtl[data-skey="ui.iconColorStyle"] .settingsSegment[data-value="monochrome"]');
+				assert(sbMonoSegNow !== null, 'Missing refreshed monochrome iconColorStyle segment');
+				mouse(sbMonoSegNow, 'click');
 				await waitFor('ui.iconColorStyle=monochrome saved', () => {
 					const s = lastSave();
 					return s && s.settings['ui.iconColorStyle'] === 'monochrome';
 				});
 				assert(document.body.dataset.iconStyle === 'monochrome' && widget.querySelectorAll('svg.aiColorIcon').length >= 2, 'Monochrome mode should keep AI icons colorful');
 
+				const statusBarSecNow = document.getElementById('settingsCategory-status-bar-item');
 				const commitsInput = document.querySelector('#settingsCategory-commits-view input[data-skey="views.commits.labelFormat"]');
 				commitsInput.value = '[${sha}] ${message}';
 				commitsInput.dispatchEvent(new Event('input', { bubbles: true }));
 				assert(document.getElementById('settingsPreview-commitsView').textContent.includes('[fe26af4] feat: optimize parser'), 'Commits View live preview did not update');
-				const itemKeys = Array.from(statusBarSec.querySelectorAll('input[data-kind="check"]')).map((input) => input.dataset.skey);
+				const itemKeys = Array.from(statusBarSecNow.querySelectorAll('input[data-kind="check"]')).map((input) => input.dataset.skey);
 				assert(JSON.stringify(itemKeys) === JSON.stringify(['showStatusBarItem', 'blame.statusBar', 'launchpad.indicator.enabled', 'mode.statusBar.enabled']), 'Unexpected switches of the Status Bar items: ' + JSON.stringify(itemKeys));
-				const modeHere = statusBarSec.querySelector('input[data-skey="mode.statusBar.enabled"]'), modeThere = document.querySelector('#settingsCategory-editor-modes input[data-skey="mode.statusBar.enabled"]');
-				const launchpadHere = statusBarSec.querySelector('input[data-skey="launchpad.indicator.enabled"]'), launchpadThere = document.querySelector('#settingsCategory-launchpad .settingsControl.master input[data-skey="launchpad.indicator.enabled"]');
+				const modeHere = statusBarSecNow.querySelector('input[data-skey="mode.statusBar.enabled"]'), modeThere = document.querySelector('#settingsCategory-editor-modes input[data-skey="mode.statusBar.enabled"]');
+				const launchpadHere = statusBarSecNow.querySelector('input[data-skey="launchpad.indicator.enabled"]'), launchpadThere = document.querySelector('#settingsCategory-launchpad .settingsControl.master input[data-skey="launchpad.indicator.enabled"]');
 				for (const [here, there, k, sbItem, badgeKey] of [[modeHere, modeThere, 'mode.statusBar.enabled', 'mode', 'statusBarMode'], [launchpadHere, launchpadThere, 'launchpad.indicator.enabled', 'launchpad', 'statusBarLaunchpad']]) {
+					const sbLiveNow = document.getElementById('settingsPreview-statusBarItems');
 					const initial = here.checked, saveBefore = requestsOf('saveExtendedSettings').length;
 					assert(there !== null && there.checked === initial, 'The switch of ' + k + ' should match its own category');
 					here.checked = !initial;
 					here.dispatchEvent(new Event('change', { bubbles: true }));
 					const saved = await waitFor('saveExtendedSettings(' + k + ')', () => requestsOf('saveExtendedSettings').length > saveBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
 					assert(saved.settings[k] === !initial && there.checked === !initial, 'Turning ' + k + ' off from the Status Bar category should save it, and update the switch of its own category: ' + JSON.stringify(saved));
-					assert((sbLivePreview.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === !initial, 'Status Bar live preview did not reflect ' + k + '=' + !initial);
-					assert(statusBarSec.querySelector('[data-sb-badge="' + badgeKey + '"]').classList.contains('off') === initial, 'Inline Status Bar badge did not update active state for ' + k);
+					assert((sbLiveNow.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === !initial, 'Status Bar live preview did not reflect ' + k + '=' + !initial);
+					assert(statusBarSecNow.querySelector('[data-sb-badge="' + badgeKey + '"]').classList.contains('off') === initial, 'Inline Status Bar badge did not update active state for ' + k);
 					there.checked = initial;
 					there.dispatchEvent(new Event('change', { bubbles: true }));
 					await waitFor('saveExtendedSettings(' + k + ' back)', () => requestsOf('saveExtendedSettings').slice(-1)[0].settings[k] === initial);
 					assert(here.checked === initial, 'Turning ' + k + ' back on from its own category should update the Status Bar category');
-					assert((sbLivePreview.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === initial, 'Status Bar live preview did not restore ' + k + '=' + initial);
+					assert((sbLiveNow.querySelector('[data-sb-item="' + sbItem + '"]') !== null) === initial, 'Status Bar live preview did not restore ' + k + '=' + initial);
 				}
 				for (const id of ['commits-view', 'file-heatmap', 'current-line', 'menus', 'status-bar-item']) {
 					document.getElementById('settingsCategory-' + id).scrollIntoView({ block: 'start' });

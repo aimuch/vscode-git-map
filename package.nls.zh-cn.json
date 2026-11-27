@@ -303,6 +303,11 @@
 	"config.useMailmap.deprecationMessage": "已弃用：此设置已重命名为 git-map.repository.useMailmap",
 	"config.useMailmap.markdownDeprecationMessage": "已弃用：此设置已重命名为 `#git-map.repository.useMailmap#`",
 	"icon.git-map-logo.description": "Git Map",
+	"icon.git-map-logo-color.description": "Git Map（彩色）",
+	"icon.git-map-rocket-color.description": "Git Map Launchpad 火箭（彩色）",
+	"icon.git-map-commit-color.description": "Git Map 提交（彩色）",
+	"icon.git-map-eye-color.description": "Git Map 编辑器模式（彩色）",
+	"icon.git-map-zen-color.description": "Git Map 禅模式（彩色）",
 	"config.contextMenuActionsVisibility.branch.checkout.title": "签出分支",
 	"config.contextMenuActionsVisibility.branch.rename.title": "重命名分支...",
 	"config.contextMenuActionsVisibility.branch.delete.title": "删除分支...",
@@ -668,7 +673,7 @@
 	"config.menus.scm.view.description": "向源代码管理视图标题添加“查看 Git Map”。",
 	"submenu.fileAnnotations.label": "文件注释",
 	"command.ai.switchModel.title": "切换 AI 提供程序/模型...",
-	"config.ui.iconColorStyle.description": "选择 Git Map 视图、设置页、状态栏与 SCM 树视图中的图标采用语义彩色还是跟随主题前景色。AI 与编码代理图标在两种模式下始终保持彩色。",
+	"config.ui.iconColorStyle.description": "选择 Git Map 视图、设置页、状态栏与 SCM 树视图中的图标采用多色语义配色还是跟随主题前景色。AI 与编码代理图标在两种模式下始终保持彩色；状态栏文字保持与主题一致以保证对比度，需处理的 PR 与评审模式使用原生高亮徽章。",
 	"config.ui.iconColorStyle.enumDescriptions.0": "单色图标，跟随 Visual Studio Code 主题前景色（AI 图标始终保持彩色）。",
-	"config.ui.iconColorStyle.enumDescriptions.1": "彩色图标，为 Git Map 视图、设置页、状态栏与 SCM 树视图中的图标赋予语义配色。"
+	"config.ui.iconColorStyle.enumDescriptions.1": "彩色图标，为 Git Map 视图、设置页、状态栏与 SCM 树视图图标赋予多色语义配色，状态栏文字保持高清主题对比度。"
 }

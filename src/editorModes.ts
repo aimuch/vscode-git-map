@@ -143,11 +143,17 @@ export class EditorModeManager extends Disposable {
 			this.statusBarItem.hide();
 			return;
 		}
-		this.statusBarItem.text = '$(eye) ' + t('Mode: {0}', this.activeMode);
+		const colorfulIcons = getConfig().iconColorStyle === 'colorful';
+		const icon = this.activeMode === 'zen'
+			? (colorfulIcons ? '$(git-map-zen-color)' : '$(eye-closed)')
+			: this.activeMode === 'default'
+				? (colorfulIcons ? '$(git-map-eye-color)' : '$(eye)')
+				: '$(comment-discussion)';
+		this.statusBarItem.text = icon + ' ' + t('Mode: {0}', this.activeMode);
 		this.statusBarItem.tooltip = t('Active Git Map editor mode (click to switch)');
-		this.statusBarItem.color = getConfig().iconColorStyle === 'colorful'
-			? new vscode.ThemeColor(this.activeMode === 'zen' ? 'charts.purple' : this.activeMode === 'review' ? 'charts.orange' : 'charts.green')
-			: undefined;
+		const highlightActiveMode = colorfulIcons && this.activeMode !== 'default' && this.activeMode !== 'zen';
+		this.statusBarItem.backgroundColor = highlightActiveMode ? new vscode.ThemeColor('statusBarItem.warningBackground') : undefined;
+		this.statusBarItem.color = highlightActiveMode ? new vscode.ThemeColor('statusBarItem.warningForeground') : undefined;
 		this.statusBarItem.show();
 	}
 

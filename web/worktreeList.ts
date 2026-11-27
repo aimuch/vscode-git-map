@@ -1,4 +1,4 @@
-const WORKTREE_ICON = '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5V12a1 1 0 0 0 1 1h4.5"/><path d="M2 4.5a1 1 0 0 1 1-1h2.5l1 1.2H9"/><circle cx="12" cy="4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M12 5.5v5"/><path d="M12 8.5c-1.5 0-2.5.8-2.5 2.5"/></svg>';
+const WORKTREE_ICON = '<svg class="toolbarIcon iconTone-green" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5V12a1 1 0 0 0 1 1h4.5"/><path d="M2 4.5a1 1 0 0 1 1-1h2.5l1 1.2H9"/><circle cx="12" cy="4" r="1.5"/><circle cx="12" cy="12" r="1.5"/><path d="M12 5.5v5"/><path d="M12 8.5c-1.5 0-2.5.8-2.5 2.5"/></svg>';
 
 /**
  * Implements the Worktrees button of the control bar (shown when the repository has more than one worktree), the list of the worktrees

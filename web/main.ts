@@ -189,7 +189,7 @@ class GitGraphView {
 		sidebarToggleBtn.className = 'toolbarBtn';
 		sidebarToggleBtn.title = t('Toggle Repository Navigator Sidebar');
 		sidebarToggleBtn.setAttribute('aria-label', t('Toggle Repository Navigator Sidebar'));
-		sidebarToggleBtn.innerHTML = '<svg class="toolbarIcon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>';
+		sidebarToggleBtn.innerHTML = '<svg class="toolbarIcon iconTone-indigo" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M6 2.5v11"/></svg>';
 		sidebarToggleBtn.addEventListener('click', () => this.toggleGraphSidebar());
 		this.controlsElem.insertBefore(sidebarToggleBtn, this.controlsElem.firstChild);
 		this.tableElem = document.getElementById('commitTable')!;

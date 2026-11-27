@@ -1,7 +1,7 @@
 {
 	"name": "git-map",
 	"displayName": "Git Map",
-	"version": "2.9.2",
+	"version": "2.9.3",
 	"publisher": "aimdev",
 	"author": {
 		"name": "Andy",
@@ -51,6 +51,41 @@
 				"default": {
 					"fontPath": "resources/git-graph-icons.woff",
 					"fontCharacter": "\\E000"
+				}
+			},
+			"git-map-logo-color": {
+				"description": "%icon.git-map-logo-color.description%",
+				"default": {
+					"fontPath": "resources/git-map-color-icons.woff",
+					"fontCharacter": "\\E001"
+				}
+			},
+			"git-map-rocket-color": {
+				"description": "%icon.git-map-rocket-color.description%",
+				"default": {
+					"fontPath": "resources/git-map-color-icons.woff",
+					"fontCharacter": "\\E002"
+				}
+			},
+			"git-map-commit-color": {
+				"description": "%icon.git-map-commit-color.description%",
+				"default": {
+					"fontPath": "resources/git-map-color-icons.woff",
+					"fontCharacter": "\\E003"
+				}
+			},
+			"git-map-eye-color": {
+				"description": "%icon.git-map-eye-color.description%",
+				"default": {
+					"fontPath": "resources/git-map-color-icons.woff",
+					"fontCharacter": "\\E004"
+				}
+			},
+			"git-map-zen-color": {
+				"description": "%icon.git-map-zen-color.description%",
+				"default": {
+					"fontPath": "resources/git-map-color-icons.woff",
+					"fontCharacter": "\\E005"
 				}
 			}
 		},

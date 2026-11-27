@@ -245,11 +245,12 @@ export class LineBlame extends Disposable {
 	private showInStatusBar(repo: string, blame: GitLineBlame, uri: vscode.Uri, line: number) {
 		const cfg = getConfig(repo);
 		const prInfo = cfg.blamePullRequestsEnabled && cfg.blameStatusBarPullRequests ? resolvePrInfoForLineBlame(repo, blame) : null;
+		const commitIcon = getConfig().iconColorStyle === 'colorful' ? '$(git-map-commit-color) ' : '$(git-commit) ';
 		if (cfg.blameStatusBarFormat !== '${author}, ${agoOrDate}${\' via \'pullRequest}' || cfg.blameDateStyle === 'absolute') {
-			this.statusBarItem.text = '$(git-commit) ' + formatBlameTemplate(cfg.blameStatusBarFormat, blame, prInfo, getBlameDateOptions(repo, cfg.blameStatusBarDateFormat));
+			this.statusBarItem.text = commitIcon + formatBlameTemplate(cfg.blameStatusBarFormat, blame, prInfo, getBlameDateOptions(repo, cfg.blameStatusBarDateFormat));
 		} else {
 			const baseText = blame.committed ? t('{0}, {1}', blame.author, getRelativeTimeDiff(blame.authorDate)) : t('You, Uncommitted changes');
-			this.statusBarItem.text = '$(git-commit) ' + baseText + (prInfo !== null ? ' via PR #' + prInfo.number : '');
+			this.statusBarItem.text = commitIcon + baseText + (prInfo !== null ? ' via PR #' + prInfo.number : '');
 		}
 		this.statusBarItem.tooltip = blame.committed && cfg.blameStatusBarTooltipFormat !== ''
 			? new vscode.MarkdownString(formatBlameTemplate(cfg.blameStatusBarTooltipFormat, blame, prInfo, getBlameDateOptions(repo, cfg.blameStatusBarDateFormat)), true)
@@ -257,7 +258,8 @@ export class LineBlame extends Disposable {
 				? abbrevCommit(blame.hash) + ' · ' + blame.author + ' · ' + blame.summary + (prInfo !== null ? ' (PR #' + prInfo.number + ')' : '')
 				: t('This line has uncommitted changes.');
 		this.statusBarItem.command = getStatusBarCommand(cfg.blameStatusBarCommand, repo, blame, uri, line);
-		this.statusBarItem.color = cfg.iconColorStyle === 'colorful' ? new vscode.ThemeColor('charts.purple') : undefined;
+		this.statusBarItem.color = undefined;
+		this.statusBarItem.backgroundColor = undefined;
 		this.statusBarItem.show();
 		this.statusBarVisible = true;
 	}

@@ -1,5 +1,13 @@
 # Change Log
 
+## 2.9.3 - 2026-11-27
+* **Multi-Colour Status Bar Icon Font & High-Contrast Palette**:
+    * Built OpenType `COLR` v0 + `CPAL` v0 icon font (`resources/git-map-color-icons.woff`) contributing multi-colour icons (`git-map-logo-color`, `git-map-rocket-color`, `git-map-commit-color`, `git-map-eye-color`, `git-map-zen-color`) so the 4-tone Git Map mark, colourful Launchpad rocket, commit blame icon, and editor mode icons pop crisply against `#007acc` blue, Dark, and Light Status Bars.
+    * Kept idle Status Bar text in native high-contrast `statusBar.foreground` while highlighting actionable `Blocked` / `Needs Review` PRs and active `review` / custom editor modes with native `statusBarItem.errorBackground` / `warningBackground` pills.
+* **Colourful Floating Action Bars & Settings Status Bar Previews**:
+    * Mirrored the multi-colour icons (`logoColor`, `rocketColor`, `commitColor`, `eyeColor`, `zenColor`) inside Settings Status Bar live previews and inline item badges.
+    * Added semantic colourful icon styling to the Commit Row Hover Floating Action Bar (`#rowActions`: `createBranch`, `checkout`, `cherrypick`, `copyHash`, `more`), Changed-Files Floating Action Bar (`#cdvFileFloatingBar`), minimap controls, and remaining toolbar controls under `git-map.ui.iconColorStyle === "colorful"`.
+
 ## 2.9.2 - 2026-11-27
 * **Live Previews Across Settings & Modals**:
     * Added a full simulated Status Bar live preview and inline item preview badges across the **Status Bar**, **Launchpad**, and **Editor Modes** categories, synced with item toggles and `Icon & Text / Icon Only / Text Only` styles.

@@ -204,6 +204,10 @@ async function run() {
 		const packageJson = JSON.parse(fs.readFileSync(path.join(extension.extensionPath, 'package.json'), 'utf8'));
 		const icon = packageJson.contributes.icons['git-map-logo'];
 		assert(icon && fs.statSync(path.join(extension.extensionPath, icon.default.fontPath)).size > 0, 'The git-map-logo icon font is missing');
+		for (const colorIconId of ['git-map-logo-color', 'git-map-rocket-color', 'git-map-commit-color', 'git-map-eye-color', 'git-map-zen-color']) {
+			const cIcon = packageJson.contributes.icons[colorIconId];
+			assert(cIcon && fs.statSync(path.join(extension.extensionPath, cIcon.default.fontPath)).size > 0, 'The ' + colorIconId + ' icon font is missing');
+		}
 
 		const { StatusBarItem } = require(path.join(extension.extensionPath, 'out', 'statusBarItem.js'));
 		const { EventEmitter } = require(path.join(extension.extensionPath, 'out', 'utils', 'event.js'));
@@ -211,19 +215,28 @@ async function run() {
 		const onDidChangeRepos = new EventEmitter(), onDidChangeConfiguration = new EventEmitter(), logger = new Logger();
 		const statusBarItem = new StatusBarItem(1, onDidChangeRepos.subscribe, onDidChangeConfiguration.subscribe, logger);
 		const texts = {};
+		let colorText = '';
 		try {
 			for (const display of ['Icon', 'Text', 'Icon & Text']) {
 				await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', display, vscode.ConfigurationTarget.Global);
 				onDidChangeConfiguration.emit({ affectsConfiguration: (section) => section === 'git-map' || section === 'git-map.statusBarItemDisplay' });
 				texts[display] = statusBarItem.statusBarItem.text;
 			}
+			await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', undefined, vscode.ConfigurationTarget.Global);
+			await vscode.workspace.getConfiguration('git-map').update('ui.iconColorStyle', 'colorful', vscode.ConfigurationTarget.Global);
+			onDidChangeConfiguration.emit({ affectsConfiguration: (section) => section === 'git-map' || section === 'git-map.ui.iconColorStyle' });
+			colorText = statusBarItem.statusBarItem.text;
+			assert(colorText === '$(git-map-logo-color) Git Map' && typeof statusBarItem.statusBarItem.color === 'undefined', 'Unexpected colorful Status Bar text/color: ' + colorText);
+			await sleep(600);
+			await screenshot('status-bar-colorful');
 		} finally {
+			await vscode.workspace.getConfiguration('git-map').update('ui.iconColorStyle', undefined, vscode.ConfigurationTarget.Global);
 			await vscode.workspace.getConfiguration('git-map').update('statusBarItemDisplay', undefined, vscode.ConfigurationTarget.Global);
 			statusBarItem.dispose();
 			logger.dispose();
 		}
 		assert(texts['Icon'] === '$(git-map-logo)' && texts['Text'] === 'Git Map' && texts['Icon & Text'] === '$(git-map-logo) Git Map', 'Unexpected texts: ' + JSON.stringify(texts));
-		return JSON.stringify(texts);
+		return JSON.stringify(Object.assign({}, texts, { colorful: colorText }));
 	});
 
 	await check('#794', 'The "View Git Map" command opens the view when invoked with a null argument', async () => {

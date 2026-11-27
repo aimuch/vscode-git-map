@@ -22,6 +22,7 @@ class SettingsWidget {
 	private aiModelsLoading: boolean = false;
 	private codingAgents: ReadonlyArray<GG.CodingAgentStatus> = [];
 	private codingAgentsLoaded: boolean = false;
+	private categoryEventsBound: boolean = false;
 	private extState: {
 		autolinks: GG.AutolinkRule[];
 		customRemotes: GG.CustomRemoteConfig[];
@@ -461,9 +462,10 @@ class SettingsWidget {
 				'</div>';
 
 			const showGitMapItem = this.getSettingValue('showStatusBarItem') !== false;
+			const statusBarLogo = this.isColorfulIcons() ? SVG_ICONS.logoColor : SVG_ICONS.logo;
 			const statusBarItemHtml = '<div class="settingsRow">' +
 				segmented('statusBarItemDisplay', [['Icon & Text', t('Icon & Text')], ['Icon', t('Icon Only')], ['Text', t('Text Only')]], statusBarDisplay) +
-				'<span class="settingsStatusBarPreview' + (showGitMapItem ? '' : ' off') + '" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? SVG_ICONS.logo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
+				'<span class="settingsStatusBarPreview' + (showGitMapItem ? '' : ' off') + '" title="' + t('Preview') + '">' + (statusBarDisplay !== 'Text' ? statusBarLogo : '') + (statusBarDisplay !== 'Icon' ? '<span>Git Map</span>' : '') + '</span>' +
 				'</div>';
 
 
@@ -1570,7 +1572,8 @@ class SettingsWidget {
 				return lines((i) => i === 2 ? { cls: 'current', after: ed.currentLineEnabled ? '<span class="settingsEditorInlineBlame">' + escapeHtml(this.formatSampleBlame(ed.currentLineFormat, ed.currentLinePullRequests, ed.currentLineDateFormat)) + '</span>' : '' } : {});
 			case 'statusBar': {
 				const blameOn = this.getSettingValue('blame.statusBar') !== false && ed.statusBarEnabled;
-				const blame = blameOn ? '<span class="settingsStatusBarBlame">' + MENU_ICONS.commit + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>' : '';
+				const commitIcon = this.isColorfulIcons() ? MENU_ICONS.commitColor : MENU_ICONS.commit;
+				const blame = blameOn ? '<span class="settingsStatusBarBlame">' + commitIcon + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>' : '';
 				return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div><div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + (ed.statusBarAlignment === 'left' ? blame : '') + '<span class="grow"></span>' + (ed.statusBarAlignment === 'right' ? blame : '') + '<span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
 			}
 			case 'statusBarItems':
@@ -1725,21 +1728,26 @@ class SettingsWidget {
 	/**
 	 * Render the inner HTML of an inline Status Bar item preview pill (for Status Bar Blame, Launchpad, or Editor Mode).
 	 */
+	private isColorfulIcons() {
+		return String(this.getSettingValue('ui.iconColorStyle') || 'monochrome') === 'colorful';
+	}
+
 	private renderStatusBarBadgeContent(kind: SettingsStatusBarBadgeKind, sampleWithPrs: boolean = false) {
+		const colorful = this.isColorfulIcons();
 		switch (kind) {
 			case 'statusBarBlame': {
 				const ed = this.extState.editor;
-				return MENU_ICONS.commit + '<span>' + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>';
+				return (colorful ? MENU_ICONS.commitColor : MENU_ICONS.commit) + '<span>' + escapeHtml(this.formatSampleBlame(ed.statusBarFormat, ed.statusBarPullRequests, ed.statusBarDateFormat)) + '</span>';
 			}
 			case 'statusBarLaunchpad': {
 				const labelMode = String(this.getSettingValue('launchpad.indicator.label') || 'item');
 				const iconMode = String(this.getSettingValue('launchpad.indicator.icon') || 'default');
 				const groups = Array.isArray(this.getSettingValue('launchpad.indicator.groups')) ? <string[]>this.getSettingValue('launchpad.indicator.groups') : ['mergeable', 'blocked', 'needsReview', 'followUp'];
-				let icon = MENU_ICONS.rocket;
+				let icon = colorful ? MENU_ICONS.rocketColor : MENU_ICONS.rocket;
 				let text = t('PRs: 0');
 				if (sampleWithPrs && groups.length > 0) {
 					const top = groups.includes('blocked') ? 'blocked' : groups.includes('needsReview') ? 'needsReview' : groups.includes('mergeable') ? 'mergeable' : 'followUp';
-					if (iconMode === 'group') icon = top === 'blocked' ? MENU_ICONS.warning : top === 'needsReview' ? MENU_ICONS.pullRequest : MENU_ICONS.rocket;
+					if (iconMode === 'group') icon = top === 'blocked' ? MENU_ICONS.warning : top === 'needsReview' ? MENU_ICONS.pullRequest : (colorful ? MENU_ICONS.rocketColor : MENU_ICONS.rocket);
 					text = labelMode === 'counts'
 						? [groups.includes('blocked') ? '1' : '', groups.includes('needsReview') ? '2' : '', groups.includes('mergeable') ? '1' : ''].filter((s) => s !== '').join(' · ') || t('PRs: 0')
 						: top === 'blocked' ? t('{0} Blocked PR(s)', 1) : top === 'needsReview' ? t('{0} Review PR(s)', 2) : top === 'mergeable' ? t('{0} Mergeable PR(s)', 1) : t('{0} PR(s)', 1);
@@ -1750,7 +1758,12 @@ class SettingsWidget {
 			}
 			case 'statusBarMode': {
 				const activeMode = String(this.getSettingValue('mode.active') || this.extState.editor.activeMode || 'default');
-				return MENU_ICONS.eye + '<span>' + escapeHtml(t('Mode: {0}', activeMode)) + '</span>';
+				const icon = activeMode === 'zen'
+					? (colorful ? MENU_ICONS.zenColor : MENU_ICONS.eyeOff)
+					: activeMode === 'default'
+						? (colorful ? MENU_ICONS.eyeColor : MENU_ICONS.eye)
+						: MENU_ICONS.diff;
+				return icon + '<span>' + escapeHtml(t('Mode: {0}', activeMode)) + '</span>';
 			}
 		}
 	}
@@ -1766,9 +1779,10 @@ class SettingsWidget {
 		const showMode = this.getSettingValue('mode.statusBar.enabled') === true;
 		const modeAlign = this.getSettingValue('mode.statusBar.alignment') === 'right' ? 'right' : 'left';
 		const display = this.appearance.statusBarItemDisplay;
+		const logoSvg = this.isColorfulIcons() ? SVG_ICONS.logoColor : SVG_ICONS.logo;
 
 		const gitMapHtml = showGitMap
-			? '<span class="settingsSbItem" data-sb-item="gitMap">' + (display !== GG.StatusBarItemDisplay.Text ? SVG_ICONS.logo : '') + (display !== GG.StatusBarItemDisplay.Icon ? '<span>Git Map</span>' : '') + '</span>'
+			? '<span class="settingsSbItem" data-sb-item="gitMap">' + (display !== GG.StatusBarItemDisplay.Text ? logoSvg : '') + (display !== GG.StatusBarItemDisplay.Icon ? '<span>Git Map</span>' : '') + '</span>'
 			: '';
 		const blameHtml = showBlame
 			? '<span class="settingsSbItem settingsStatusBarBlame" data-sb-item="blame">' + this.renderStatusBarBadgeContent('statusBarBlame') + '</span>'
@@ -1776,8 +1790,10 @@ class SettingsWidget {
 		const launchpadHtml = showLaunchpad
 			? '<span class="settingsSbItem' + (cloudEnabled ? '' : ' dimmed') + '" data-sb-item="launchpad"' + (cloudEnabled ? '' : ' title="' + escapeHtml(t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on')) + '"') + '>' + this.renderStatusBarBadgeContent('statusBarLaunchpad') + '</span>'
 			: '';
+		const activeMode = String(this.getSettingValue('mode.active') || this.extState.editor.activeMode || 'default');
+		const modeHighlight = String(this.getSettingValue('ui.iconColorStyle') || 'monochrome') === 'colorful' && activeMode !== 'default' && activeMode !== 'zen';
 		const modeHtml = showMode
-			? '<span class="settingsSbItem" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>'
+			? '<span class="settingsSbItem' + (modeHighlight ? ' sbPillWarning' : '') + '" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>'
 			: '';
 
 		const leftItems = gitMapHtml + (ed.statusBarAlignment !== 'right' ? blameHtml : '') + launchpadHtml + (modeAlign !== 'right' ? modeHtml : '');
@@ -1794,9 +1810,9 @@ class SettingsWidget {
 	 */
 	private renderLaunchpadPreview() {
 		const enabled = this.getSettingValue('launchpad.indicator.enabled') !== false;
-		const useColors = this.getSettingValue('launchpad.indicator.useColors') !== false;
+		const useColors = this.getSettingValue('launchpad.indicator.useColors') !== false || String(this.getSettingValue('ui.iconColorStyle') || 'monochrome') === 'colorful';
 		const groups = Array.isArray(this.getSettingValue('launchpad.indicator.groups')) ? <string[]>this.getSettingValue('launchpad.indicator.groups') : ['mergeable', 'blocked', 'needsReview', 'followUp'];
-		const colorCls = !useColors || groups.length === 0 ? '' : groups.includes('blocked') ? ' sbColorBlocked' : groups.includes('needsReview') ? ' sbColorReview' : groups.includes('mergeable') ? ' sbColorMergeable' : '';
+		const colorCls = !useColors || groups.length === 0 ? '' : groups.includes('blocked') ? ' sbPillError' : groups.includes('needsReview') ? ' sbPillWarning' : '';
 		const item = enabled ? '<span class="settingsSbItem' + colorCls + '" data-sb-item="launchpad">' + this.renderStatusBarBadgeContent('statusBarLaunchpad', true) + '</span>' : '';
 		return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div>' +
 			'<div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + item + '<span class="grow"></span><span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
@@ -1808,7 +1824,9 @@ class SettingsWidget {
 	private renderEditorModesPreview() {
 		const enabled = this.getSettingValue('mode.statusBar.enabled') === true;
 		const align = this.getSettingValue('mode.statusBar.alignment') === 'right' ? 'right' : 'left';
-		const item = enabled ? '<span class="settingsSbItem" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>' : '';
+		const activeMode = String(this.getSettingValue('mode.active') || this.extState.editor.activeMode || 'default');
+		const modeHighlight = String(this.getSettingValue('ui.iconColorStyle') || 'monochrome') === 'colorful' && activeMode !== 'default' && activeMode !== 'zen';
+		const item = enabled ? '<span class="settingsSbItem' + (modeHighlight ? ' sbPillWarning' : '') + '" data-sb-item="mode">' + this.renderStatusBarBadgeContent('statusBarMode') + '</span>' : '';
 		return '<div class="settingsStatusBarPreviewEditor">' + t('Editor') + '</div>' +
 			'<div class="settingsStatusBarPreviewStrip"><span class="settingsSbHost">' + MENU_ICONS.branch + 'main</span>' + (align !== 'right' ? item : '') + '<span class="grow"></span>' + (align === 'right' ? item : '') + '<span class="settingsSbHost">' + t('Ln 3, Col 12') + '</span><span class="settingsSbHost">UTF-8</span></div>';
 	}
@@ -1837,7 +1855,14 @@ class SettingsWidget {
 			if (elem !== null) elem.innerHTML = this.renderEditorFeaturePreview(id, this.extState.editor);
 		});
 		const gitMapPill = this.contentsElem.querySelector<HTMLElement>('.settingsStatusBarPreview');
-		if (gitMapPill !== null) alterClass(gitMapPill, 'off', this.getSettingValue('showStatusBarItem') === false);
+		if (gitMapPill !== null) {
+			const display = this.appearance.statusBarItemDisplay;
+			const logoSvg = this.isColorfulIcons() ? SVG_ICONS.logoColor : SVG_ICONS.logo;
+			gitMapPill.innerHTML = (display !== GG.StatusBarItemDisplay.Text ? logoSvg : '') + (display !== GG.StatusBarItemDisplay.Icon ? '<span>Git Map</span>' : '');
+			alterClass(gitMapPill, 'off', this.getSettingValue('showStatusBarItem') === false);
+		}
+		const activeMode = String(this.getSettingValue('mode.active') || this.extState.editor.activeMode || 'default');
+		const modeHighlight = String(this.getSettingValue('ui.iconColorStyle') || 'monochrome') === 'colorful' && activeMode !== 'default' && activeMode !== 'zen';
 		this.contentsElem.querySelectorAll<HTMLElement>('.settingsStatusBarItemPreview[data-sb-badge]').forEach((badge) => {
 			const kind = <SettingsStatusBarBadgeKind>badge.dataset.sbBadge!;
 			const on = kind === 'statusBarBlame' ? this.getSettingValue('blame.statusBar') !== false
@@ -1845,6 +1870,7 @@ class SettingsWidget {
 					: this.getSettingValue('mode.statusBar.enabled') === true;
 			badge.innerHTML = this.renderStatusBarBadgeContent(kind);
 			alterClass(badge, 'off', !on);
+			if (kind === 'statusBarMode') alterClass(badge, 'sbPillWarning', modeHighlight);
 		});
 		this.updateEditorExamples();
 	}
@@ -2535,6 +2561,11 @@ class SettingsWidget {
 	 * @param saveExt Saves Extension Settings.
 	 */
 	private observeSettingsCategoryEvents(saveExt: (patch: { [key: string]: unknown }) => void) {
+		if (this.categoryEventsBound) {
+			this.updateSettingsCategoryState();
+			return;
+		}
+		this.categoryEventsBound = true;
 		const apply = (elem: HTMLElement, value: unknown, save: boolean) => {
 			const key = elem.dataset.skey!, path = elem.dataset.path;
 			let stored: unknown = value;

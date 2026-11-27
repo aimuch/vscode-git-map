@@ -49,6 +49,8 @@ export const mocks = {
 		text: '',
 		tooltip: '',
 		command: '',
+		color: undefined as vscode.ThemeColor | string | undefined,
+		backgroundColor: undefined as vscode.ThemeColor | undefined,
 		show: jest.fn(),
 		hide: jest.fn(),
 		dispose: jest.fn()

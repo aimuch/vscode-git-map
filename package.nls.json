@@ -303,6 +303,11 @@
 	"config.useMailmap.deprecationMessage": "Depreciated: This setting has been renamed to git-map.repository.useMailmap",
 	"config.useMailmap.markdownDeprecationMessage": "Depreciated: This setting has been renamed to `#git-map.repository.useMailmap#`",
 	"icon.git-map-logo.description": "Git Map",
+	"icon.git-map-logo-color.description": "Git Map (Colorful)",
+	"icon.git-map-rocket-color.description": "Git Map Launchpad Rocket (Colorful)",
+	"icon.git-map-commit-color.description": "Git Map Commit (Colorful)",
+	"icon.git-map-eye-color.description": "Git Map Editor Mode (Colorful)",
+	"icon.git-map-zen-color.description": "Git Map Zen Mode (Colorful)",
 	"config.contextMenuActionsVisibility.branch.checkout.title": "Checkout Branch",
 	"config.contextMenuActionsVisibility.branch.rename.title": "Rename Branch...",
 	"config.contextMenuActionsVisibility.branch.delete.title": "Delete Branch...",
@@ -668,7 +673,7 @@
 	"config.menus.scm.view.description": "Add \"View Git Map\" to the title of the Source Control view.",
 	"submenu.fileAnnotations.label": "File Annotations",
 	"command.ai.switchModel.title": "Switch AI Provider / Model...",
-	"config.ui.iconColorStyle.description": "Choose whether icons across the Git Map View, Settings, Status Bar, and SCM Tree View use semantic colours or follow the theme foreground. AI & Coding Agent icons remain colourful in both modes.",
+	"config.ui.iconColorStyle.description": "Choose whether icons across the Git Map View, Settings, Status Bar, and SCM Tree View use multi-colour semantic accents or follow the theme foreground. AI & Coding Agent icons stay colourful in both modes, while Status Bar text stays theme-matched with native alert pills.",
 	"config.ui.iconColorStyle.enumDescriptions.0": "Monochrome icons following the Visual Studio Code theme foreground (AI icons stay colourful).",
-	"config.ui.iconColorStyle.enumDescriptions.1": "Semantic colourful icons across the Git Map View, Settings, Status Bar, and SCM Tree View."
+	"config.ui.iconColorStyle.enumDescriptions.1": "Multi-colour icons across the Git Map View, Settings, Status Bar, and SCM Tree View, with crisp theme-matched Status Bar text and native alert pills."
 }

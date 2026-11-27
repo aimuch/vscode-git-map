@@ -147,4 +147,23 @@ describe('StatusBarItem', () => {
 		// Teardown
 		statusBarItem.dispose();
 	});
+
+	it('Should switch to the multi-colour logo icon without tinting text when git-map.ui.iconColorStyle is colorful', () => {
+		vscode.mockExtensionSettingReturnValue('showStatusBarItem', true);
+		vscode.mockExtensionSettingReturnValue('ui.iconColorStyle', 'colorful');
+
+		const statusBarItem = new StatusBarItem(1, onDidChangeRepos.subscribe, onDidChangeConfiguration.subscribe, logger);
+
+		expect(vscodeStatusBarItem.text).toBe('$(git-map-logo-color) Git Map');
+		expect(vscodeStatusBarItem.color).toBeUndefined();
+		expect(vscodeStatusBarItem.backgroundColor).toBeUndefined();
+
+		vscode.mockExtensionSettingReturnValue('ui.iconColorStyle', 'monochrome');
+		onDidChangeConfiguration.emit({
+			affectsConfiguration: (section: string) => section === 'git-map.ui.iconColorStyle'
+		});
+		expect(vscodeStatusBarItem.text).toBe('$(git-map-logo) Git Map');
+
+		statusBarItem.dispose();
+	});
 });
