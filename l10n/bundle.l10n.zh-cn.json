@@ -2441,7 +2441,6 @@
 	"Add Conflict Assistant": "添加“冲突助手”",
 	"Add Visual Reflog Explorer": "添加“可视化引用日志浏览器”",
 	"The language Git Map is displayed in": "Git Map 的显示语言",
-	"The Git Map item in the Status Bar": "状态栏中的 Git Map 项",
 	"Status Bar Item": "状态栏项",
 	"Tip — run {0} to override this setting for the current window.": "提示 — 运行 {0} 可为当前窗口覆盖此设置。",
 	"More options: open the Settings editor and search for {0}": "更多选项，请打开设置编辑器并搜索 {0}",
@@ -2488,5 +2487,11 @@
 	"Short date": "短日期",
 	"24-hour time": "24 小时制时间",
 	"12-hour time": "12 小时制时间",
-	"Weekday": "星期"
+	"Weekday": "星期",
+	"The items Git Map adds to the Status Bar": "Git Map 添加到状态栏的各项",
+	"Show the Git Map item, which opens the Git Map View": "显示 Git Map 项（点击可打开 Git Map 视图）",
+	"Show the blame of the current line (Status Bar Blame)": "显示当前行的追溯信息（状态栏 Blame）",
+	"Show the Launchpad indicator of the pull requests needing your attention": "显示 Launchpad 指示器（需要你处理的拉取请求）",
+	"Shown only when the PR & CI status badges (Cloud Integrations) are turned on": "仅在开启 PR 与 CI 状态徽章（云集成）时显示",
+	"Show the active editor mode": "显示当前编辑器模式"
 }

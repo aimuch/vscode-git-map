@@ -2364,6 +2364,53 @@
 				await waitFor('Settings Widget to close', () => !widget.classList.contains('active'));
 			}
 		});
+		await check('ui-settings-layout', '[Redesign] The controls of the Settings categories are laid out like GitLens\'s: left-aligned, labels above their controls, format inputs as wide as the category with the token menu beside them, and examples of the dates', async () => {
+			if (!document.getElementById('settingsWidget').classList.contains('active')) mouse(document.getElementById('settingsBtn'), 'click');
+			const widget = await waitFor('the Settings panel to open', () => document.getElementById('settingsCategory-agents') ? document.getElementById('settingsWidget') : null);
+			try {
+				const visible = (elem) => elem.getClientRects().length > 0;
+				const controls = Array.from(widget.querySelectorAll('.settingsCategory .settingsRow.settingsControl')).filter(visible);
+				assert(controls.length > 100, 'Expected the controls of the categories, got ' + controls.length);
+				const centred = controls.filter((elem) => getComputedStyle(elem).alignItems === 'center' || Math.abs(elem.firstElementChild.getBoundingClientRect().left - elem.getBoundingClientRect().left) > 2);
+				assert(centred.length === 0, 'Controls should be left-aligned, but these are not: ' + centred.slice(0, 5).map((elem) => elem.textContent.trim().slice(0, 40)).join(' | '));
+				const narrow = Array.from(widget.querySelectorAll('.settingsCategory .settingsTextRow')).filter(visible).filter((row) => row.querySelector('input').getBoundingClientRect().width < row.getBoundingClientRect().width * 0.5);
+				assert(narrow.length === 0, 'Format inputs should be at least half the width of their row (the token menu beside them): ' + narrow.map((row) => row.querySelector('input').dataset.skey + '=' + Math.round(row.querySelector('input').getBoundingClientRect().width) + 'px').join(', '));
+				const lines = Array.from(widget.querySelectorAll('.settingsCategoryTip, .settingsCategoryFooter')).filter((elem) => getComputedStyle(elem).display !== 'block');
+				assert(lines.length === 0, 'The tips & "More options" should wrap as paragraphs');
+				const squeezed = Array.from(widget.querySelectorAll('.settingsLocationCard > .customCheckbox')).filter(visible).filter((box) => Math.round(box.getBoundingClientRect().width) < 15);
+				assert(squeezed.length === 0, 'The checkboxes of the cards should keep their size');
+				assert(Array.from(widget.querySelectorAll('.settingsCategoryHeader .settingsFeatureDesc')).every((elem) => parseInt(getComputedStyle(elem).fontWeight) < 600), 'The descriptions of the categories should not be bold');
+				const dateExamples = ['blame.currentLine.dateFormat', 'blame.statusBar.dateFormat', 'codeLens.dateFormat', 'defaultDateFormat', 'defaultDateShortFormat', 'defaultTimeFormat'].map((k) => [k, (widget.querySelector('.settingsExample[data-example-for="' + k + '"]') || { textContent: '' }).textContent]);
+				const badDates = dateExamples.filter((example) => example[1] === '' || /defa|value|locale|\{0\}/.test(example[1]));
+				assert(badDates.length === 0, 'The examples of empty date formats should be dates: ' + JSON.stringify(badDates));
+				// The Status Bar category has a switch for each item Git Map adds to the Status Bar, kept in sync with the switch of its own category
+				const statusBarSec = document.getElementById('settingsCategory-status-bar-item');
+				const itemKeys = Array.from(statusBarSec.querySelectorAll('input[data-kind="check"]')).map((input) => input.dataset.skey);
+				assert(JSON.stringify(itemKeys) === JSON.stringify(['showStatusBarItem', 'blame.statusBar', 'launchpad.indicator.enabled', 'mode.statusBar.enabled']), 'Unexpected switches of the Status Bar items: ' + JSON.stringify(itemKeys));
+				const modeHere = statusBarSec.querySelector('input[data-skey="mode.statusBar.enabled"]'), modeThere = document.querySelector('#settingsCategory-editor-modes input[data-skey="mode.statusBar.enabled"]');
+				const launchpadHere = statusBarSec.querySelector('input[data-skey="launchpad.indicator.enabled"]'), launchpadThere = document.querySelector('#settingsCategory-launchpad .settingsControl.master input[data-skey="launchpad.indicator.enabled"]');
+				for (const [here, there, k] of [[modeHere, modeThere, 'mode.statusBar.enabled'], [launchpadHere, launchpadThere, 'launchpad.indicator.enabled']]) {
+					const initial = here.checked, saveBefore = requestsOf('saveExtendedSettings').length;
+					assert(there !== null && there.checked === initial, 'The switch of ' + k + ' should match its own category');
+					here.checked = !initial;
+					here.dispatchEvent(new Event('change', { bubbles: true }));
+					const saved = await waitFor('saveExtendedSettings(' + k + ')', () => requestsOf('saveExtendedSettings').length > saveBefore ? requestsOf('saveExtendedSettings').slice(-1)[0] : null);
+					assert(saved.settings[k] === !initial && there.checked === !initial, 'Turning ' + k + ' off from the Status Bar category should save it, and update the switch of its own category: ' + JSON.stringify(saved));
+					there.checked = initial;
+					there.dispatchEvent(new Event('change', { bubbles: true }));
+					await waitFor('saveExtendedSettings(' + k + ' back)', () => requestsOf('saveExtendedSettings').slice(-1)[0].settings[k] === initial);
+					assert(here.checked === initial, 'Turning ' + k + ' back on from its own category should update the Status Bar category');
+				}
+				for (const id of ['commits-view', 'file-heatmap', 'current-line', 'menus', 'status-bar-item']) {
+					document.getElementById('settingsCategory-' + id).scrollIntoView({ block: 'start' });
+					await shot('settings-' + id);
+				}
+				return controls.length + ' controls left-aligned, format inputs beside their token menus, tips wrapped, date examples: ' + dateExamples.map((example) => example[1]).join(' / ');
+			} finally {
+				mouse(document.getElementById('settingsClose'), 'click');
+				await waitFor('the Settings panel to close', () => !widget.classList.contains('active'));
+			}
+		});
 	};
 
 	window.addEventListener('load', () => {

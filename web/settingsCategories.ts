@@ -396,8 +396,14 @@ function getSettingsCategories(): ReadonlyArray<SettingsCategoryDef> {
 		},
 		{
 			id: 'status-bar-item', name: t('Status Bar'), group: 'general', icon: 'layout', search: 'git-map.statusBarItem',
-			hint: t('The Git Map item in the Status Bar'),
-			controls: [{ kind: 'custom', id: 'statusBarItem', label: t('Status Bar Item') }]
+			hint: t('The items Git Map adds to the Status Bar'),
+			controls: [
+				{ kind: 'check', key: 'showStatusBarItem', label: t('Show the Git Map item, which opens the Git Map View') },
+				{ kind: 'custom', id: 'statusBarItem', label: t('Status Bar Item') },
+				{ kind: 'check', key: 'blame.statusBar', label: t('Show the blame of the current line (Status Bar Blame)') },
+				{ kind: 'check', key: 'launchpad.indicator.enabled', label: t('Show the Launchpad indicator of the pull requests needing your attention'), hint: t('Shown only when the PR & CI status badges (Cloud Integrations) are turned on') },
+				{ kind: 'check', key: 'mode.statusBar.enabled', label: t('Show the active editor mode') }
+			]
 		}
 	];
 }

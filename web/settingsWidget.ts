@@ -2116,7 +2116,7 @@ class SettingsWidget {
 					control.options.map((o) => '<button type="button" role="radio" class="settingsSegment settingsCtl' + (o[0] === String(value) ? ' selected' : '') + '" aria-checked="' + (o[0] === String(value)) + '" data-kind="segment"' + attrs + ' data-value="' + escapeHtml(o[0]) + '" tabindex="-1">' + escapeHtml(o[1]) + '</button>').join('') + '</div>');
 			case 'text':
 				return wrap('<div class="settingsFeatureLabel">' + escapeHtml(control.label) + '</div><div class="settingsTextRow"><input type="text" class="settingsInput mono settingsCtl" data-kind="text"' + attrs +
-					(control.example ? ' data-example="' + control.example + '" data-example-default="' + escapeHtml(control.exampleDefault || control.placeholder || '') + '"' : '') +
+					(control.example ? ' data-example="' + control.example + '" data-example-default="' + escapeHtml(typeof control.exampleDefault === 'string' ? control.exampleDefault : control.placeholder && control.placeholder.includes('${') ? control.placeholder : '') + '"' : '') +
 					' value="' + escapeHtml(typeof value === 'string' ? value : '') + '" placeholder="' + escapeHtml(control.placeholder || '') + '" spellcheck="false" tabindex="-1">' +
 					(control.tokens ? '<select class="settingsSelect settingsTokenSelect" data-token-for="' + escapeHtml(control.key) + '" title="' + escapeHtml(t('Insert a token')) + '" tabindex="-1"><option value="">' + escapeHtml(t('Insert') + '…') + '</option>' + getSettingsTokens(control.tokens).map((tk) => '<option value="' + escapeHtml(tk[0]) + '">' + escapeHtml(tk[0] + ' — ' + tk[1]) + '</option>').join('') + '</select>' : '') +
 					'</div>' + (control.example ? '<div class="settingsFeatureExample">' + t('Example:') + ' <span class="settingsExample" data-example-for="' + escapeHtml(control.key) + '"></span></div>' : ''));
@@ -2275,6 +2275,12 @@ class SettingsWidget {
 			} else {
 				this.settingValues[key] = stored;
 				if (save) saveExt({ [key]: stored });
+				// A setting can have a switch in more than one category (e.g. the items of the Status Bar), so keep them all in sync
+				if (typeof path !== 'string') {
+					this.contentsElem.querySelectorAll<HTMLInputElement>('input[data-kind="check"][data-skey="' + key + '"]').forEach((other) => {
+						if (other !== elem && typeof other.dataset.path !== 'string') other.checked = typeof other.dataset.valueOn === 'string' ? other.dataset.valueOn === JSON.stringify(value) : !!value;
+					});
+				}
 			}
 			this.updateSettingsCategoryState();
 			this.updateLivePreviews();

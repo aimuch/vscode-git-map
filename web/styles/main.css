@@ -4835,6 +4835,30 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .settingsControl.settingsControlDisabled{opacity:.5}
 .settingsControl .settingsSelect{min-width:260px;max-width:100%}
 .settingsControl .settingsFeatureInfo{margin-top:2px}
+/* The layout of the controls of the categories, like GitLens's: left-aligned, the label above its control, and text inputs as wide as the
+   category with the token menu beside them. More specific than .settingsRow (in settingsWidget.css, which is bundled after this file and
+   would otherwise centre the controls in their column, and give the token menu the whole width of the row). */
+.settingsCategory .settingsRow.settingsControl{flex-direction:column;flex-wrap:nowrap;align-items:flex-start;justify-content:flex-start;gap:4px;padding-top:0;box-sizing:border-box;width:100%;text-align:left}
+.settingsCategory .settingsRow.settingsControl.indent1{width:calc(100% - 24px)}
+.settingsCategory .settingsRow.settingsControl.indent2{width:calc(100% - 48px)}
+.settingsCategory .settingsControl > .settingsLabel{width:auto}
+.settingsCategory .settingsControl > .settingsFeatureLabel,.settingsCategory .settingsControl > .settingsLabel{font-weight:600;font-size:12px}
+.settingsCategory .settingsControl > .settingsSelect{width:auto;min-width:260px;max-width:100%}
+.settingsCategory .settingsControl > .settingsTextRow,.settingsCategory .settingsControl > .settingsLocationCards,.settingsCategory .settingsControl > .settingsFeatureInfo{width:100%;box-sizing:border-box}
+.settingsCategory .settingsTextRow .settingsInput{flex:1 1 auto;width:auto;min-width:120px}
+.settingsCategory .settingsTextRow .settingsTokenSelect{flex:0 0 auto;width:auto;max-width:40%}
+.settingsCategory .settingsControl .settingsFeatureExample{text-align:left;margin:0}
+.settingsCategory .settingsFeatureInfo.settingsControl{flex-direction:row;align-items:flex-start;gap:6px;box-sizing:border-box;width:100%}
+/* The header of a category: its title in the foreground colour, and its description in normal weight (.settingsSection h3 of
+   settingsWidget.css makes headings small, bold & dimmed) */
+.settingsCategory > h3.settingsCategoryHeader{align-items:flex-start;gap:10px;color:var(--vscode-foreground);font-size:inherit;font-weight:normal}
+.settingsCategory > h3.settingsCategoryHeader .settingsFeatureDesc{font-weight:normal;line-height:1.4}
+/* The tip & "More options": text that wraps as a paragraph, with its link inline (as flex items, the text & link were laid out as columns) */
+.settingsCategory .settingsCategoryTip,.settingsCategory .settingsCategoryFooter{display:block;line-height:1.5}
+.settingsCategory .settingsCategoryTip svg,.settingsCategory .settingsCategoryFooter svg{display:inline-block;vertical-align:-2px;margin-right:6px}
+.settingsCategory .settingsCategoryFooter a{word-break:break-all}
+/* The checkbox of a card keeps its size (it was squeezed by the text beside it) */
+.settingsLocationCard > .customCheckbox{flex:0 0 auto;margin:1px 0 0 0}
 .settingsFeatureInfo span{flex:1}
 .settingsSegmentedCtl{display:inline-flex;border:1px solid var(--gm-border-strong);border-radius:var(--gm-radius-sm);overflow:hidden}
 .settingsSegmentedCtl .settingsSegment{border:0;border-radius:0}

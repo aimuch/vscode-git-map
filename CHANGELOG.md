@@ -1,5 +1,9 @@
 # Change Log
 
+## Unreleased
+* The Status Bar category of the Settings panel has a switch for each item Git Map adds to the Status Bar: the Git Map item (`git-map.showStatusBarItem`), the Status Bar Blame (`git-map.blame.statusBar`), the Launchpad indicator (`git-map.launchpad.indicator.enabled`) and the active editor mode (`git-map.mode.statusBar.enabled`), kept in sync with the switches in their own categories.
+* Fixed: the controls of the Settings categories were centred, the format inputs were squeezed beside their token menus, the tips were split into columns, and the examples of the date formats without a value showed their description formatted as a date.
+
 ## 2.9.0 - 2026-11-27
 * **Explain Changes with AI** (`Git Map: Explain Changes with AI...`, in the Source Control title menu, and in the context menus of the Git Map View): explains the working changes (staged, unstaged & untracked), a stash (including its untracked files), the changes of a branch since it diverged from its merge target, the unpushed commits of a branch, the selected commits, or a Branch Comparison, in the AI panel.
 * **Branches that landed by squash or rebase**: Clean Up Branches now also lists the local branches whose work was squashed into the default branch (one of its commits has all of the branch's changes, compared by `git patch-id`) or rebased onto it (an equivalent commit for every commit), and says how each landed ("Merged into", "Rebased onto" or "Squashed into").
